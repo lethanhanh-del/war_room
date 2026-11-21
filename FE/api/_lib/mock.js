@@ -30,6 +30,11 @@ const GROUPS = [
   ['Pháp lý', ['Sổ hồng bàn giao', 'Hồ sơ pháp lý xử lý']],
   ['Banking', ['Hồ sơ vay giải ngân', 'Ngân hàng làm việc']],
 ];
+const TASKS = [
+  'Gọi lại 20 KH cũ', 'Gặp đối tác ngân hàng', 'Chốt danh sách KH tiềm năng', 'Gửi báo giá cho 5 KH',
+  'Cập nhật data lên CRM', 'Hoàn thiện hồ sơ vay', 'Họp với đại lý', 'Đăng 3 bài truyền thông',
+  'Đối soát công nợ', 'Nộp hồ sơ pháp lý', 'Hẹn lịch xem nhà mẫu', 'Báo cáo tiến độ tuần',
+];
 const NOTES = ['', '', '', 'Chờ phản hồi từ đối tác', '', 'Thiếu hồ sơ pháp lý, cần hỗ trợ', '', ''];
 
 export function buildMockSheets(flows, today = todayVN()) {
@@ -58,13 +63,12 @@ export function buildMockSheets(flows, today = todayVN()) {
         const pic = ki === 0 ? '' : `Nhân sự ${String.fromCharCode(65 + fi)}${g + 1}.${ki}`;
         const row = ['', k, pic];
         for (const d of days) {
-          const kpi = rand() < 0.08 ? '' : 5 + Math.floor(rand() * 16);
-          let res = '';
-          if (kpi !== '' && d <= today) {
-            const r = rand();
-            res = d === today ? Math.floor(kpi * r) : Math.round(kpi * (0.5 + r * 0.8));
-          }
-          row.push(kpi, res);
+          // Ô KPI = nội dung task (chữ), ô Kết quả = checkbox
+          const task = rand() < 0.1 ? '' : TASKS[Math.floor(rand() * TASKS.length)];
+          let done = false;
+          if (task && d < today) done = rand() < 0.72;
+          else if (task && d === today) done = rand() < 0.35;
+          row.push(task, done);
         }
         row.push('', '', '', NOTES[(g * 3 + ki + fi) % NOTES.length], '');
         rows.push(row);

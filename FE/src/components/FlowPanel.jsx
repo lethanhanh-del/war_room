@@ -1,15 +1,15 @@
 import { Fragment } from 'react';
 import { STATUS } from '../lib/status.js';
-import { fmtDay, fmtNum, fmtPct } from '../lib/format.js';
+import { fmtDay, fmtPct } from '../lib/format.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
-import { DayCell, Pct } from './bits.jsx';
+import { DayCell, Pct, StatusTag } from './bits.jsx';
 
-const SUMMARY_KEYS = ['done', 'done_late', 'late', 'in_progress'];
+const SUMMARY_KEYS = ['done', 'late', 'in_progress', 'upcoming'];
 
 /**
- * Ô dòng tiền (ô 2..n).
+ * Ô dòng tiền (ô 2..n). Mỗi dòng là 1 dòng KPI, mỗi ngày là 1 task (✔ đã tick / ✖ quá hạn chưa tick ...).
  *  - compact=false: bảng đầy đủ (ô rộng, bố cục 3x2)
- *  - compact=true : dạng gọn cho ô hẹp (bố cục B): ô ngày chỉ còn ô màu, bỏ cột lũy kế
+ *  - compact=true : dạng gọn cho ô hẹp (bố cục B)
  * Các dòng được nhóm theo "nhóm nhỏ" (dòng có Stt trên sheet).
  */
 export default function FlowPanel({ index, flow, date, days, today, compact, onOpen }) {
@@ -27,11 +27,11 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
   }
 
   const weekMode = date === 'all';
-  const colCount = 1 + (weekMode ? days.length + (compact ? 1 : 2) : compact ? 2 : 4);
+  const colCount = weekMode ? 1 + days.length + (compact ? 1 : 2) : compact ? 2 : 3;
 
   return (
     <section className={`panel flow ${compact ? 'compact' : ''}`}>
-      <header className="fl-head clickable" onClick={onOpen} title="Bấm để xem chi tiết dòng tiền này">
+      <header className="fl-head clickable" onClick={onOpen} title="Bấm để xem chi tiết từng task">
         <em className="num">{index}</em>
         <div className="fl-title">
           <h2>{flow.label}</h2>
@@ -47,7 +47,7 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
         </div>
         <div className="fl-rate">
           <b>{fmtPct(flow.rate)}</b>
-          <span>{flow.completed}/{flow.due} task</span>
+          <span>đạt {flow.completed}/{flow.due}</span>
         </div>
       </header>
 
@@ -71,24 +71,13 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
                         {compact ? fmtDay(d, false).slice(0, 2) : fmtDay(d, false)}
                       </th>
                     ))}
-                    {!compact && (
-                      <th className="c-num">
-                        Lũy kế<span className="wd">/ KPI tuần</span>
-                      </th>
-                    )}
-                    <th className="c-pct">% đạt</th>
-                  </>
-                ) : compact ? (
-                  <>
-                    <th className="c-num">KQ / KPI</th>
+                    {!compact && <th className="c-num">Đạt</th>}
                     <th className="c-pct">% đạt</th>
                   </>
                 ) : (
                   <>
-                    <th className="c-num">KPI</th>
-                    <th className="c-num">Kết quả</th>
-                    <th className="c-pct">% đạt</th>
-                    <th className="c-st">Trạng thái</th>
+                    {!compact && <th className="c-task">Task trong ngày</th>}
+                    <th className="c-st">{compact ? 'KQ' : 'Kết quả'}</th>
                   </>
                 )}
               </tr>
@@ -97,6 +86,7 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
               {flow.rows.map((r, i) => {
                 const it = r.item;
                 const newGroup = i === 0 || flow.rows[i - 1].item.groupKey !== it.groupKey;
+                const dayTask = weekMode ? null : it.days.find((x) => x.date === date);
                 return (
                   <Fragment key={`${it.groupKey}-${it.row}`}>
                     {newGroup && (it.group || it.lead) && (
@@ -111,9 +101,10 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
                     <tr className={`row st-${r.status}`}>
                       <td className="c-name">
                         <div className={`nm ${it.placeholder ? 'muted' : ''}`}>
-                          {it.kpi || (it.placeholder ? 'Chưa có KPI' : it.group)}
+                          {it.kpi || (it.placeholder ? 'Chưa có dòng KPI' : it.group)}
                         </div>
                         <div className="pic">{it.pic}</div>
+                        {compact && !weekMode && dayTask?.task && <div className="tsk" title={dayTask.task}>{dayTask.task}</div>}
                         {it.note && !compact && <div className="note" title={it.note}>⚠ {it.note}</div>}
                       </td>
                       {weekMode ? (
@@ -128,24 +119,25 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
                           })}
                           {!compact && (
                             <td className="c-num">
-                              {r.pct === null ? '–' : <>{fmtNum(r.result)}<small> / {fmtNum(r.kpi)}</small></>}
+                              {r.total ? <>{r.done}<small> / {r.total}</small></> : '–'}
                             </td>
                           )}
                           <td className="c-pct"><Pct v={r.pct} /></td>
                         </>
-                      ) : compact ? (
-                        <>
-                          <td className="c-num">
-                            {r.pct === null ? '–' : <>{fmtNum(r.result)}<small>/{fmtNum(r.kpi)}</small></>}
-                          </td>
-                          <td className="c-pct"><Pct v={r.pct} /></td>
-                        </>
                       ) : (
                         <>
-                          <td className="c-num">{r.pct === null ? '–' : fmtNum(r.kpi)}</td>
-                          <td className="c-num">{r.pct === null ? '–' : fmtNum(r.result)}</td>
-                          <td className="c-pct"><Pct v={r.pct} /></td>
-                          <td className="c-st"><span className={`badge st-${r.status}`}>{STATUS[r.status].label}</span></td>
+                          {!compact && (
+                            <td className="c-task">
+                              {dayTask?.task ? <span title={dayTask.task}>{dayTask.task}</span> : <span className="muted">–</span>}
+                            </td>
+                          )}
+                          <td className="c-st">
+                            {r.status === 'none' ? <span className="muted">–</span> : compact ? (
+                              <DayCell day={dayTask} status={r.status} />
+                            ) : (
+                              <StatusTag status={r.status} short />
+                            )}
+                          </td>
                         </>
                       )}
                     </tr>

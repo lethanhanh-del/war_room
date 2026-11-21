@@ -29,13 +29,13 @@ html {
   --accent: #c8ff4d;        /* lime: đang chọn, hôm nay, số thứ tự ô */
   --on-accent: #0a0d12;     /* chữ trên nền lime */
 
-  /* 5. Trạng thái (ngữ nghĩa cố định — KHÔNG dùng cho mục đích khác) */
-  --done: #2ee6a6;          /* Hoàn thành / Đạt */
-  --done_late: #ffb020;     /* Hoàn thành trễ hạn / Đạt (trễ) */
-  --late: #ff4d6d;          /* Trễ hạn / Không đạt */
-  --in_progress: #3da9fc;   /* Đang thực hiện / Đang làm */
+  /* 5. Trạng thái task (ngữ nghĩa cố định — KHÔNG dùng cho mục đích khác) */
+  --done: #2ee6a6;          /* Đạt (đã tick) */
+  --late: #ff4d6d;          /* Không đạt (quá ngày chưa tick) */
+  --in_progress: #3da9fc;   /* Đang làm (hôm nay, chưa tick) */
   --upcoming: #8a94a8;      /* Chưa đến hạn */
-  --none: #2a3442;          /* Chưa có KPI */
+  --none: #2a3442;          /* Không có task */
+  --warn: #ffb020;          /* Cảnh báo mức trung bình (% đạt 70–99%) */
   --blocker: #ff8a3d;       /* Vướng mắc (ghi chú) */
 
   /* 6. Chữ */
@@ -52,9 +52,8 @@ html {
 }
 
 /* Gán màu trạng thái qua biến --c để mọi component dùng chung: class="st-late" -> var(--c) */
-.st-done, .vd-pass { --c: var(--done); }
-.st-done_late, .vd-pass_late { --c: var(--done_late); }
-.st-late, .vd-fail { --c: var(--late); }
-.st-in_progress, .vd-doing { --c: var(--in_progress); }
-.st-upcoming, .vd-upcoming { --c: var(--upcoming); }
-.st-none, .vd-none { --c: var(--none); }
+.st-done { --c: var(--done); }
+.st-late { --c: var(--late); }
+.st-in_progress { --c: var(--in_progress); }
+.st-upcoming { --c: var(--upcoming); }
+.st-none { --c: var(--none); }

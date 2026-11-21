@@ -1,38 +1,27 @@
 import { useMemo } from 'react';
-import { STATUS, VERDICT, VERDICT_ORDER, buildView, allGroups } from '../lib/status.js';
-import { fmtDay, fmtNum } from '../lib/format.js';
+import { STATUS, buildView, flattenTasks, allGroups } from '../lib/status.js';
+import { fmtDay } from '../lib/format.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
-import { DayCell, Pct, Verdict } from './bits.jsx';
+import { StatusTag } from './bits.jsx';
 
 const shortFlow = (label) => label.replace(/^dòng tiền\s*/i, '').replace(/^./, (c) => c.toUpperCase());
+const SUM_KEYS = ['late', 'in_progress', 'upcoming', 'done'];
 
 /**
- * Chế độ chi tiết: liệt kê từng dòng KPI — ai làm, KPI gì, chỉ tiêu, kết quả, Đạt / Không đạt.
+ * Chế độ chi tiết: liệt kê TỪNG TASK (1 dòng KPI × 1 ngày) — ngày nào, ai làm, KPI gì, task gì, Đạt hay Không đạt.
  * Bộ lọc lồng nhau: Dòng tiền -> Nhóm nhỏ -> Người làm (+ Ngày, Trạng thái dùng chung với ô tổng quan).
  */
 export default function DetailPanel({ data, filter, setFilter, detail, setDetail, pics, today, onClose, idleSec }) {
   const flows = data?.flows || [];
-  const weekMode = filter.date === 'all';
-  const days = useMemo(() => [...new Set(flows.flatMap((f) => f.days))].sort(), [flows]);
   const groups = useMemo(() => allGroups(data, detail.flow), [data, detail.flow]);
 
-  const rows = useMemo(() => {
-    const v = buildView(data, { ...filter, flow: detail.flow, group: detail.group }, today);
-    const out = [];
-    for (const f of v.flows) for (const r of f.rows) out.push({ ...r, flow: f });
-    const rank = Object.fromEntries(VERDICT_ORDER.map((k, i) => [k, i]));
-    return out.sort(
-      (a, b) => rank[a.verdict] - rank[b.verdict] || (a.pct ?? 9) - (b.pct ?? 9) || a.item.row - b.item.row
-    );
-  }, [data, filter, detail.flow, detail.group, today]);
+  const view = useMemo(
+    () => buildView(data, { ...filter, flow: detail.flow, group: detail.group }, today),
+    [data, filter, detail.flow, detail.group, today]
+  );
+  const tasks = useMemo(() => flattenTasks(view), [view]);
 
-  const counts = useMemo(() => {
-    const c = Object.fromEntries(VERDICT_ORDER.map((k) => [k, 0]));
-    rows.forEach((r) => (c[r.verdict] += 1));
-    return c;
-  }, [rows]);
-
-  const scrollRef = useAutoScroll([rows.length, detail.flow, detail.group, filter.date, filter.status]);
+  const scrollRef = useAutoScroll([tasks.length, detail.flow, detail.group, filter.date, filter.status]);
   const setD = (patch) => setDetail((d) => ({ ...d, ...patch }));
   const singleFlow = detail.flow !== 'all';
 
@@ -40,23 +29,27 @@ export default function DetailPanel({ data, filter, setFilter, detail, setDetail
     <section className="panel detail">
       <header className="dt-head">
         <div className="dt-title">
-          <span className="dt-kicker">Chi tiết</span>
+          <span className="dt-kicker">Chi tiết task</span>
           <h2>
             {singleFlow ? flows.find((f) => f.key === detail.flow)?.label : 'Tất cả dòng tiền'}
             <span className="dt-scope">
               {' · '}
-              {weekMode ? 'Cả kỳ' : fmtDay(filter.date)}
+              {filter.date === 'all' ? 'Cả kỳ' : fmtDay(filter.date)}
               {filter.status !== 'all' && <> · {STATUS[filter.status].label}</>}
               {filter.pic !== 'all' && <> · {filter.pic}</>}
             </span>
           </h2>
         </div>
         <div className="dt-sum">
-          {['fail', 'doing', 'pass_late', 'pass'].map((k) => (
-            <span key={k} className={`vsum vd-${k} ${counts[k] ? '' : 'zero'}`}>
-              <b>{counts[k]}</b>
-              {VERDICT[k].label}
-            </span>
+          {SUM_KEYS.map((k) => (
+            <button
+              key={k}
+              className={`vsum st-${k} ${view.totals[k] ? '' : 'zero'} ${filter.status === k ? 'on' : ''}`}
+              onClick={() => setFilter((f) => ({ ...f, status: f.status === k ? 'all' : k }))}
+            >
+              <b>{view.totals[k]}</b>
+              {STATUS[k].short}
+            </button>
           ))}
         </div>
         <button className="btn-close" onClick={onClose}>
@@ -102,84 +95,49 @@ export default function DetailPanel({ data, filter, setFilter, detail, setDetail
             ))}
           </select>
           <span className="muted small-note">
-            {rows.length} dòng · Không đạt xếp lên đầu
+            {tasks.length} task · Không đạt xếp lên đầu
             {idleSec > 0 && <> · tự về tổng quan sau {Math.round(idleSec / 60)} phút không thao tác</>}
           </span>
         </div>
       </div>
 
       <div className="dt-body" ref={scrollRef}>
-        {!rows.length ? (
-          <p className="fl-empty">Không có dòng nào phù hợp bộ lọc</p>
+        {!tasks.length ? (
+          <p className="fl-empty">Không có task nào phù hợp bộ lọc</p>
         ) : (
-          <table className={`grid dgrid ${weekMode ? 'week' : 'day'}`}>
+          <table className="grid dgrid">
             <thead>
               <tr>
+                <th className="c-date">Ngày</th>
                 {!singleFlow && <th className="c-flow">Dòng tiền</th>}
                 <th className="c-grp">Nhóm</th>
                 <th className="c-who">Người làm</th>
-                <th className="c-kpi">KPI / Task</th>
-                {weekMode ? (
-                  <>
-                    {days.map((d) => (
-                      <th key={d} className={`c-day ${d === today ? 'today' : ''}`}>
-                        <span className="wd">{d === today ? 'Hôm nay' : fmtDay(d).split(' ')[0]}</span>
-                        {fmtDay(d, false)}
-                      </th>
-                    ))}
-                    <th className="c-num">Lũy kế<span className="wd">/ KPI kỳ</span></th>
-                  </>
-                ) : (
-                  <>
-                    <th className="c-num">Chỉ tiêu</th>
-                    <th className="c-num">Kết quả</th>
-                  </>
-                )}
-                <th className="c-pct">% đạt</th>
-                <th className="c-vd">Kết luận</th>
+                <th className="c-kpi">KPI</th>
+                <th className="c-task">Task phải làm</th>
+                <th className="c-vd">Kết quả</th>
                 <th className="c-note">Vướng mắc</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                const it = r.item;
-                return (
-                  <tr key={`${r.flow.key}-${it.groupKey}-${it.row}`} className={`row vd-${r.verdict}`}>
-                    {!singleFlow && <td className="c-flow">{shortFlow(r.flow.label)}</td>}
-                    <td className="c-grp">{it.group || '–'}</td>
-                    <td className="c-who">
-                      <div className="nm">{it.pic || '–'}</div>
-                      {it.lead && it.lead !== it.pic && <div className="pic">TN: {it.lead}</div>}
-                    </td>
-                    <td className="c-kpi">
-                      <div className={`nm ${it.placeholder ? 'muted' : ''}`}>{it.kpi || (it.placeholder ? 'Chưa được giao KPI' : it.group)}</div>
-                    </td>
-                    {weekMode ? (
-                      <>
-                        {days.map((d) => {
-                          const idx = it.days.findIndex((x) => x.date === d);
-                          return (
-                            <td key={d} className={`c-day ${d === today ? 'today' : ''}`}>
-                              <DayCell day={it.days[idx]} status={idx < 0 ? 'none' : r.dayStatuses[idx]} />
-                            </td>
-                          );
-                        })}
-                        <td className="c-num">
-                          {r.pct === null ? '–' : <>{fmtNum(r.result)}<small> / {fmtNum(r.kpi)}</small></>}
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="c-num">{r.pct === null ? '–' : fmtNum(r.kpi)}</td>
-                        <td className="c-num">{r.pct === null ? '–' : fmtNum(r.result)}</td>
-                      </>
-                    )}
-                    <td className="c-pct"><Pct v={r.pct} /></td>
-                    <td className="c-vd"><Verdict v={r.verdict} /></td>
-                    <td className="c-note">{it.note ? <span title={it.note}>⚠ {it.note}</span> : ''}</td>
-                  </tr>
-                );
-              })}
+              {tasks.map(({ flow, item, task }) => (
+                <tr key={`${flow.key}-${item.row}-${task.date}`} className={`row st-${task.status}`}>
+                  <td className={`c-date ${task.date === today ? 'is-today' : ''}`}>
+                    {task.date === today ? 'Hôm nay' : fmtDay(task.date)}
+                  </td>
+                  {!singleFlow && <td className="c-flow">{shortFlow(flow.label)}</td>}
+                  <td className="c-grp">{item.group || '–'}</td>
+                  <td className="c-who">
+                    <div className="nm">{item.pic || '–'}</div>
+                    {item.lead && item.lead !== item.pic && <div className="pic">TN: {item.lead}</div>}
+                  </td>
+                  <td className="c-kpi">{item.kpi || item.group || '–'}</td>
+                  <td className="c-task">
+                    {task.task ? <span title={task.task}>{task.task}</span> : <span className="muted">(không ghi nội dung)</span>}
+                  </td>
+                  <td className="c-vd"><StatusTag status={task.status} /></td>
+                  <td className="c-note">{item.note ? <span title={item.note}>⚠ {item.note}</span> : ''}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         )}

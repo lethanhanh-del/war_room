@@ -1,4 +1,4 @@
-import { STATUS, STATUS_KEYS } from '../lib/status.js';
+import { STATUS, STATUS_KEYS, flattenTasks } from '../lib/status.js';
 import { fmtDay, fmtPct, fmtTime, fmtDateLong } from '../lib/format.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
 
@@ -69,7 +69,7 @@ export default function OverviewPanel({
           <button className={`chip ${filter.status === 'all' ? 'on' : ''}`} onClick={() => pickStatus('all')}>
             Tất cả
           </button>
-          {['done', 'done_late', 'late', 'in_progress'].map((k) => (
+          {['done', 'late', 'in_progress', 'upcoming'].map((k) => (
             <button key={k} className={`chip st-${k} ${filter.status === k ? 'on' : ''}`} onClick={() => pickStatus(k)}>
               <i className={`dot st-${k}`} />
               {STATUS[k].short}
@@ -96,7 +96,7 @@ export default function OverviewPanel({
         <div className="ring" style={{ '--p': rate === null ? 0 : Math.min(1, rate) }}>
           <div className="ring-in">
             <b>{fmtPct(rate)}</b>
-            <span>hoàn thành</span>
+            <span>task đạt</span>
             <small>{view.completed}/{view.due} task</small>
           </div>
         </div>
@@ -168,33 +168,31 @@ export default function OverviewPanel({
   );
 }
 
-/** Ô tổng quan dạng cột cao: liệt kê các KPI đang trễ hạn, % đạt thấp nhất lên trước */
+/** Ô tổng quan dạng cột cao: liệt kê các task Không đạt (quá ngày chưa tick), cũ nhất lên trước */
 function HotList({ view, onOpen }) {
-  const late = [];
-  for (const f of view.flows) for (const r of f.rows) if (r.status === 'late') late.push({ r, f });
-  late.sort((a, b) => (a.r.pct ?? 0) - (b.r.pct ?? 0));
+  const late = flattenTasks(view).filter((t) => t.task.status === 'late');
   const ref = useAutoScroll([late.length]);
   const short = (l) => l.replace(/^dòng tiền\s*/i, '');
   return (
     <div className="hot">
       <div className="hot-head">
-        Cần xử lý ngay · {late.length} KPI trễ hạn
+        Cần xử lý ngay · {late.length} task không đạt
         {late.length > 0 && <span onClick={onOpen}>Xem tất cả ›</span>}
       </div>
       {late.length ? (
         <div className="hot-list" ref={ref}>
-          {late.slice(0, 30).map(({ r, f }) => (
-            <div className="hot-item" key={`${f.key}-${r.item.row}`} onClick={onOpen} title={r.item.note || ''}>
+          {late.slice(0, 40).map(({ flow, item, task }) => (
+            <div className="hot-item" key={`${flow.key}-${item.row}-${task.date}`} onClick={onOpen} title={task.task || ''}>
               <div style={{ minWidth: 0 }}>
-                <div className="nm">{r.item.kpi || r.item.group}</div>
-                <div className="pic">{r.item.pic} · {short(f.label)}</div>
+                <div className="nm">{task.task || item.kpi || item.group}</div>
+                <div className="pic">{item.pic} · {item.kpi || item.group} · {short(flow.label)}</div>
               </div>
-              <b>{fmtPct(r.pct)}</b>
+              <b>{fmtDay(task.date, false)}</b>
             </div>
           ))}
         </div>
       ) : (
-        <div className="hot-empty">Không có KPI nào trễ hạn</div>
+        <div className="hot-empty">Không có task nào không đạt</div>
       )}
     </div>
   );

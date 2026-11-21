@@ -1,83 +1,53 @@
-// Quy tắc tính trạng thái task (task = KPI của 1 PIC trong 1 ngày) — đã thống nhất với người dùng:
-//  - Hoàn thành          : Kết quả ngày đó >= KPI ngày đó
-//  - Hoàn thành trễ hạn  : trong ngày chưa đạt, nhưng ở một ngày sau đó lũy kế kết quả >= lũy kế KPI tính đến ngày đó
-//  - Trễ hạn             : ngày đã qua và lũy kế vẫn chưa bù đủ
-//  - Đang thực hiện      : là ngày hôm nay, chưa đạt
-//  - Chưa đến hạn        : ngày trong tương lai, chưa đạt
-//  - (none)              : ngày đó không có KPI (trống hoặc 0) -> không tính là task
+// Quy tắc trạng thái — đã thống nhất với người dùng:
+//   Mỗi ngày của 1 dòng KPI là 1 TASK: ô "KPI" = nội dung việc phải làm (chữ), ô "Kết quả" = checkbox.
+//   - Đạt            : đã tick
+//   - Không đạt      : ngày đã qua mà chưa tick
+//   - Đang làm       : là hôm nay, chưa tick
+//   - Chưa đến hạn   : ngày trong tương lai, chưa tick
+//   - (none)         : ngày đó không có task (ô KPI trống và chưa tick) -> không tính
+// (Sheet không lưu thời điểm tick nên không phân biệt "tick muộn"; tick là Đạt.)
 
 export const STATUS = {
-  done: { label: 'Hoàn thành', short: 'Hoàn thành' },
-  done_late: { label: 'Hoàn thành trễ hạn', short: 'HT trễ hạn' },
-  late: { label: 'Trễ hạn', short: 'Trễ hạn' },
-  in_progress: { label: 'Đang thực hiện', short: 'Đang thực hiện' },
-  upcoming: { label: 'Chưa đến hạn', short: 'Chưa đến hạn' },
-  none: { label: 'Chưa có KPI', short: 'Chưa có KPI' },
+  done: { label: 'Đạt', short: 'Đạt', icon: '✔' },
+  late: { label: 'Không đạt', short: 'Không đạt', icon: '✖' },
+  in_progress: { label: 'Đang làm (hôm nay)', short: 'Đang làm', icon: '●' },
+  upcoming: { label: 'Chưa đến hạn', short: 'Chưa đến hạn', icon: '○' },
+  none: { label: 'Không có task', short: 'Không có task', icon: '' },
 };
-export const STATUS_KEYS = ['done', 'done_late', 'late', 'in_progress', 'upcoming'];
+export const STATUS_KEYS = ['done', 'late', 'in_progress', 'upcoming'];
+// Thứ tự ưu tiên khi xếp danh sách chi tiết: việc cần xử lý lên trước
+export const STATUS_ORDER = ['late', 'in_progress', 'upcoming', 'done', 'none'];
 
-// Kết luận hiển thị ở chế độ chi tiết
-export const VERDICT = {
-  fail: { label: 'Không đạt', icon: '✖' },
-  doing: { label: 'Đang làm', icon: '◔' },
-  upcoming: { label: 'Chưa đến hạn', icon: '○' },
-  pass_late: { label: 'Đạt (trễ)', icon: '✔' },
-  pass: { label: 'Đạt', icon: '✔' },
-  none: { label: 'Chưa có KPI', icon: '–' },
-};
-export const VERDICT_ORDER = ['fail', 'doing', 'upcoming', 'pass_late', 'pass', 'none'];
-const VERDICT_BY_STATUS = { done: 'pass', done_late: 'pass_late', late: 'fail', in_progress: 'doing', upcoming: 'upcoming', none: 'none' };
+const hasTask = (d) => Boolean(d && (d.task || d.done === true));
 
-/**
- * Kết luận Đạt / Không đạt.
- *  - Xem 1 ngày: theo trạng thái của ngày đó.
- *  - Xem cả kỳ: lũy kế Kết quả >= tổng KPI -> Đạt; còn ngày trễ hạn -> Không đạt; còn lại -> Đang làm / Chưa đến hạn.
- */
-export function verdictOf(row, weekMode) {
-  if (!weekMode) return VERDICT_BY_STATUS[row.status] || 'none';
-  if (row.pct === null) return 'none';
-  if (row.result >= row.kpi) return row.dayStatuses.includes('done_late') ? 'pass_late' : 'pass';
-  if (row.status === 'late') return 'fail';
-  if (row.dayStatuses.every((x) => x === 'upcoming' || x === 'none')) return 'upcoming';
-  return 'doing';
-}
-
-const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-
-/** Trạng thái của ngày thứ idx trong mảng days [{date, kpi, result}] */
-export function dayStatus(days, idx, today) {
-  const d = days[idx];
-  if (!d || !(num(d.kpi) > 0)) return 'none';
-  if (num(d.result) >= num(d.kpi)) return 'done';
-
-  let cumKpi = 0;
-  for (let i = 0; i <= idx; i++) cumKpi += num(days[i].kpi);
-  let cumRes = 0;
-  for (let i = 0; i <= idx; i++) cumRes += num(days[i].result);
-  for (let j = idx + 1; j < days.length; j++) {
-    cumRes += num(days[j].result);
-    if (cumRes >= cumKpi && days[j].result !== null && days[j].result !== undefined) return 'done_late';
-  }
-  if (d.date < today) return 'late';
-  if (d.date === today) return 'in_progress';
+/** Trạng thái 1 task (1 ngày của 1 dòng KPI) */
+export function dayStatus(day, today) {
+  if (!hasTask(day)) return 'none';
+  if (day.done === true) return 'done';
+  if (day.date < today) return 'late';
+  if (day.date === today) return 'in_progress';
   return 'upcoming';
 }
 
-/** Trạng thái tổng của 1 PIC trong cả kỳ (ưu tiên: trễ hạn > đang thực hiện > chưa đến hạn > HT trễ hạn > hoàn thành) */
+/** Trạng thái tổng của 1 dòng KPI trong cả kỳ: còn task Không đạt -> Không đạt; còn việc hôm nay -> Đang làm; ... */
 export function aggregateStatus(statuses) {
   const s = statuses.filter((x) => x !== 'none');
   if (!s.length) return 'none';
-  for (const k of ['late', 'in_progress', 'upcoming', 'done_late']) if (s.includes(k)) return k;
+  for (const k of ['late', 'in_progress', 'upcoming']) if (s.includes(k)) return k;
   return 'done';
 }
 
+/** Task "đến hạn" = ngày đã qua, hoặc đã tick. Việc hôm nay chưa tick chưa bị tính là trượt. */
+const isDue = (s) => s === 'done' || s === 'late';
 const emptyCounts = () => Object.fromEntries([...STATUS_KEYS, 'none'].map((k) => [k, 0]));
 
 /**
  * Tính dữ liệu hiển thị theo bộ lọc.
  * @param {object} data  kết quả /api/dashboard
- * @param {{date:string, status:string, pic:string}} filter  date='all' hoặc 'YYYY-MM-DD'; status='all' hoặc key; pic='all' hoặc tên
+ * @param {{date:string, status:string, pic:string, flow?:string, group?:string}} filter
+ *        date = 'all' | 'YYYY-MM-DD'; status = 'all' | key; các trường khác = 'all' | giá trị
  * @param {string} today 'YYYY-MM-DD'
+ * Mỗi dòng trả về (row) là 1 dòng KPI; row.tasks là các task (ngày) nằm trong phạm vi lọc.
  */
 export function buildView(data, filter, today) {
   const srcFlows = (data?.flows || []).filter((f) => !filter.flow || filter.flow === 'all' || f.key === filter.flow);
@@ -90,48 +60,39 @@ export function buildView(data, filter, today) {
     for (const item of flow.items) {
       if (filter.pic && filter.pic !== 'all' && item.pic !== filter.pic) continue;
       if (filter.group && filter.group !== 'all' && item.group !== filter.group) continue;
-      const dayStatuses = item.days.map((_, i) => dayStatus(item.days, i, today));
 
-      let status;
-      let kpi = 0;
-      let result = 0;
-      let hasKpi = false;
-      let scopeStatuses;
-      if (filter.date === 'all') {
-        scopeStatuses = dayStatuses;
-        status = aggregateStatus(dayStatuses);
-        item.days.forEach((d) => {
-          kpi += num(d.kpi);
-          result += num(d.result);
-          if (num(d.kpi) > 0) hasKpi = true;
-        });
-      } else {
-        const idx = item.days.findIndex((d) => d.date === filter.date);
-        if (idx < 0) continue;
-        status = dayStatuses[idx];
-        scopeStatuses = [status];
-        kpi = num(item.days[idx].kpi);
-        result = num(item.days[idx].result);
-        hasKpi = kpi > 0;
-      }
+      const dayStatuses = item.days.map((d) => dayStatus(d, today));
+      let idxs = item.days.map((_, i) => i);
+      if (filter.date !== 'all') idxs = idxs.filter((i) => item.days[i].date === filter.date);
+      if (!idxs.length) continue;
 
-      if (filter.status !== 'all' && status !== filter.status) continue;
+      const scope = idxs.map((i) => dayStatuses[i]);
+      const status = filter.date === 'all' ? aggregateStatus(scope) : scope[0];
+      const rowDue = scope.filter(isDue).length;
+      const rowDone = scope.filter((s) => s === 'done').length;
+      const rowTasks = scope.filter((s) => s !== 'none').length;
 
-      scopeStatuses.forEach((s, i) => {
-        counts[s] += 1;
-        if (s === 'none') return;
-        // Task "đến hạn" = ngày đã qua, hoặc đã hoàn thành. Task hôm nay chưa xong chưa bị tính là trượt.
-        const date = filter.date === 'all' ? item.days[i].date : filter.date;
-        const finished = s === 'done' || s === 'done_late';
-        if (date < today || finished) {
-          due += 1;
-          if (finished) completed += 1;
-        }
+      // Số đếm / tỷ lệ không phụ thuộc bộ lọc trạng thái (để các ô số đếm luôn đủ)
+      scope.forEach((s) => (counts[s] += 1));
+      due += rowDue;
+      completed += rowDone;
+
+      // Lọc theo trạng thái: giữ dòng nếu có ít nhất 1 task mang trạng thái đó
+      if (filter.status !== 'all' && !scope.includes(filter.status)) continue;
+
+      const tasks = idxs
+        .map((i) => ({ ...item.days[i], status: dayStatuses[i] }))
+        .filter((t) => t.status !== 'none' && (filter.status === 'all' || t.status === filter.status));
+      rows.push({
+        item,
+        status,
+        dayStatuses,
+        tasks,
+        total: rowTasks,
+        done: rowDone,
+        due: rowDue,
+        pct: rowDue ? rowDone / rowDue : null,
       });
-
-      const row = { item, status, dayStatuses, kpi, result, pct: hasKpi ? result / kpi : null };
-      row.verdict = verdictOf(row, filter.date === 'all');
-      rows.push(row);
     }
 
     const tasks = STATUS_KEYS.reduce((a, k) => a + counts[k], 0);
@@ -152,12 +113,23 @@ export function buildView(data, filter, today) {
   return { flows, totals, tasks, due, completed, rate: due ? completed / due : null, blockers };
 }
 
-/** Danh sách ngày (hợp của các sheet), sắp xếp tăng dần */
+/** Danh sách phẳng từng task (dòng KPI × ngày) cho màn chi tiết, việc cần xử lý lên trước */
+export function flattenTasks(view) {
+  const out = [];
+  for (const f of view.flows) for (const r of f.rows) for (const t of r.tasks) out.push({ flow: f, row: r, item: r.item, task: t });
+  const rank = Object.fromEntries(STATUS_ORDER.map((k, i) => [k, i]));
+  return out.sort(
+    (a, b) =>
+      rank[a.task.status] - rank[b.task.status] ||
+      a.task.date.localeCompare(b.task.date) ||
+      a.item.row - b.item.row
+  );
+}
+
 export function allDays(data) {
   return [...new Set((data?.flows || []).flatMap((f) => f.days))].sort();
 }
 
-/** Danh sách PIC */
 export function allPics(data) {
   return [...new Set((data?.flows || []).flatMap((f) => f.items.map((i) => i.pic)).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, 'vi')

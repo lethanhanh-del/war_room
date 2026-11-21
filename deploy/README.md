@@ -43,41 +43,37 @@ Mỗi sheet dòng tiền (mặc định 5 sheet: `DÒNG TIỀN BÁN 4 DỰ ÁN`,
 
 **Quy ước nhập liệu (đã chốt "cách 1", đúng như hướng dẫn ở dòng 2 của sheet):**
 
-| Loại dòng | Cột Stt | Cột Nhóm | Cột PIC | Cột ngày |
-|---|---|---|---|---|
-| **Nhóm nhỏ** (dòng nền vàng) | có số (1, 2, 3…) | tên nhóm, ví dụ `Networking` | trưởng nhóm | để trống |
-| **KPI / task** (chèn ngay dưới nhóm) | **bỏ trống** | tên KPI, ví dụ `Số KH tiếp cận mới` | người làm (**bỏ trống = trưởng nhóm**) | KPI và Kết quả từng ngày |
+| Loại dòng | Cột Stt | Cột Nhóm | Cột PIC | Ô "KPI" mỗi ngày | Ô "Kết quả" mỗi ngày |
+|---|---|---|---|---|---|
+| **Nhóm nhỏ** (dòng nền vàng) | có số (1, 2, 3…) | tên nhóm, ví dụ `Networking` | trưởng nhóm | để trống | để trống |
+| **Dòng KPI** (chèn ngay dưới nhóm) | **bỏ trống** | tên KPI, ví dụ `Khách hàng mới` | người làm (**bỏ trống = trưởng nhóm**) | **nội dung task phải làm trong ngày** (chữ) | **checkbox**: tick khi làm xong |
 
 Ví dụ:
 
-| Stt | Nhóm | PIC | 21/11 KPI | 21/11 Kết quả | … | Ghi chú / Vướng mắc |
-|---|---|---|---|---|---|---|
-| 1 | Networking | Nguyễn Văn A | | | | |
-|  | Số KH tiếp cận mới | | 10 | 12 | | |
-|  | Lịch hẹn gặp KH | Trần Thị B | 5 | 3 | | Chờ phản hồi đối tác |
-| 2 | Data | Lê Văn C | | | | |
+| Stt | Nhóm | PIC | 21/11 KPI | 21/11 Kết quả | 22/11 KPI | 22/11 Kết quả | … | Ghi chú / Vướng mắc |
+|---|---|---|---|---|---|---|---|---|
+| 1 | Networking | Nguyễn Văn A | | | | | | |
+|  | Khách hàng mới | | Gọi lại 20 KH cũ | ☑ | Gặp đối tác ngân hàng | ☐ | | |
+|  | Lịch hẹn | Trần Thị B | Hẹn 3 KH xem nhà mẫu | ☑ | | | | Chờ phản hồi đối tác |
+| 2 | Data | Lê Văn C | | | | | | |
 
-- Nhóm chưa có dòng KPI nào vẫn hiện trên màn hình là "Chưa có KPI", để biết ai chưa được giao.
-- Dữ liệu cũ (nhập số ngay trên dòng nhóm) vẫn đọc được: dòng nhóm đó được coi là 1 task.
+- Ô "Kết quả" nên dùng **Chèn → Hộp kiểm (Insert → Checkbox)**. Ứng dụng cũng hiểu `TRUE/FALSE`, `1/0`, `x`, `✓`.
+- Ngày nào ô KPI trống và chưa tick thì **không tính là task**.
+- Nhóm chưa có dòng KPI nào vẫn hiện trên màn hình là "Chưa có dòng KPI", để biết ai chưa được giao.
 - Ứng dụng **tự dò vị trí cột theo tiêu đề**, nên thêm/bớt ngày hoặc đổi sang tuần mới vẫn chạy, miễn giữ đúng tên tiêu đề `Stt`, `Nhóm`, `PIC`, `KPI`, `Kết quả`.
-- Ô số có thể nhập `1500000`, `1.500.000` hoặc `1,500,000`.
 
-### Quy tắc trạng thái (task = KPI của 1 PIC trong 1 ngày)
+### Quy tắc trạng thái (task = nội dung ô KPI của 1 dòng trong 1 ngày)
 
 | Trạng thái | Điều kiện |
 |---|---|
-| Hoàn thành | Kết quả ngày đó ≥ KPI ngày đó |
-| Hoàn thành trễ hạn | Trong ngày chưa đạt, nhưng một ngày sau đó lũy kế Kết quả ≥ lũy kế KPI tính đến ngày đó |
-| Trễ hạn | Ngày đã qua, lũy kế vẫn chưa bù đủ |
-| Đang thực hiện | Là hôm nay, chưa đạt |
-| Chưa đến hạn | Ngày trong tương lai |
-| (không tính) | Ô KPI trống hoặc 0 |
+| ✔ **Đạt** | Ô Kết quả đã tick |
+| ✖ **Không đạt** | Ngày đã qua mà chưa tick |
+| ● **Đang làm** | Là hôm nay, chưa tick |
+| ○ **Chưa đến hạn** | Ngày trong tương lai, chưa tick |
+| (không tính) | Ô KPI trống và chưa tick |
 
-Kết luận ở màn chi tiết:
-- **Xem 1 ngày:** Đạt / Đạt (trễ) / Không đạt / Đang làm / Chưa đến hạn, suy ra từ trạng thái ở bảng trên.
-- **Xem cả kỳ:** lũy kế Kết quả ≥ tổng KPI kỳ thì **Đạt**; còn ngày trễ hạn thì **Không đạt**; còn lại là **Đang làm**.
-
-Tỷ lệ hoàn thành = (Hoàn thành + Hoàn thành trễ hạn) / số task đến hạn. Task "đến hạn" là task của ngày đã qua, hoặc đã hoàn thành.
+- **Tỷ lệ đạt** = số task Đạt / số task đến hạn. Task đến hạn là task của ngày đã qua, hoặc đã tick. Việc hôm nay chưa tick chưa bị tính là trượt.
+- Google Sheet không lưu **thời điểm** tick, nên ứng dụng không phân biệt tick đúng ngày hay tick muộn: đã tick là Đạt (đã thống nhất).
 
 ---
 
@@ -120,7 +116,7 @@ Script deploy chạy `npm ci` → `npm test` → `npm run build` → `vercel --p
 1. Mở `https://<ten-project>.vercel.app/?key=<APP_ACCESS_KEY>` **một lần**. Key được lưu trong trình duyệt và tự xoá khỏi thanh địa chỉ.
 2. Bật toàn màn hình: **F11** (hoặc chạy Chrome kiosk: `chrome --kiosk https://<ten-project>.vercel.app`).
 3. Giao diện tự co giãn vừa đúng 1 màn hình (tối ưu tỷ lệ 2:1, chạy tốt cả 16:9). Dữ liệu tự làm mới mỗi 60 giây. Ô nào nhiều dòng hơn chiều cao sẽ tự cuộn chậm.
-4. Bấm vào trạng thái (chip hoặc ô số đếm), tên dòng tiền hoặc nút "Danh sách chi tiết" để mở **chế độ chi tiết**: danh sách từng KPI gồm ai làm, chỉ tiêu, kết quả, Đạt / Không đạt, lọc tiếp theo Dòng tiền → Nhóm → Người làm. Màn hình tự về tổng quan sau 2 phút không thao tác (`?idle=<giây>`, `0` = tắt) hoặc khi bấm Esc.
+4. Bấm vào trạng thái (chip hoặc ô số đếm), tên dòng tiền hoặc nút "Danh sách chi tiết" để mở **chế độ chi tiết**: danh sách từng task gồm ngày, ai làm, KPI, task phải làm, Đạt / Không đạt, lọc tiếp theo Dòng tiền → Nhóm → Người làm. Màn hình tự về tổng quan sau 2 phút không thao tác (`?idle=<giây>`, `0` = tắt) hoặc khi bấm Esc.
 5. Từ **6 dòng tiền trở lên**, màn hình tự chuyển sang bố cục B: tổng quan thành cột bên trái, các dòng tiền xếp 2 hàng bên phải.
 6. Có thể đặt sẵn bộ lọc bằng URL, ví dụ:
    - `?status=late`: chỉ hiện Trễ hạn

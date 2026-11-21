@@ -6,8 +6,8 @@ Tài liệu này mô tả **phong cách giao diện** của dashboard War Room. 
 |---|---|
 | `FE/src/styles/tokens.css` | **Token gốc**: màu, font, khoảng cách, bo góc, thang co giãn. Copy nguyên file. |
 | `FE/src/styles.css` | Style các component: panel, chip, tile, bảng, ô ngày, % đạt, nhãn kết luận… |
-| `FE/src/components/bits.jsx` | Component React nhỏ dùng lại: `DayCell`, `Pct`, `Verdict` |
-| `FE/src/lib/status.js` | Nhãn trạng thái / kết luận (`STATUS`, `VERDICT`) — dùng đúng các key này để màu khớp |
+| `FE/src/components/bits.jsx` | Component React nhỏ dùng lại: `DayCell`, `Pct`, `StatusTag` |
+| `FE/src/lib/status.js` | Nhãn + biểu tượng trạng thái (`STATUS`) — dùng đúng các key này để màu khớp |
 
 Ảnh tham chiếu (dữ liệu giả): `docs/images/`
 
@@ -16,7 +16,7 @@ Tài liệu này mô tả **phong cách giao diện** của dashboard War Room. 
 | `01-bo-cuc-3x2.png` | 5 dòng tiền, lưới 3×2 |
 | `02-bo-cuc-B-8-dong-tien.png` | 8 dòng tiền, tổng quan cột trái |
 | `03-loc-1-ngay.png` | Lọc 1 ngày, ô dạng gọn |
-| `04-chi-tiet-tre-han.png` | Chế độ chi tiết, lọc Trễ hạn |
+| `04-chi-tiet-khong-dat.png` | Chế độ chi tiết từng task, lọc Không đạt |
 | `05-chi-tiet-dong-tien-nhom.png` | Chi tiết 1 dòng tiền + 1 nhóm |
 
 ---
@@ -27,7 +27,7 @@ Tài liệu này mô tả **phong cách giao diện** của dashboard War Room. 
 2. **Đọc được từ xa (màn 4m × 2m).** Nền gần đen, chữ sáng, độ tương phản cao. Số dùng font mono cho thẳng cột. Nhãn phụ viết HOA nhỏ, giãn chữ.
 3. **Màu = trạng thái.** 5 màu trạng thái có nghĩa cố định, không dùng để trang trí. Màu nhấn duy nhất là **xanh lime** cho "đang chọn / hôm nay / số thứ tự ô".
 4. **Ít khung, nhiều lớp nền.** Phân tầng bằng 3 lớp nền (`--bg` → `--panel` → `--panel-2`) và viền mảnh 1px. Không đổ bóng, không gradient trong component.
-5. **Thông tin quan trọng nhất to nhất:** % hoàn thành, số trễ hạn, ô màu theo ngày.
+5. **Thông tin quan trọng nhất to nhất:** % task đạt, số task không đạt, ô ✔ ✖ theo ngày.
 
 ---
 
@@ -77,34 +77,36 @@ html { font-size: min(0.84vw, 1.6vh); }   /* tokens.css */
 
 **Quy tắc:** lime chỉ dùng cho *trạng thái giao diện* (đang chọn, hôm nay, điều hướng), **không** dùng cho dữ liệu tốt hay xấu.
 
-### 3.3 Trạng thái (ngữ nghĩa cố định)
+### 3.3 Trạng thái task (ngữ nghĩa cố định)
 
-| Key | Nhãn | Nhãn ngắn | Token | Hex | Kết luận tương ứng |
+Một **task** là nội dung ô KPI của 1 dòng trong 1 ngày, ô Kết quả là checkbox.
+
+| Key | Nhãn | Biểu tượng | Token | Hex | Khi nào |
 |---|---|---|---|---|---|
-| `done` | Hoàn thành | Hoàn thành | `--done` | `#2EE6A6` | `pass` · Đạt |
-| `done_late` | Hoàn thành trễ hạn | HT trễ hạn | `--done_late` | `#FFB020` | `pass_late` · Đạt (trễ) |
-| `late` | Trễ hạn | Trễ hạn | `--late` | `#FF4D6D` | `fail` · Không đạt |
-| `in_progress` | Đang thực hiện | Đang thực hiện | `--in_progress` | `#3DA9FC` | `doing` · Đang làm |
-| `upcoming` | Chưa đến hạn | Chưa đến hạn | `--upcoming` | `#8A94A8` | `upcoming` · Chưa đến hạn |
-| `none` | Chưa có KPI | — | `--none` | `#2A3442` | `none` · Chưa có KPI |
-| — | Vướng mắc (ghi chú) | — | `--blocker` | `#FF8A3D` | — |
+| `done` | Đạt | ✔ | `--done` | `#2EE6A6` | Đã tick |
+| `late` | Không đạt | ✖ | `--late` | `#FF4D6D` | Ngày đã qua, chưa tick |
+| `in_progress` | Đang làm (hôm nay) | ● | `--in_progress` | `#3DA9FC` | Hôm nay, chưa tick |
+| `upcoming` | Chưa đến hạn | ○ | `--upcoming` | `#8A94A8` | Ngày tương lai |
+| `none` | Không có task | — | `--none` | `#2A3442` | Ô KPI trống, chưa tick |
+| — | Cảnh báo mức giữa | — | `--warn` | `#FFB020` | Chỉ dùng cho % đạt 70–99% |
+| — | Vướng mắc (ghi chú) | ⚠ | `--blocker` | `#FF8A3D` | Cột "Ghi chú / Vướng mắc" có nội dung |
 
-**Cách gán màu:** thêm class `st-<key>` (hoặc `vd-<verdict>`) lên phần tử. Class này đặt biến `--c`, và mọi component đọc `var(--c)`:
+**Cách gán màu:** thêm class `st-<key>` lên phần tử. Class này đặt biến `--c`, và mọi component đọc `var(--c)`:
 
 ```html
-<span class="badge st-late">Trễ hạn</span>
+<span class="badge st-late">Không đạt</span>
 <span class="dot st-done"></span>
 <button class="tile st-in_progress">…</button>
-<span class="verdict vd-fail"><i>✖</i>Không đạt</span>
+<span class="tag st-late"><i>✖</i>Không đạt</span>
 ```
 
 **Độ đậm nhạt dùng `color-mix` từ `--c`:**
 
 | Mức trộn | Dùng cho |
 |---|---|
-| 24% | Nền ô ngày |
+| 22% | Nền ô ngày (đầy đủ) |
 | 70% | Viền ô ngày |
-| 16–25% | Nền badge, nhãn kết luận |
+| 16% / 60% | Nền / viền nhãn kết quả (`.tag`) |
 | 6% | Nền dòng "Không đạt" trong bảng chi tiết |
 
 **Ngưỡng màu % đạt:**
@@ -112,7 +114,7 @@ html { font-size: min(0.84vw, 1.6vh); }   /* tokens.css */
 | % đạt | Màu chữ | Màu thanh |
 |---|---|---|
 | ≥ 100% | `#86EFAC` | `--done` |
-| ≥ 70% | `#FDE047` | `--done_late` |
+| ≥ 70% | `#FDE047` | `--warn` |
 | < 70% | `#FCA5A5` | `--late` |
 
 ---
@@ -122,7 +124,7 @@ html { font-size: min(0.84vw, 1.6vh); }   /* tokens.css */
 | Font | Dùng cho | Nguồn |
 |---|---|---|
 | **Be Vietnam Pro** (`--font`) | Toàn bộ chữ | `@fontsource/be-vietnam-pro` (400–800, đóng gói sẵn, hỗ trợ tiếng Việt đầy đủ) |
-| **JetBrains Mono** (`--mono`) | **Mọi con số**: đồng hồ, %, số đếm, KPI/Kết quả | `@fontsource/jetbrains-mono` (400, 700) |
+| **JetBrains Mono** (`--mono`) | **Mọi con số**: đồng hồ, %, số đếm, Đạt x/y, ngày trong danh sách | `@fontsource/jetbrains-mono` (400, 700) |
 
 Thang chữ (rem):
 
@@ -139,7 +141,7 @@ Thang chữ (rem):
 | Tên người / chữ phụ | 0.78 | 400 | text | `--muted` |
 | Chip, select | 0.8 | 500 (on: 700) | text | — |
 | Nhãn bộ lọc, header bảng, tên nhóm | 0.72 | 600–700 | text | HOA, giãn 0.03–0.05em |
-| Số trong ô ngày | 0.86 / phụ 0.66 | 700 / 400 | mono | — |
+| Biểu tượng trong ô ngày ✔ ✖ ● ○ | 0.95 (gọn: 0.62) | 800 | text | màu trạng thái (gọn: chữ tối trên nền đặc) |
 
 **Quy tắc:**
 - Mọi số liệu dùng `--mono`. Danh sách selector đang áp dụng nằm ở cuối `styles.css`.
@@ -181,7 +183,7 @@ Mỗi mục ghi: **class**, cấu tạo, quy tắc.
 `header.fl-head` gồm 3 phần:
 
 1. `em.num`: ô vuông 2.2rem nền lime, số thứ tự ô (2, 3, …) đậm 800.
-2. `.fl-title`: tiêu đề HOA, bên dưới là dãy `.cnt` (chấm màu + nhãn + số). Số 0 thì mờ 55%. Số trễ hạn > 0 thì chữ đỏ.
+2. `.fl-title`: tiêu đề HOA, bên dưới là dãy `.cnt` (chấm màu + nhãn + số). Số 0 thì mờ 55%. Số Không đạt > 0 thì chữ đỏ.
 3. `.fl-rate`: % lớn màu `--done` và dòng "x/y task".
 
 Header bấm được (`.clickable`): hover thì tiêu đề chuyển lime.
@@ -227,39 +229,35 @@ Header bấm được (`.clickable`): hover thì tiêu đề chuyển lime.
 - **Cột số** `.c-num`: canh phải, mono, phần "/ KPI" màu `--muted`.
 
 ### 6.8 Ô ngày (`DayCell`)
-- **Đầy đủ:** pill bo `--r-cell`, nền màu trạng thái 24%, viền 70%. Dòng trên là kết quả (mono 0.86rem, chưa nhập thì "–"), dòng dưới là "/KPI" (0.66rem).
-- **Gọn** (`mini`): ô vuông 1.05rem **tô đặc** màu trạng thái, không có số.
-- **Không có KPI:** viền nét đứt `--line`, không nền.
-- **Hôm nay:** viền ngoài 1px lime (gọn: vòng lime cách 2px).
+Mỗi ô là 1 task, chỉ hiện **biểu tượng**. Nội dung task xem bằng tooltip (`title`), ở chế độ lọc 1 ngày, hoặc ở màn chi tiết.
+
+| Dạng | Cách hiển thị |
+|---|---|
+| Đầy đủ | Ô cao 1.75rem, bo `--r-cell`, nền màu trạng thái 22%, viền 70%, biểu tượng ✔ ✖ ● ○ màu trạng thái. "Chưa đến hạn" không có nền |
+| Gọn (`mini`) | Ô vuông 1.15rem **tô đặc**, biểu tượng tối 0.62rem. "Chưa đến hạn" là ô viền |
+| Không có task | Viền nét đứt, không nền, không biểu tượng |
+| Hôm nay | Viền ngoài 1px lime (gọn: vòng lime cách 2px) |
 
 ### 6.9 % đạt (`Pct`)
-Số mono canh phải, bên dưới là track 0.25rem (`--line-strong`) có thanh màu theo ngưỡng ở mục 3.3. Không có KPI thì hiện "–" màu `--muted`.
+% = task Đạt / task đến hạn của dòng. Số mono canh phải, bên dưới là track 0.25rem (`--line-strong`) có thanh màu theo ngưỡng ở mục 3.3. Chưa có task đến hạn thì hiện "–" màu `--muted`.
 
-### 6.10 Badge trạng thái & nhãn kết luận
-- `.badge.st-<key>`: pill, nền 25%, viền 1px màu trạng thái, chữ `--text` 0.76rem đậm.
-- `.verdict.vd-<k>` (`Verdict`): pill gồm icon và nhãn, **chữ màu trạng thái**, nền 16%, viền 60%.
+### 6.10 Nhãn kết quả (`StatusTag`)
+`.tag.st-<key>`: pill gồm biểu tượng và nhãn, **chữ màu trạng thái**, nền 16%, viền 60%, cỡ 0.8rem đậm 700. "Chưa đến hạn" không có nền. Dùng ở cột Kết quả (lọc 1 ngày) và màn chi tiết.
 
-  | Kết luận | Icon |
-  |---|---|
-  | Đạt | ✔ |
-  | Không đạt | ✖ |
-  | Đang làm | ◔ |
-  | Chưa đến hạn | ○ |
-  | Chưa có KPI | – (viền nét đứt) |
-
-### 6.11 Màn chi tiết
+### 6.11 Màn chi tiết (từng task)
 - **Header:**
-  - Tiêu đề có nhãn `.dt-kicker` "CHI TIẾT" (nền lime) phía trên.
+  - Nhãn `.dt-kicker` "CHI TIẾT TASK" (nền lime) phía trên tiêu đề.
   - Tiêu đề HOA, phần phạm vi lọc (`.dt-scope`) chữ thường màu `--muted`.
-  - 4 ô tóm tắt `.vsum.vd-*`: viền trái màu, số mono.
+  - 4 nút tóm tắt `.vsum.st-*` (Không đạt, Đang làm, Chưa đến hạn, Đạt): viền trái màu, số mono, bấm để lọc.
   - Nút `.btn-close` "✕ Về tổng quan".
 - **Bộ lọc lồng nhau:** Dòng tiền → Nhóm (chỉ hiện khi có) → Người làm, kèm dòng gợi ý nhỏ.
-- **Bảng `.dgrid`:** dòng "Không đạt" có nền đỏ 6%. Sắp xếp: Không đạt → Đang làm → Chưa đến hạn → Đạt (trễ) → Đạt → Chưa có KPI, trong cùng nhóm thì % thấp lên trước.
+- **Bảng `.dgrid`:** mỗi dòng là 1 task, gồm các cột Ngày (mono, hôm nay màu lime) · Dòng tiền · Nhóm · Người làm (kèm "TN: trưởng nhóm") · KPI (`--muted`) · **Task phải làm** (đậm, cột rộng nhất) · Kết quả (`StatusTag`) · Vướng mắc.
+- Dòng Không đạt có nền đỏ 6%. Sắp xếp: Không đạt → Đang làm → Chưa đến hạn → Đạt, cùng nhóm thì ngày cũ hơn lên trước.
 
 ### 6.12 "Cần xử lý ngay"
-`.hot` chỉ có ở tổng quan dạng cột cao.
+`.hot` chỉ có ở tổng quan dạng cột cao, liệt kê các task Không đạt (cũ nhất lên trước) và tự cuộn.
 - Tiêu đề HOA màu `--late`, kèm "Xem tất cả ›".
-- Mỗi `.hot-item`: nền trộn đỏ 8%, viền trái đỏ, gồm tên KPI, "người · dòng tiền" và % (mono, đỏ nhạt).
+- Mỗi `.hot-item`: nền trộn đỏ 8%, viền trái đỏ, gồm nội dung task, dòng "người · KPI · dòng tiền" và ngày (mono, đỏ nhạt).
 
 ### 6.13 Trạng thái rỗng / lỗi
 `.fl-empty`: chữ `--muted`, căn giữa.
@@ -279,7 +277,7 @@ Số mono canh phải, bên dưới là track 0.25rem (`--line-strong`) có than
 **Quy tắc khi làm bố cục khác:**
 - Ô hẹp hơn khoảng **24rem** (≈ 370px ở 1920) thì chuyển sang dạng gọn: ô ngày chỉ còn ô màu, bỏ cột lũy kế, header chỉ còn chấm màu và số.
 - Ô tổng quan dạng cột cao (`.tall`): header xếp dọc, vòng tròn ở giữa, tile 3 cột, có thêm "Cần xử lý ngay", thanh phân bố dòng tiền đặt dưới cùng (`margin-top: auto`).
-- Thứ tự đọc của ô tổng quan, giữ cố định: Thương hiệu + đồng hồ → Bộ lọc → % hoàn thành → Số đếm → (Cần xử lý ngay) → Tiến độ từng dòng tiền → Chân trang (cập nhật lúc, nút).
+- Thứ tự đọc của ô tổng quan, giữ cố định: Thương hiệu + đồng hồ → Bộ lọc → % task đạt → Số đếm → (Cần xử lý ngay) → Tiến độ từng dòng tiền → Chân trang (cập nhật lúc, nút).
 
 ---
 
@@ -303,7 +301,7 @@ Không dùng animation trang trí. Chuyển động duy nhất là tự cuộn v
 
 | Nên | Không nên |
 |---|---|
-| Lấy màu từ token, gán trạng thái bằng `st-*` / `vd-*` | Dùng màu trạng thái cho trang trí, hoặc lime cho dữ liệu tốt/xấu |
+| Lấy màu từ token, gán trạng thái bằng `st-*` | Dùng màu trạng thái cho trang trí, hoặc lime cho dữ liệu tốt/xấu |
 | Dùng `rem` cho mọi kích thước | Dùng `px` cố định (trừ viền 1px) |
 | Số liệu dùng `--mono` | Trộn font khác, dùng font hệ thống mặc định |
 | Cắt chữ 1 dòng + `title` | Để chữ xuống dòng làm vỡ chiều cao hàng |
@@ -318,6 +316,6 @@ Không dùng animation trang trí. Chuyển động duy nhất là tự cuộn v
 1. Copy `FE/src/styles/tokens.css`, phần component trong `FE/src/styles.css`, `FE/src/components/bits.jsx`, `STATUS` / `VERDICT` trong `FE/src/lib/status.js`, và cài 2 font `@fontsource`.
 2. Dựng khung bằng `.wall` + CSS grid của riêng bạn. Giữ `height: 100vh; overflow: hidden`.
 3. Mỗi ô là `.panel`. Vùng nội dung dài bọc trong `div` có `flex: 1; min-height: 0; overflow-y: auto` và gắn `useAutoScroll`.
-4. Gán trạng thái bằng class `st-<key>` / `vd-<verdict>`. Không tự đặt màu.
+4. Gán trạng thái bằng class `st-<key>`. Không tự đặt màu.
 5. Test ở 1920×960, 1920×1080, 1366×768. Không ô nào được tràn (`scrollHeight - clientHeight = 0`).
 6. Đối chiếu với các ảnh trong `docs/images/`.

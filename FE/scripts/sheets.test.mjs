@@ -42,7 +42,7 @@ test('đọc 5 sheet dòng tiền, khớp tên không phân biệt hoa thường
       assert.ok(!ranges.some((r) => r.startsWith("'KPI")));
       return {
         data: {
-          valueRanges: ranges.map((r, i) => ({ range: r, values: [...HEAD, [1, 'Nhóm', `P${i}`, 10, 10]] })),
+          valueRanges: ranges.map((r, i) => ({ range: r, values: [...HEAD, [1, 'Nhóm', `P${i}`], ['', 'KPI A', '', 'Gọi 10 KH', true]] })),
         },
       };
     },
@@ -58,7 +58,8 @@ test('đọc 5 sheet dòng tiền, khớp tên không phân biệt hoa thường
   for (const f of d.flows) {
     assert.ok(!f.error);
     assert.equal(f.items.length, 1);
-    assert.equal(f.items[0].days[0].kpi, 10);
+    assert.deepEqual(f.items[0].days[0], { date: '2026-11-21', task: 'Gọi 10 KH', done: true });
+    assert.equal(f.items[0].pic, `P${d.flows.indexOf(f)}`);
   }
 
   // Lần gọi thứ 2 trong thời gian cache -> không gọi API nữa

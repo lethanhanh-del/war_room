@@ -41,23 +41,27 @@ function parseHeaderDate(v, fallbackYear) {
   return null;
 }
 
-/** Chuyển ô thành số: nhận number, "1.234.567", "1,5", "12%"... Trả null nếu trống/không phải số. */
-export function toNumber(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v !== 'string') return null;
-  let s = v.trim().replace(/\s/g, '');
-  if (!s) return null;
-  const pct = s.endsWith('%');
-  if (pct) s = s.slice(0, -1);
-  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.');
-  else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
-  else s = s.replace(',', '.');
-  const n = Number(s);
-  if (!Number.isFinite(n)) return null;
-  return pct ? n / 100 : n;
+const str = (v) => (v === null || v === undefined ? '' : String(v).trim());
+
+/** Nội dung task trong ô KPI của 1 ngày (chữ). Trả null nếu trống. */
+export function toTask(v) {
+  if (v === null || v === undefined || v === false) return null;
+  const t = String(v).trim();
+  return t ? t : null;
 }
 
-const str = (v) => (v === null || v === undefined ? '' : String(v).trim());
+const TRUE_WORDS = new Set(['true', '1', 'x', 'v', '✓', '✔', 'ok', 'yes', 'co', 'dat', 'xong', 'done']);
+const FALSE_WORDS = new Set(['false', '0', 'khong', 'chua', 'no']);
+/** Ô Kết quả (checkbox): true = đã tick, false = chưa tick / bỏ tick, null = trống */
+export function toBool(v) {
+  if (v === true || v === false) return v;
+  if (typeof v === 'number') return v !== 0;
+  const t = normalize(v);
+  if (!t) return null;
+  if (TRUE_WORDS.has(t)) return true;
+  if (FALSE_WORDS.has(t)) return false;
+  return null;
+}
 
 export class SheetFormatError extends Error {
   constructor(message) {
@@ -127,7 +131,7 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
   //  - Dòng KHÔNG có Stt, chèn ngay dưới nhóm = 1 KPI (task): cột Nhóm = tên KPI,
   //    cột PIC = người làm (bỏ trống = trưởng nhóm).
   //  - Nhóm chưa có dòng KPI nào: vẫn hiện 1 dòng "Chưa có KPI" để thấy ai chưa được giao.
-  //  - Tương thích dữ liệu cũ: nếu chính dòng nhóm có nhập số -> coi dòng nhóm là 1 task.
+  //  - Nếu chính dòng nhóm có ghi task theo ngày -> coi dòng nhóm là 1 dòng KPI.
   const items = [];
   const groups = [];
   let current = null;
@@ -139,18 +143,19 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
     const stt = str(row[colStt]);
     const colB = str(row[colGroup]);
     const colC = str(row[colPic]);
+    // Mỗi ngày: ô KPI = nội dung task phải làm (chữ), ô Kết quả = checkbox (đã tick hay chưa)
     const dayVals = days.map((d) => ({
       date: d.date,
-      kpi: toNumber(row[d.kpiCol]),
-      result: toNumber(row[d.resultCol]),
+      task: toTask(row[d.kpiCol]),
+      done: toBool(row[d.resultCol]),
     }));
-    const hasNumbers = dayVals.some((d) => d.kpi !== null || d.result !== null);
-    if (!stt && !colB && !colC && !hasNumbers) continue; // dòng trống
+    const hasTasks = dayVals.some((d) => d.task !== null || d.done === true);
+    if (!stt && !colB && !colC && !hasTasks) continue; // dòng trống
 
     if (stt) {
       current = { key: `g${r + 1}`, stt, name: colB, lead: colC, row: r + 1, note: noteOf(row), folder: folderOf(row), count: 0 };
       groups.push(current);
-      if (hasNumbers) {
+      if (hasTasks) {
         current.count += 1;
         items.push({
           row: r + 1, stt, groupKey: current.key, group: colB, lead: colC,
@@ -186,7 +191,7 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
     items.push({
       row: g.row, stt: g.stt, groupKey: g.key, group: g.name, lead: g.lead,
       kpi: '', pic: g.lead, note: g.note, folder: g.folder, placeholder: true,
-      days: days.map((d) => ({ date: d.date, kpi: null, result: null })),
+      days: days.map((d) => ({ date: d.date, task: null, done: null })),
     });
   }
   items.sort((a, b) => a.row - b.row);

@@ -8,7 +8,7 @@ import DetailPanel from './components/DetailPanel.jsx';
 import AccessKeyGate from './components/AccessKeyGate.jsx';
 
 // Tham số URL hỗ trợ (để cấu hình sẵn cho màn hình trình chiếu):
-//   ?date=all|YYYY-MM-DD  &status=all|done|done_late|late|in_progress|upcoming  &pic=<tên>
+//   ?date=all|YYYY-MM-DD  &status=all|done|late|in_progress|upcoming  &pic=<tên>
 //   &refresh=<giây, mặc định 60>  &idle=<giây tự thoát chế độ chi tiết, mặc định 120, 0 = tắt>
 //   &key=<access key, chỉ cần nhập 1 lần>  &today=YYYY-MM-DD (giả lập ngày, để kiểm thử)
 const params = new URLSearchParams(window.location.search);
@@ -32,7 +32,7 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [filter, setFilter] = useState(() => ({
     date: params.get('date') || 'all',
-    status: params.get('status') || 'all',
+    status: ['done', 'late', 'in_progress', 'upcoming'].includes(params.get('status')) ? params.get('status') : 'all',
     pic: params.get('pic') || 'all',
   }));
   // Chế độ chi tiết: null = đóng; { flow: 'all' | key, group: 'all' | tên nhóm }

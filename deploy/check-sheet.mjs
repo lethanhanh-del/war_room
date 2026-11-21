@@ -44,10 +44,11 @@ try {
       return;
     }
     const kpis = f.items.filter((it) => !it.placeholder);
-    const withKpi = kpis.filter((it) => it.days.some((x) => x.kpi !== null)).length;
+    const withKpi = kpis.filter((it) => it.days.some((x) => x.task !== null)).length;
+    const ticked = kpis.reduce((a, it) => a + it.days.filter((x) => x.done === true).length, 0);
     const noKpi = f.items.filter((it) => it.placeholder).map((it) => it.group);
     console.log(
-      `✔ Ô ${i + 2} · ${f.label}  ←  sheet "${f.sheet}"\n    ngày: ${f.days.join(', ')}\n    ${f.groups.length} nhóm nhỏ, ${kpis.length} dòng KPI (${withKpi} dòng đã nhập số)` +
+      `✔ Ô ${i + 2} · ${f.label}  ←  sheet "${f.sheet}"\n    ngày: ${f.days.join(', ')}\n    ${f.groups.length} nhóm nhỏ, ${kpis.length} dòng KPI (${withKpi} dòng đã ghi task, ${ticked} ô đã tick)` +
         (noKpi.length ? `\n    nhóm chưa có dòng KPI: ${noKpi.join(', ')}` : '')
     );
   });
