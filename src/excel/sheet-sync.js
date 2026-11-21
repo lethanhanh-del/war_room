@@ -137,7 +137,7 @@ const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet không 
  * Đọc sheet và lưu nếu khác dữ liệu đang có.
  * @returns {Promise<{off?: true, skipped?: true, error?: string, changed?: boolean, total?: number}>}
  */
-export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
+export async function syncSheet(env, { force = false, now = Date.now(), load } = {}) {
   const ids = sheetIds(env); // WR - MASTER TASK + sheet thứ 2 (EXCEL_SHEET_URL)
   if (!ids.length) return { off: true };
   await ensureTable(env);
@@ -145,7 +145,7 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
   if (!(await claim(env, force ? FORCE_EVERY_MS : SYNC_EVERY_MS, now))) return { skipped: true };
   try {
     const cache = await cachedBooks(env);
-    const book = await readSheets(ids, { now, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
+    const book = await readSheets(ids, { now, load, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
     let changed = false;
     let notes = book.warnings;

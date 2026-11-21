@@ -169,6 +169,22 @@ export async function fetchSheetTabs(id) {
   return sheets;
 }
 
+/**
+ * Hàm đọc sheet dùng chung trong 1 lượt (vd 1 lượt cron): đồng bộ task (sheet-sync.js) và KPI (src/kpi/) cùng đọc
+ * file WR - MASTER TASK -> chỉ tải và tách CSV 1 lần (gói Free: 10 ms CPU / lượt). Kết quả chỉ đọc, đừng sửa.
+ */
+export function sharedLoader() {
+  const seen = new Map();
+  return (id) => {
+    if (!seen.has(id)) {
+      const p = fetchSheetTabs(id);
+      seen.set(id, p);
+      p.catch(() => seen.delete(id));
+    }
+    return seen.get(id);
+  };
+}
+
 /** Đọc Google Sheet task -> { format, sections, warnings } (xem streamSections). */
 export async function readSheet(id, { now = Date.now() } = {}) {
   return streamSections(await fetchSheetTabs(id), { now });
@@ -183,13 +199,14 @@ export async function readSheet(id, { now = Date.now() } = {}) {
  * File phân chia nhiệm vụ (vd WarRoom_CTHomes_Final, sheet "DS nhân sự War-Room" + "Nhóm hỗ trợ": cột Dòng tiền, Thành viên,
  * Nhiệm vụ thực hiện) không phải file task: đọc nhóm, PIC, nhiệm vụ từng người vào `roster` (xem roster.js).
  * @param {string[]} ids
- * @param {{ now?: number, previous?: Map<string, {sections: object[], warnings: string[]}> }} [opts]
+ * @param {{ now?: number, previous?: Map<string, {sections: object[], warnings: string[]}>, load?: (id: string) => Promise<object[]> }} [opts]
+ *   load = hàm tải sheet (mặc định fetchSheetTabs; truyền sharedLoader() để dùng chung với đồng bộ KPI)
  * @returns {Promise<{ format: 'master', sections: object[], warnings: string[], fresh: Map<string, object>,
  *   taskSheets: number, roster: { sections: object[] } | null }>}
  *   fresh = kết quả đọc mới của từng file task (để lưu làm bản dự phòng); taskSheets = số file task có dữ liệu (mới hoặc
  *   bản trước); roster = phân chia nhóm từ các file phân chia nhiệm vụ đọc được (null = không có / đọc lỗi)
  */
-export async function readSheets(ids, { now = Date.now(), previous = new Map() } = {}) {
+export async function readSheets(ids, { now = Date.now(), previous = new Map(), load = fetchSheetTabs } = {}) {
   const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
   const sections = [];
   const byNo = new Map(); // cùng dòng tiền: cùng số ("Dòng tiền 2: …") hoặc cùng tên (bỏ dấu, hoa/thường, dấu câu)
@@ -204,7 +221,7 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
     const label = `Google Sheet ${i + 1} (…${id.slice(-6)})`;
     let book;
     try {
-      const tabs = await fetchSheetTabs(id);
+      const tabs = await load(id);
       if (isRoster({ sheets: tabs })) {
         const roster = extractRoster({ sheets: tabs });
         rosters.push(roster);

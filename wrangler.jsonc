@@ -2,10 +2,11 @@
   "name": "ctgwarroom",
   "main": "src/index.js",
   "compatibility_date": "2026-11-21",
-  // Băm ACCESS_PASSWORD (biến Build trên Cloudflare) vào generated/password.js.
-  "build": { "command": "node scripts/build-password.mjs" },
+  // Băm ACCESS_PASSWORD (biến Build trên Cloudflare) vào generated/password.js, rồi build màn hình Dòng tiền
+  // (app React FE/ của Thành Anh) vào public/app/ — trang "/" (scripts/build-fe.mjs).
+  "build": { "command": "node scripts/build-password.mjs && node scripts/build-fe.mjs", "watch_dir": ["src", "FE/src"] },
   "assets": {
-    // Dashboard: public/index.html
+    // Các trang: public/app/ (build từ FE/, trang "/"), kpi.html, war-room.html (/lich-truc), lich.html, admin.html
     "directory": "./public",
     "binding": "ASSETS",
     // Mọi request đều qua Worker trước để kiểm tra mật khẩu.

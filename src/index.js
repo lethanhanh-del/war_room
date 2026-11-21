@@ -1,5 +1,13 @@
-// Worker WAR ROOM: đăng nhập theo từng người (D1), phục vụ dashboard tĩnh (public/),
+// Worker WAR ROOM: đăng nhập theo từng người (D1), phục vụ 4 trang chính (mỗi trang có thanh điều hướng chung, src/pages.js),
 // API đặt lịch Chủ tịch và trang quản trị.
+//
+// Trang:
+//   /           Dòng tiền: màn hình War Room của Thành Anh (app React FE/, build vào public/app/ bằng scripts/build-fe.mjs,
+//               dữ liệu GET /api/dashboard từ Google Sheet KPI, src/kpi/)
+//   /kpi        KPI & kết quả (public/kpi.html)
+//   /lich-truc  Lịch trực 24/7 (public/war-room.html; /war-room chuyển về đây)
+//   /lich       Hẹn lịch BOD (public/lich.html)
+//   /admin      Quản trị tài khoản & nhật ký (chỉ admin)
 //
 // Đăng nhập:
 //   - Người dùng: tên kiểu vdhhoang (Võ Đào Huy Hoàng), mật khẩu mặc định CTG@2026,
@@ -27,18 +35,21 @@ import {
 import { handleBookings } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
 import { handleLive, LiveRoom } from "./live.js";
-import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
+import { changePasswordPage, loginPage, navBar } from "./pages.js";
 import { json, redirect, text } from "./http.js";
 import { handleExcel, sheetOnlyBase, withExcel } from "./excel/index.js";
 import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
-import { handleKpi, syncKpi } from "./kpi/index.js";
+import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
+import { sharedLoader } from "./excel/gsheet.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
 
-const VIEW_PAGES = new Set(["/", "/kpi", "/war-room", "/lich", "/admin"]);
-// Trang được chèn nút "Hẹn lịch BOD" + ô người dùng: dashboard dòng tiền (/), KPI & kết quả (/kpi), Bảng War Room live (/war-room).
-const DASHBOARD_PAGES = new Set(["/", "/kpi", "/war-room"]);
+const VIEW_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/admin"]);
+// Trang được chèn thanh điều hướng chung (navBar) vào đầu <body>.
+const NAV_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/admin"]);
+// Trang không trùng tên file trong public/: đường dẫn -> file phục vụ.
+const PAGE_ASSET = { "/": "/app/", "/lich-truc": "/war-room" };
 
 export default {
   async fetch(request, env, ctx) {
@@ -68,6 +79,10 @@ export default {
       return path.startsWith("/api/") ? json({ error: "Bạn cần đổi mật khẩu trước.", mustChange: true }, 403) : redirect("/doi-mat-khau");
     }
 
+    // Địa chỉ cũ: bảng War Room giờ chỉ còn lịch trực; bản build app React chỉ mở qua "/".
+    if (path === "/war-room" || path === "/war-room.html") return redirect(`/lich-truc${url.search}`);
+    if (path === "/index.html" || path === "/app" || path === "/app/" || path === "/app/index.html") return redirect("/");
+
     if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
     if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
@@ -84,6 +99,8 @@ export default {
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
     // KPI & kết quả 5 ngày từ Google Sheet KPI (src/kpi/): trang /kpi.
     if (path === "/api/kpi" || path === "/api/kpi/sync") return handleKpi(request, env, url, ctx);
+    // Màn hình War Room dòng tiền (app React FE/) ở trang "/": cùng dữ liệu KPI, theo định dạng của app.
+    if (path === "/api/dashboard") return handleDashboard(request, env, url, ctx);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
     if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, async () => sheetOnlyBase());
@@ -92,18 +109,32 @@ export default {
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
     }
 
-    const res = await env.ASSETS.fetch(request);
+    const asset = PAGE_ASSET[path];
+    const nav = NAV_PAGES.has(path);
+    let assetReq = asset ? new Request(new URL(asset, url), request) : request;
+    // Không trả 304 cho trang và file JS / CSS của trang (trừ file của app React có mã băm trong tên, /app/assets/):
+    // - trang có thanh điều hướng (kèm tên người dùng) được dựng lại mỗi lần;
+    // - `wrangler dev` đặt ETag theo đường dẫn chứ không theo nội dung, nên sửa kpi.js / kpi.css xong trình duyệt vẫn
+    //   nhận 304 và chạy bản cũ (kể cả khi xem qua đường hầm cloudflared).
+    if (nav || !path.startsWith("/app/assets/")) {
+      const headers = new Headers(assetReq.headers);
+      headers.delete("If-None-Match");
+      headers.delete("If-Modified-Since");
+      assetReq = new Request(assetReq.url, { method: assetReq.method, headers });
+    }
+    const res = await env.ASSETS.fetch(assetReq);
+    if (path === "/" && res.status === 404) {
+      return text("Màn hình Dòng tiền chưa được build: chạy `npm run build:fe` (wrangler deploy / dev tự chạy bước này).", 503);
+    }
     const out = new Response(res.body, res);
     out.headers.set("Cache-Control", "private, no-cache");
     if (res.ok && request.method === "GET" && VIEW_PAGES.has(path)) ctx.waitUntil(log(env, request, user.username, "view", path));
-    if (DASHBOARD_PAGES.has(path) && res.ok) {
+    if (nav && res.ok && /text\/html/.test(res.headers.get("Content-Type") || "")) {
+      out.headers.delete("ETag");
+      out.headers.delete("Last-Modified");
+      out.headers.set("Cache-Control", "private, no-store");
       return new HTMLRewriter()
-        .on("body", {
-          element: (el) => {
-            el.append(CHAIRMAN_LINK, { html: true });
-            el.append(userChip(user), { html: true });
-          },
-        })
+        .on("body", { element: (el) => el.prepend(navBar(user, path), { html: true }) })
         .transform(out);
     }
     return out;
@@ -112,8 +143,10 @@ export default {
   // Cron mỗi phút (wrangler.jsonc › triggers): đọc lại Google Sheet task + phân chia nhóm (src/excel/sheet-sync.js)
   // và Google Sheet KPI (src/kpi/).
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(syncSheet(env));
-    ctx.waitUntil(syncKpi(env));
+    // Task và KPI cùng đọc file WR - MASTER TASK: tải + tách CSV 1 lần cho cả lượt (gói Free: 10 ms CPU / lượt).
+    const load = sharedLoader();
+    ctx.waitUntil(syncSheet(env, { load }));
+    ctx.waitUntil(syncKpi(env, { load }));
   },
 };
 

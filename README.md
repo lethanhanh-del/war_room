@@ -2,13 +2,17 @@
 
 Dashboard điều hành War Room của CT Group, chạy trên **Cloudflare Workers**. Mỗi lần push lên `main`, Cloudflare tự build và deploy.
 
+Gồm 4 trang. Mỗi trang có **thanh điều hướng chung** ở trên cùng (Dòng tiền · KPI & kết quả · Lịch trực 24/7 · Hẹn lịch BOD, kèm tên người dùng, Quản trị / Đổi mật khẩu, Đăng xuất). Worker chèn thanh này vào đầu từng trang lúc phục vụ (`navBar` trong `src/pages.js`).
+
 | Trang | Nội dung |
 |---|---|
-| `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn — bấm 1 chỉ số để bảng task chỉ còn các task đó), block **Điểm nghẽn · Cần hỗ trợ** theo từng nhóm công việc, bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK**; nhóm, PIC và nhiệm vụ từng thành viên tự đồng bộ từ Google Sheet phân chia nhiệm vụ **WarRoom_CTHomes_Final** (DS nhân sự War-Room). Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
-| `/kpi` | **KPI & kết quả**: KPI từng ngày của mỗi nhóm và người thực hiện, kết quả Đạt / Không đạt từ Google Sheet KPI. Bộ lọc ngày / dòng tiền / kết quả, 4 thẻ chỉ số, Cần xử lý (không đạt, chưa cập nhật), bảng theo dòng tiền, kế hoạch & kết quả theo nhóm (PIC + người thực hiện). Màn hình TV `/kpi?tv=1`, dữ liệu minh họa `/kpi?demo=1`. |
-| `/war-room` | Bảng War Room live: dữ liệu chung trên máy chủ, cập nhật thời gian thực, ai đang online (`src/live.js`) |
-| `/lich` | Hẹn lịch BOD (D1) |
-| `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`) |
+| `/` | **Dòng tiền**: màn hình War Room của Le Thanh Anh (app React thư mục `FE/`, xem mục cuối). Worker build app vào `public/app/` (`scripts/build-fe.mjs`, tự chạy khi `wrangler deploy` / `dev`). App lấy dữ liệu từ `GET /api/dashboard`: cùng nguồn KPI với `/kpi`, theo định dạng của app (`src/kpi/dashboard.js`). |
+| `/kpi` | **KPI & kết quả**: KPI từng ngày của mỗi nhóm và người thực hiện, kết quả Đạt / Không đạt từ Google Sheet KPI. Bộ lọc ngày / dòng tiền / kết quả, 4 thẻ chỉ số, thành viên theo nhóm (số KPI đã hoàn thành, hoàn thành trễ hạn, còn tồn đọng của từng người), bảng theo dòng tiền, kế hoạch & kết quả theo nhóm (PIC + người thực hiện). Màn hình TV `/kpi?tv=1`, dữ liệu minh họa `/kpi?demo=1`. |
+| `/lich-truc` | **Lịch trực 24/7 (2 ca)**: `public/war-room.html`, dữ liệu chung trên máy chủ, cập nhật thời gian thực (`src/live.js`). Địa chỉ cũ `/war-room` tự chuyển về đây. |
+| `/lich` | **Hẹn lịch BOD** (D1) |
+| `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`, mở từ "Quản trị" trên thanh điều hướng) |
+
+Trang "Tiến độ dòng tiền" cũ (`public/index.html`, `dong-tien.js`) đã bỏ từ 22/11/2026. Đồng bộ task từ Google Sheet và API `/api/streams`, `/api/excel` vẫn chạy: `/kpi` lấy mã dòng tiền và PIC từ đó.
 
 Mọi trang đều phải đăng nhập. Mỗi người có một tài khoản trong D1; tài khoản `admin` dùng mật khẩu `ACCESS_PASSWORD`.
 
@@ -18,7 +22,7 @@ Từ 21/11/2026 dashboard **không kết nối CT Worksuite** nữa (kể cả k
 
 ## Nạp file Excel: phân chia nhóm, hoặc task nạp tay
 
-Task và phân chia nhóm tự đồng bộ từ Google Sheet (xem mục dưới); lần sửa kế tiếp trên Sheet ghi đè dữ liệu nạp tay. Nút **Nạp task Excel** ở góc trên trang `/` dùng khi cần nạp tay:
+Task và phân chia nhóm tự đồng bộ từ Google Sheet (xem mục dưới); lần sửa kế tiếp trên Sheet ghi đè dữ liệu nạp tay. Nút **Nạp task Excel** nằm trên trang Tiến độ dòng tiền cũ, đã bỏ từ 22/11/2026. API `/api/excel` vẫn nhận file theo quy tắc dưới đây:
 
 - **Nạp file phân chia nhiệm vụ** (vd `WarRoom_CTHomes_Final_20.11.2026.xlsx`, sheet “DS nhân sự War-Room”: Dòng tiền · Thành viên · Chức danh · Phòng ban · Đội trưởng/Đội phó · Nhiệm vụ thực hiện). Dashboard tự nhận ra đây là file phân chia. Trong mỗi dòng tiền, mỗi “Đội trưởng / Trưởng nhóm” mở 1 nhóm và là PIC của nhóm; nhiệm vụ chính = “Nhiệm vụ thực hiện” các thành viên cùng làm (mỗi người một việc thì ghi “Mỗi người một nhiệm vụ” và hiện việc của từng người). Cùng dòng tiền ở sheet khác (vd “Nhóm hỗ trợ”) được gộp vào. Nạp lại sẽ thay toàn bộ phân chia cũ (bảng `excel_teams`); dòng tiền chưa có thẻ thì tạo thẻ mới; “Cố vấn, chỉ đạo” và các nhóm hỗ trợ (IT, hậu cần…) không tạo thẻ. Gỡ trong cùng hộp thoại.
 - **Nạp tay file task** `.xlsx` khi cần: file tổng WR - MASTER TASK, hoặc file "Nhập task & theo dõi" của 1 dòng tiền (vd `DONG_TIEN_2_BANKING_Template….xlsx`, sheet `01_NHAP_TASK`). Xem trước rồi bấm **Đưa lên dashboard**.
@@ -48,16 +52,23 @@ Không cần nạp tay: Worker tự đọc Google Sheet task [WR - MASTER TASK](
 - 1 Sheet đọc lỗi (mạng, chưa / bị tắt chia sẻ) trong khi sheet khác vẫn đọc được: dùng tạm bản đọc được lần trước của sheet đó (bảng D1 `excel_sheet_cache`) và cảnh báo ở đầu trang; sheet chưa từng đọc được thì bỏ qua, kèm cảnh báo. Riêng sheet đầu tiên chưa từng đọc được, hoặc không sheet nào đọc được: không đồng bộ lượt đó, dashboard giữ nguyên dữ liệu.
 - Đổi / thêm Sheet: biến `EXCEL_SHEET_URL` (1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy hoặc xuống dòng; trống = 2 Google Sheet ở trên); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
 
-## Trang KPI & kết quả (`/kpi`)
+## Trang KPI & kết quả (`/kpi`) và dữ liệu màn hình Dòng tiền (`/api/dashboard`)
 
-Đọc Google Sheet KPI [thamkhao_kpi](https://docs.google.com/spreadsheets/d/1vjhwDkU2-pdktEqGvqWHy2Op86cpjq8JAFVv5e1GjHg/edit) (chia sẻ "Bất kỳ ai có đường liên kết" – Người xem). Mỗi phút (cron) và mỗi 20 giây khi có người xem, Worker đọc lại sheet, lưu vào D1 (bảng `kpi_sheet`) và báo các màn hình tải lại khi có thay đổi.
+Từ 22/11/2026, Worker đọc KPI trong file master [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) (chia sẻ "Bất kỳ ai có đường liên kết" – Người xem). Trước đó Worker đọc file mẫu thamkhao_kpi, và file đó vẫn đọc được. Mỗi phút (cron) và mỗi 20 giây khi có người xem, Worker đọc lại sheet, lưu vào D1 (bảng `kpi_sheet`) và báo các màn hình tải lại khi có thay đổi. Trong cùng lượt cron, đồng bộ task và KPI dùng chung 1 lần tải file (`sharedLoader`).
 
-- Mỗi tab tên "Dòng tiền …" là 1 dòng tiền; tab khác ("KPI 21-25.11", "Trang_tính1"…) bị bỏ qua.
+- File master: mỗi tab task "Dòng tiền …" có ngay sau nó 1 tab KPI, tên tuỳ ý (vd "Trang tính6"). PIC dòng tiền lấy ở dòng `PIC phụ trách: …` của tab task. File kiểu thamkhao_kpi: mỗi tab KPI tên "Dòng tiền …". Tab khác ("Waiting Point", "Nhóm hỗ trợ", "KPI 21-25.11"…) bị bỏ qua.
+- Dòng mẫu chỉ có Stt và ô tick (không Nhóm, PIC, KPI) bị bỏ qua. Ô tick chưa tick của ngày không ghi KPI không tính là KPI.
 - Dòng tiêu đề có cột Nhóm, PIC và các ô ngày (21/11 …); mỗi ngày 2 cột KPI | Kết quả. Cột Ghi chú / Vướng mắc và Thư mục dữ liệu lưu trữ (link https) được hiện kèm. Cột Tổng kết không dùng: dashboard tự tính.
 - **Mỗi người 1 dòng**: cột Nhóm giữ nguyên tên nhóm ở mọi dòng của nhóm, cột PIC ghi người thực hiện dòng đó. Dòng có Stt La Mã (I, II…) không có PIC / KPI là dòng mục. PIC của nhóm lấy theo Đội trưởng trong file phân chia nhiệm vụ (bảng `excel_teams`).
-- Kết quả: Đạt / Không đạt (nhận thêm Hoàn thành, Xong = Đạt; Chưa / Không hoàn thành = Không đạt). Ô Kết quả trống của ngày đã qua hoặc hôm nay = Chưa cập nhật; ngày chưa tới = Sắp tới. Tồn đọng = Không đạt + Chưa cập nhật tính đến ngày đang xem.
-- Bộ lọc nằm trên địa chỉ để gửi link: `?ngay=2026-11-23` hoặc `?ngay=all`, `&dong=<tên dòng tiền viết liền không dấu>`, `&kq=D|T|C`.
-- API: `GET /api/kpi` (dữ liệu, đọc lại sheet chạy nền), `POST /api/kpi/sync` (đọc lại ngay). Đổi sheet: biến `KPI_SHEET_URL` (link hoặc ID; `off` để tắt). Mã nguồn: `src/kpi/sheet.js` (đọc sheet), `src/kpi/index.js` (đồng bộ, API), `public/kpi-model.js` (tính trạng thái), `public/kpi.js`, `public/kpi.css`, `public/kpi-demo.js` (dữ liệu minh họa).
+- Trạng thái (`public/kpi-model.js`). Hạn của mỗi KPI là hết ngày của nó (giờ Việt Nam):
+  - **Đạt**: ô Kết quả đã tick (hoặc ghi Đạt / Hoàn thành / Xong) trong ngày của KPI.
+  - **Hoàn thành trễ hạn**: tick sau khi hết ngày của KPI. Sheet không lưu giờ tick, nên Worker ghi lại lúc nó thấy ô được tick lần đầu (`src/kpi/ticks.js`, trễ tối đa khoảng 1 phút). Ô đã tick từ trước lần đọc đầu tiên được tính đúng hạn.
+  - **Không đạt**: ghi Không đạt, hoặc đã qua ngày mà chưa tick. Tick sau đó thì chuyển thành Hoàn thành trễ hạn.
+  - **Đang làm**: KPI của hôm nay chưa tick. **Sắp tới**: ngày chưa tới.
+  - Đã hoàn thành = Đạt + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
+- Block **Thành viên theo nhóm**: mỗi nhóm 1 bảng thành viên (PIC nhóm đứng đầu) với số KPI đã hoàn thành, hoàn thành trễ hạn và còn tồn đọng của từng người, cộng dồn đến ngày đang xem. Block lọc theo dòng tiền đang chọn; chọn "Tất cả dòng tiền" thì hiện mọi nhóm.
+- Bộ lọc nằm trên địa chỉ để gửi link: `?ngay=2026-11-23` hoặc `?ngay=all`, `&dong=<tên dòng tiền viết liền không dấu>`, `&kq=D|L|T` (Đạt, Hoàn thành trễ hạn, Tồn đọng).
+- API: `GET /api/kpi` (dữ liệu, đọc lại sheet chạy nền), `POST /api/kpi/sync` (đọc lại ngay), `GET /api/dashboard` (cùng dữ liệu cho màn hình Dòng tiền ở `/`; `?force=1` đọc lại ngay). Màn hình Dòng tiền tự tính trạng thái theo ngày: ô chưa tick của ngày đã qua là Không đạt. Đổi sheet: biến `KPI_SHEET_URL` (link hoặc ID; `off` để tắt). Mã nguồn: `src/kpi/sheet.js` (đọc sheet), `src/kpi/index.js` (đồng bộ, API), `public/kpi-model.js` (tính trạng thái), `public/kpi.js`, `public/kpi.css`, `public/kpi-demo.js` (dữ liệu minh họa).
 
 ## Cấu hình trên Cloudflare
 
@@ -87,18 +98,24 @@ npm test
 
 ## Cấu trúc
 
-- `src/index.js`: Worker (đăng nhập, định tuyến, chèn nút "Hẹn lịch BOD")
+- `src/index.js`: Worker (đăng nhập, định tuyến 4 trang, chèn thanh điều hướng chung)
 - `src/auth.js`, `src/db.js`, `src/admin.js`, `src/pages.js`: tài khoản, D1, quản trị
 - `src/bookings.js`: lịch Chủ tịch
 - `src/worksuite/model.js`: tính trạng thái, % và số liệu dashboard (phần gọi API Worksuite không còn dùng)
 - `src/excel/`: `xlsx.js` đọc file .xlsx (không cần thư viện, dừng sớm cho vừa giới hạn CPU), `tasks.js` đọc bảng task, `merge.js` gắn task vào dòng tiền và kiểm nguyên tắc War Room, `roster.js` đọc file phân chia nhiệm vụ (nhóm, PIC), `gsheet.js` + `sheet-sync.js` tự đồng bộ Google Sheet, `index.js` API `/api/excel` + D1
-- `public/index.html`, `dong-tien.css`, `dong-tien.js`: trang Tiến độ dòng tiền
-- `public/war-room.html`, `lich.html`, `admin.html`: các trang còn lại
+- `src/kpi/`: `sheet.js` đọc Google Sheet KPI, `index.js` đồng bộ D1 + API `/api/kpi`, `/api/dashboard`, `dashboard.js` đổi dữ liệu sang định dạng app React
+- `public/kpi.html`, `kpi.js`, `kpi-model.js`, `kpi.css` (+ `dong-tien.css`: token màu, chữ dùng chung): trang KPI & kết quả
+- `public/war-room.html` (`/lich-truc`), `lich.html`, `admin.html`: các trang còn lại
+- `scripts/build-fe.mjs`: build app React `FE/` vào `public/app/` (trang `/`; không commit thư mục này)
 - `test/`: `node --test`
 
 ## Dashboard trình chiếu (React + Vercel, thư mục `FE/`)
 
-Phần do Le Thanh Anh làm, triển khai riêng trên Vercel (Root Directory = `FE`), không ảnh hưởng Worker Cloudflare. Tiêu đề gốc: War Room CT Homes — Dashboard dòng tiền.
+Phần do Le Thanh Anh làm. App chạy ở 2 nơi:
+- **Worker Cloudflare, trang `/`**: `scripts/build-fe.mjs` build app với base `/app/`. Dữ liệu lấy từ `GET /api/dashboard` của Worker, không cần Service Account. Mã trong `FE/` không phải sửa gì.
+- **Vercel, chạy riêng** (Root Directory = `FE`): API `FE/api/` đọc Google Sheet bằng Service Account như mô tả dưới đây.
+
+Tiêu đề gốc: War Room CT Homes — Dashboard dòng tiền.
 
 Màn hình dashboard **1 trang duy nhất** để trình chiếu trên màn hình lớn (4m × 2m), đọc dữ liệu KPI trực tiếp từ Google Sheet.
 

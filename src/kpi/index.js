@@ -1,13 +1,16 @@
-// Trang "KPI & kết quả" (/kpi): đồng bộ Google Sheet KPI (sheet.js) vào D1 và trả về cho trình duyệt.
+// KPI & kết quả: đồng bộ Google Sheet KPI (sheet.js) vào D1, phục vụ trang /kpi và màn hình War Room ở trang "/".
 //
-//   GET  /api/kpi        dữ liệu KPI (đọc lại sheet chạy nền nếu lần trước đã quá KPI_SYNC_EVERY_MS)
-//   POST /api/kpi/sync   đọc lại sheet ngay
+//   GET  /api/kpi              dữ liệu KPI cho /kpi (đọc lại sheet chạy nền nếu lần trước đã quá KPI_SYNC_EVERY_MS)
+//   POST /api/kpi/sync         đọc lại sheet ngay
+//   GET  /api/dashboard        cùng dữ liệu, theo định dạng app React FE/ (dashboard.js); ?force=1 đọc lại sheet ngay
 //
 // Cron mỗi phút cũng gọi syncKpi (src/index.js). Sheet đổi -> báo các màn hình tải lại (WebSocket, scope "kpi").
-// Trạng thái Đạt / Không đạt / Chưa cập nhật / Sắp tới tính ở trình duyệt theo ngày hôm nay (public/kpi-model.js).
+// Trạng thái Đạt / Hoàn thành trễ hạn / Không đạt / Đang làm / Sắp tới tính ở trình duyệt theo ngày hôm nay
+// (public/kpi-model.js). Giờ hoàn thành của từng ô do Worker ghi lại lúc thấy ô được tick (ticks.js).
 // PIC nhóm lấy theo Đội trưởng trong file phân chia nhiệm vụ (bảng excel_teams); người thực hiện là cột PIC của từng dòng.
 //
-// Biến cấu hình (tuỳ chọn): KPI_SHEET_URL = link hoặc ID Google Sheet KPI (mặc định: thamkhao_kpi); "off" để tắt.
+// Biến cấu hình (tuỳ chọn): KPI_SHEET_URL = link hoặc ID Google Sheet KPI (mặc định: file master WR - MASTER TASK,
+// tab KPI nằm ngay sau từng tab task "Dòng tiền …"); "off" để tắt.
 
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
@@ -15,8 +18,10 @@ import { fetchSheetTabs } from '../excel/gsheet.js';
 import { listImports, listTeams } from '../excel/index.js';
 import { normKey } from '../worksuite/model.js';
 import { parseKpiBook } from './sheet.js';
+import { toDashboard } from './dashboard.js';
+import { stampTicks } from './ticks.js';
 
-const DEFAULT_KPI_SHEET = '1vjhwDkU2-pdktEqGvqWHy2Op86cpjq8JAFVv5e1GjHg'; // thamkhao_kpi
+const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 export const KPI_SYNC_EVERY_MS = 20000;
 const FORCE_EVERY_MS = 5000;
 
@@ -58,16 +63,19 @@ const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet KPI kh�
 const yearOf = (env) => Number(String(env.WARROOM_START || '').slice(0, 4)) || new Date().getUTCFullYear();
 
 /** Đọc sheet KPI, lưu nếu khác lần trước. */
-export async function syncKpi(env, { force = false, now = Date.now() } = {}) {
+export async function syncKpi(env, { force = false, now = Date.now(), load = fetchSheetTabs } = {}) {
   const id = kpiSheetId(env);
   if (!id) return { off: true };
   await ensureTable(env);
   if (!(await claim(env, force ? FORCE_EVERY_MS : KPI_SYNC_EVERY_MS, now))) return { skipped: true };
   try {
-    const book = parseKpiBook(await fetchSheetTabs(id), { year: yearOf(env) });
-    const data = JSON.stringify(book.streams);
+    const book = parseKpiBook(await load(id), { year: yearOf(env) });
     const warnings = JSON.stringify(book.warnings.slice(0, 20).map((w) => String(w).slice(0, 300)));
     const prev = await env.DB.prepare('SELECT data FROM kpi_sheet WHERE id = 1').first();
+    // Ghi giờ hoàn thành cho ô vừa được tick (ticks.js) trước khi so với lần trước: ô không đổi giữ nguyên giờ cũ.
+    let before = null;
+    try { before = prev?.data ? JSON.parse(prev.data) : null; } catch { /* dữ liệu hỏng: coi như chưa có */ }
+    const data = JSON.stringify(stampTicks(book.streams, before, now));
     const changed = !prev || prev.data !== data;
     if (changed) {
       await env.DB.prepare("UPDATE kpi_sheet SET error = '', warnings = ?, data = ?, changed_at = ? WHERE id = 1")
@@ -127,6 +135,7 @@ export function attachPeople(streams, teams = [], imports = []) {
       key: loose(s.name) || `dongtien${si}`,
       name: s.name,
       sheet: s.sheet,
+      ...(s.kpiSheet ? { kpiSheet: s.kpiSheet } : {}),
       code: imp?.code || '',
       pic: s.pic || imp?.pic || tgroups[0]?.lead?.name || '',
       days: s.days,
@@ -175,10 +184,24 @@ export async function handleKpi(request, env, url, ctx) {
     return json(r, r.error ? 502 : 200);
   }
   if (request.method !== 'GET') return json({ error: 'Chỉ hỗ trợ GET.' }, 405);
+  await freshen(env, ctx);
+  return json(await kpiData(env));
+}
+
+/** Lần đầu (database mới, chưa đọc sheet lần nào) hoặc force: đọc luôn rồi mới trả; các lần sau đọc lại chạy nền. */
+async function freshen(env, ctx, force = false) {
   await ensureTable(env);
   const has = await env.DB.prepare("SELECT 1 AS ok FROM kpi_sheet WHERE id = 1 AND data <> ''").first();
-  // Lần đầu (database mới, chưa đọc sheet lần nào): đọc luôn rồi mới trả; các lần sau đọc lại chạy nền.
-  if (!has) await syncKpi(env, { force: true });
+  if (!has || force) await syncKpi(env, { force: true });
   else ctx.waitUntil(syncKpi(env).catch(() => {}));
-  return json(await kpiData(env));
+}
+
+/** GET /api/dashboard: màn hình War Room dòng tiền (app React của Thành Anh) ở trang "/". */
+export async function handleDashboard(request, env, url, ctx) {
+  if (request.method !== 'GET') return json({ error: 'Chỉ hỗ trợ GET.' }, 405);
+  if (!kpiSheetId(env)) return json({ error: 'Đồng bộ Google Sheet KPI đang tắt (KPI_SHEET_URL=off).' }, 503);
+  await freshen(env, ctx, url.searchParams.get('force') === '1');
+  const data = await kpiData(env);
+  if (!data.streams.length) return json({ error: data.source.error || 'Google Sheet KPI chưa có dữ liệu.' }, 502);
+  return json(toDashboard(data));
 }

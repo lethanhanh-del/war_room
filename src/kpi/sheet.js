@@ -1,31 +1,42 @@
-// Đọc Google Sheet KPI War Room ("thamkhao_kpi", layout chốt ngày 21/11/2026) cho trang /kpi.
+// Đọc Google Sheet KPI War Room cho trang /kpi và màn hình War Room ở trang "/" (/api/dashboard).
 //
-// - Mỗi tab tên "Dòng tiền …" là 1 dòng tiền. Tab khác (vd "KPI 21-25.11", "Trang_tính1") bị bỏ qua.
+// Hai kiểu file:
+// - File master "WR - MASTER TASK" (từ 22/11/2026): mỗi dòng tiền có tab task "Dòng tiền …" (STT | Dòng tiền |
+//   Nhóm công việc | Task / Đầu việc | Người phụ trách …), ngay sau nó là tab KPI tên tuỳ ý (vd "Trang tính6").
+//   PIC dòng tiền lấy ở dòng "PIC phụ trách: …" của tab task.
+// - File "thamkhao_kpi" (layout chốt 21/11/2026): mỗi tab KPI tên "Dòng tiền …" là 1 dòng tiền.
+// Tab khác (vd "Waiting Point", "Nhóm hỗ trợ", "KPI 21-25.11") bị bỏ qua.
+//
+// Bảng KPI:
 // - Dòng tiêu đề có cột "Nhóm" và "PIC"; các ô ngày "21/11" … mỗi ngày 2 cột: KPI | Kết quả (dòng dưới tiêu đề);
 //   cột "Ghi chú / Vướng mắc" và "Thư mục dữ liệu lưu trữ" nếu có. Cột "Tổng kết" bỏ qua: dashboard tự tính.
 // - Mỗi dòng dữ liệu là KPI của 1 người: cột PIC = người thực hiện. Các dòng cùng tên Nhóm là 1 nhóm.
 //   Dòng có Stt là số La Mã (I, II…) mà không có PIC / KPI là dòng mục: tên nhóm cho các dòng bên dưới bỏ trống cột Nhóm.
-// - Kết quả chỉ nhập "Đạt" / "Không đạt": res = 'D' | 'K' | '' (chưa nhập) | '?' (chữ khác, kèm cảnh báo).
+// - Kết quả nhập "Đạt" / "Không đạt" hoặc ô tick: res = 'D' | 'K' | '' (chưa nhập / chưa tick) | '?' (chữ khác, kèm cảnh báo).
+//   Ô chưa tick mà ngày đó không ghi KPI thì không tính là KPI.
 
 import { normKey } from '../worksuite/model.js';
 
 const DATE_RE = /^(\d{1,2})\s*[/.-]\s*(\d{1,2})(?:\s*[/.-]\s*(\d{2,4}))?$/;
 const ROMAN_RE = /^[IVXLC]+\.?$/i;
 const pad = (n) => String(n).padStart(2, '0');
+const PIC_RE = /\bPIC(?:\s+phụ\s+trách)?\s*[:：]\s*([^\n]+)/iu;
 const raw = (row, i) => (i == null || i < 0 ? '' : String(row?.cells?.[i]?.v ?? ''));
 const text = (row, i) => raw(row, i).replace(/\s+/g, ' ').trim();
 
 /** Tab "Dòng tiền …" (không phân biệt hoa thường, dấu). */
 export const isKpiTab = (name) => /^dong tien(\s|:|-|$)/.test(normKey(name));
 
-/** "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Bán 4 dự án"; "Dòng tiền tài chính " -> "Tài chính". */
+/** "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Bán 4 dự án"; "Dòng tiền tài chính " -> "Tài chính"; "Dòng tiền Equity / IPO" -> "Equity / IPO". */
 export function streamNameOf(tab) {
   const words = String(tab || '').normalize('NFC').replace(/\s+/g, ' ').trim().split(' ');
   let i = 0;
   if (normKey(words[0]) === 'dong' && normKey(words[1]).replace(/[:\-–]$/, '') === 'tien') i = 2;
   const rest = words.slice(i).join(' ').replace(/^[:\-–]\s*/, '');
-  const lower = rest.toLocaleLowerCase('vi');
-  return lower ? lower.charAt(0).toLocaleUpperCase('vi') + lower.slice(1) : String(tab || '').trim();
+  if (!rest) return String(tab || '').trim();
+  // Tên viết hoa toàn bộ -> dạng câu; tên đã viết thường / hoa đúng (vd "Equity / IPO") giữ nguyên, chỉ viết hoa chữ đầu.
+  const base = rest === rest.toLocaleUpperCase('vi') ? rest.toLocaleLowerCase('vi') : rest;
+  return base.charAt(0).toLocaleUpperCase('vi') + base.slice(1);
 }
 
 /**
@@ -44,6 +55,9 @@ export function personName(s) {
  * Ô tick (checkbox) trên Google Sheet: TRUE = Đạt, FALSE = chưa nhập.
  */
 export function resultCode(value) {
+  // Đường tắt cho ô tick (TRUE / FALSE) và ô trống: tab KPI có hàng trăm dòng mẫu, đỡ tốn CPU (gói Free: 10 ms / lượt).
+  if (value === '' || value === 'FALSE' || value == null) return '';
+  if (value === 'TRUE') return 'D';
   const k = normKey(value).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!k || k === 'false') return ''; // ô tick (checkbox) chưa tick: coi như chưa nhập
   if (k === 'true') return 'D'; // ô tick đã tick
@@ -58,9 +72,8 @@ const link = (s) => (/^https?:\/\/\S+$/i.test(s) ? s : '');
  * Một tab dòng tiền -> { sheet, name, pic, days: [{date, label}], groups: [{ name, rows }], warnings } hoặc { error }.
  * row: { row, stt, person, note, folder, folderText, cells: { 'YYYY-MM-DD': { kpi, res } } } — chỉ có ngày có KPI / kết quả.
  */
-export function parseKpiTab(sheet, { year = new Date().getUTCFullYear() } = {}) {
+export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label = `Tab “${String(sheet.name).trim()}”` } = {}) {
   const rows = sheet.rows || [];
-  const label = `Tab “${String(sheet.name).trim()}”`;
   const warnings = [];
   let h = -1;
   let map = null;
@@ -104,13 +117,7 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear() } = {}) 
   }
 
   // PIC dòng tiền ghi phía trên bảng, vd "DÒNG TIỀN: BÁN 4 DỰ ÁN\nPIC: HOÀNG THỊ QUỲNH MAI".
-  let pic = '';
-  for (let i = 0; i < h && !pic; i++) {
-    for (const c of rows[i].cells || []) {
-      const m = /\bPIC\s*[:：]\s*([^\n]+)/i.exec(String(c?.v ?? ''));
-      if (m) { pic = personName(m[1]); break; }
-    }
-  }
+  const pic = picAbove(rows, h);
 
   const groups = new Map();
   const unknown = new Set();
@@ -121,21 +128,22 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear() } = {}) 
     const gname = text(row, map.group);
     const person = personName(text(row, map.person));
     const cells = {};
-    let any = false;
+    let hasKpi = false;
     for (const d of days) {
       const kpi = text(row, d.kpi);
       const value = text(row, d.res);
-      if (!kpi && !value) continue;
       const res = resultCode(value);
+      if (!kpi && !res) continue; // ô trống, hoặc ô tick chưa tick mà ngày đó không có KPI
       if (res === '?') unknown.add(value);
       cells[d.date] = { kpi, res };
-      any = true;
+      if (kpi) hasKpi = true;
     }
-    if (ROMAN_RE.test(stt) && !person && !any) {
+    if (ROMAN_RE.test(stt) && !person && !hasKpi) {
       if (gname) current = gname;
       continue;
     }
-    if (!gname && !person && !any) continue;
+    // Dòng mẫu (chỉ có Stt và ô tick, có khi bị tick nhầm) không có Nhóm, PIC, KPI: bỏ qua.
+    if (!gname && !person && !hasKpi) continue;
     const name = gname || current;
     if (gname) current = gname;
     if (!name) warnings.push(`${label}: dòng ${row.r} chưa ghi cột Nhóm.`);
@@ -164,18 +172,64 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear() } = {}) 
   };
 }
 
-/** Các tab của Google Sheet KPI -> { streams, warnings }. Không có tab dòng tiền nào đọc được -> báo lỗi. */
+/** "PIC: …" / "PIC phụ trách: …" trong các dòng phía trên dòng tiêu đề (hoặc vài dòng đầu tab task). */
+function picAbove(rows, end) {
+  for (let i = 0; i < Math.min(end, rows.length); i++) {
+    for (const c of rows[i].cells || []) {
+      const m = PIC_RE.exec(String(c?.v ?? ''));
+      if (m) return personName(m[1]);
+    }
+  }
+  return '';
+}
+
+/** Tab task của file master: có dòng tiêu đề "Task / Đầu việc", hoặc "Nhóm công việc" + "Người phụ trách". */
+export function isTaskTab(sheet) {
+  return (sheet.rows || []).slice(0, 10).some((r) => {
+    const keys = (r.cells || []).map((c) => normKey(c?.v));
+    return keys.some((k) => k.startsWith('task') && k.includes('dau viec'))
+      || (keys.includes('nhom cong viec') && keys.some((k) => k.startsWith('nguoi phu trach')));
+  });
+}
+
+/**
+ * Các tab của Google Sheet KPI -> { streams, warnings }. Không có bảng KPI nào đọc được -> báo lỗi.
+ * File master: tab KPI là tab ngay sau tab task "Dòng tiền …" (stream.sheet = tên tab task, stream.kpiSheet = tên tab KPI).
+ * File thamkhao_kpi: tab KPI tên "Dòng tiền …".
+ */
 export function parseKpiBook(tabs, opts = {}) {
   const streams = [];
   const warnings = [];
+  const seen = new Set();
+  let task = null; // tab task "Dòng tiền …" ngay trước tab đang xét
   for (const tab of tabs) {
-    if (tab.hidden || !isKpiTab(tab.name)) continue;
-    const s = parseKpiTab(tab, opts);
-    if (s.error) { warnings.push(s.error); continue; }
+    if (tab.hidden) continue;
+    const named = isKpiTab(tab.name);
+    const owner = task;
+    task = null;
+    if (named && isTaskTab(tab)) { task = tab; continue; }
+    if (!named && !owner) continue;
+    const kpiName = String(tab.name).trim();
+    const taskName = owner ? String(owner.name).trim() : '';
+    const label = owner ? `Tab “${kpiName}” (KPI của “${taskName}”)` : `Tab “${kpiName}”`;
+    const s = parseKpiTab(tab, { ...opts, label });
+    if (s.error) {
+      if (named) warnings.push(s.error); // tab sau tab task mà không phải bảng KPI: bỏ qua, không báo
+      continue;
+    }
+    if (owner) {
+      s.sheet = taskName;
+      s.kpiSheet = kpiName;
+      s.name = streamNameOf(taskName);
+      if (!s.pic) s.pic = picAbove(owner.rows || [], 5);
+    }
+    const key = normKey(s.name);
+    if (seen.has(key)) { warnings.push(`${label}: dòng tiền “${s.name}” đã có bảng KPI ở tab khác, bỏ qua tab này.`); continue; }
+    seen.add(key);
     warnings.push(...s.warnings);
     delete s.warnings;
     streams.push(s);
   }
-  if (!streams.length) throw new Error(warnings[0] || 'Google Sheet KPI chưa có tab “Dòng tiền …”.');
+  if (!streams.length) throw new Error(warnings[0] || 'Google Sheet KPI chưa có bảng KPI nào (tab “Dòng tiền …” hoặc tab KPI ngay sau tab task “Dòng tiền …”).');
   return { streams, warnings };
 }

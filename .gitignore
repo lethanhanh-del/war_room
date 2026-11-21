@@ -26,3 +26,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.log
+
+# Bản build màn hình Dòng tiền (FE/ -> public/app/, scripts/build-fe.mjs)
+public/app/
