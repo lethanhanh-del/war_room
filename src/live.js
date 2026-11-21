@@ -30,6 +30,8 @@ export async function handleLive(request, env, url, user, ctx) {
   await ensureLiveSchema(env);
   if (path === "/api/live" && request.method === "GET") return snapshot(env, url, user);
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  // Chống CSRF: cookie SameSite=Lax vẫn đi kèm request từ subdomain khác cùng site, nên chỉ nhận POST từ chính trang này.
+  if (request.headers.get("Origin") !== url.origin) return json({ error: "Nguồn yêu cầu không hợp lệ." }, 403);
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return json({ error: "Dữ liệu gửi lên không hợp lệ." }, 400);
