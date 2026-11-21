@@ -215,7 +215,7 @@
   <style>
     .drop-active { outline: 3px dashed #38bdf8; outline-offset: -6px; }
 
-    /* Điều hành Live: ai đang online, ai đang trực, lịch Chủ tịch hôm nay */
+    /* Điều hành Live: ai đang online, ai đang trực, Hẹn lịch BOD hôm nay */
     .live-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
     @media (max-width: 1100px) { .live-grid { grid-template-columns: minmax(0, 1fr); } }
     .live-grid .panel-body { max-height: 190px; overflow-y: auto; }
@@ -331,7 +331,7 @@
     <section id="tab-overview" class="tab-panel">
       <div class="live-grid">
         <div class="panel">
-          <div class="panel-head"><div><h2 class="panel-title">Đang online <span id="onlineCnt" class="tab-cnt">—</span></h2><div class="panel-sub">Người đang mở dashboard hoặc lịch Chủ tịch</div></div></div>
+          <div class="panel-head"><div><h2 class="panel-title">Đang online <span id="onlineCnt" class="tab-cnt">—</span></h2><div class="panel-sub">Người đang mở dashboard hoặc trang Hẹn lịch BOD</div></div></div>
           <div class="panel-body"><div id="onlineList" class="chip-list"></div></div>
         </div>
         <div class="panel">
@@ -339,7 +339,7 @@
           <div class="panel-body"><div id="dutyList" class="chip-list"></div></div>
         </div>
         <div class="panel">
-          <div class="panel-head"><div><h2 class="panel-title">Lịch Chủ tịch hôm nay</h2><div id="chairSub" class="panel-sub"></div></div><a class="btn" href="/lich">Mở lịch</a></div>
+          <div class="panel-head"><div><h2 class="panel-title">Hẹn lịch BOD hôm nay</h2><div id="chairSub" class="panel-sub"></div></div><a class="btn" href="/lich">Mở lịch</a></div>
           <div class="panel-body"><div id="chairList" class="alert-list"></div></div>
         </div>
       </div>
@@ -623,7 +623,7 @@
         : `<span class="badge b-blocked">Chưa có ai đánh dấu X cho ca này</span>`;
     }
 
-    // "Hôm nay" của lịch Chủ tịch chạy từ 04:00 đến 04:00 hôm sau (Ca Tối kéo dài tới 03:30).
+    // "Hôm nay" của Hẹn lịch BOD chạy từ 04:00 đến 04:00 hôm sau (Ca Tối kéo dài tới 03:30).
     function chairWindow() {
       const d = new Date(vnNow().getTime() - 4 * 3600e3), n = new Date(d.getTime() + 86400e3);
       return { from: d.toISOString().slice(0, 10) + "T04:00", to: n.toISOString().slice(0, 10) + "T04:00", label: d.toISOString().slice(5, 10).split("-").reverse().join("/") };
@@ -652,7 +652,7 @@
       const show = [...items.filter((it) => it.to <= now).slice(-1), ...upcoming].slice(0, 8);
       $("chairList").innerHTML = show.length ? show.map((it) => {
         const st = it.to <= now ? ["past", "Đã xong", "b-not_started"] : it.from <= now ? ["critical", "Đang diễn ra", "b-blocked"] : ["info", "Sắp tới", "b-in_progress"];
-        const what = it.kind === "block" ? `Chủ tịch bận${it.note ? ": " + it.note : ""}` : `Họp: ${it.name}${it.note ? " — " + it.note : ""}`;
+        const what = it.kind === "block" ? `BOD bận${it.note ? ": " + it.note : ""}` : `Họp: ${it.name}${it.note ? " — " + it.note : ""}`;
         return `<div class="alert-box ${st[0]}"><div style="display:flex;justify-content:space-between;gap:8px;"><strong class="mono">${hhmm(it.from)}–${hhmm(it.to)}</strong><span class="badge ${st[2]}">${st[1]}</span></div><div style="margin-top:2px;">${esc(what)}</div></div>`;
       }).join("") : `<span class="empty">Chưa có lịch họp nào hôm nay.</span>`;
     }

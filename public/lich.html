@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Lịch Chủ tịch – Đặt lịch họp | WAR ROOM</title>
+  <title>Hẹn lịch BOD | WAR ROOM</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>" />
   <style>
     :root {
@@ -59,38 +59,65 @@
     .panel-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
     .panel-title { margin: 0; font-size: 15px; color: var(--navy-800); }
     .panel-sub { font-size: 12px; color: var(--text-muted); }
-    .slot { display: grid; grid-template-columns: 104px 1fr auto; align-items: center; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--border); min-height: 46px; }
-    .slot:last-child { border-bottom: 0; }
-    .slot-time { font-size: 13px; font-weight: 700; color: var(--text-secondary); }
-    .slot-body { min-width: 0; overflow-wrap: anywhere; }
-    .slot.free { cursor: pointer; }
-    .slot.free:hover { background: var(--success-bg); }
-    .slot.free .slot-body { color: var(--success); font-weight: 600; }
-    .slot.meeting { background: var(--navy-100); }
-    .slot.block { background: var(--warning-bg); }
-    .slot.block .slot-body { color: var(--warning); }
-    .slot.past { opacity: .45; }
-    .slot.now { box-shadow: inset 4px 0 0 var(--accent); }
-    .who { font-weight: 700; }
-    .note { color: var(--text-secondary); }
+    [hidden] { display: none !important; }
+    .legend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+    .lg { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid var(--border-strong); background: #fff; }
+    .lg.on { background: var(--navy-800); border-color: var(--navy-800); }
+    .lg.meeting { background: var(--navy-100); border-color: #c7d7ee; }
+    .lg.block { background: var(--warning-bg); border-color: var(--warning-border); }
+
+    /* Mỗi ô = 1 khung 30 phút. Ô trống và ô của mình (admin: mọi ô) tick được; tick xong bấm Đăng ký / Hủy ở thanh dưới. */
+    .cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding: 12px; }
+    .cell { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; min-height: 60px; padding: 8px 10px; text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+    .c-time { font-size: 13px; font-weight: 700; color: var(--text-secondary); max-width: calc(100% - 22px); }
+    .c-who, .c-note { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+    .c-note { font-size: 11.5px; color: var(--text-secondary); }
+    .c-box { position: absolute; top: 8px; right: 8px; width: 18px; height: 18px; border: 1.5px solid var(--border-strong); border-radius: 5px; background: #fff; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 800; line-height: 1; }
+    .cell.free .c-who { color: var(--success); font-weight: 600; }
+    .cell.free:hover { border-color: var(--success-border); background: var(--success-bg); }
+    .cell.meeting { background: var(--navy-100); border-color: #c7d7ee; }
+    .cell.meeting .c-who { font-weight: 700; color: var(--navy-800); }
+    .cell.block { background: var(--warning-bg); border-color: var(--warning-border); }
+    .cell.block .c-who { font-weight: 700; color: var(--warning); }
+    .cell.mine { border-color: var(--accent); }
+    .cell.locked { cursor: default; }
+    .cell.past { opacity: .45; cursor: default; }
+    .cell.now { border-left: 4px solid var(--accent); }
+    .cell.on .c-box::after { content: "✓"; }
+    .cell.on.book { background: #eaf1ff; box-shadow: inset 0 0 0 2px var(--navy-800); }
+    .cell.on.book .c-box { background: var(--navy-800); border-color: var(--navy-800); }
+    .cell.on.book .c-who { color: var(--navy-800); }
+    .cell.on.cancel { box-shadow: inset 0 0 0 2px var(--danger); }
+    .cell.on.cancel .c-box { background: var(--danger); border-color: var(--danger); }
+    .cell.on.cancel .c-who { text-decoration: line-through; }
+
+    .sel-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(760px, calc(100vw - 32px)); z-index: 60; display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; padding: 10px 12px 10px 16px; border-radius: 12px; background: var(--navy-950); color: #fff; box-shadow: 0 12px 32px rgba(12,31,58,.35); }
+    .sel-info { flex: 1; min-width: 180px; display: flex; flex-direction: column; font-size: 12.5px; }
+    .sel-info b { font-size: 14px; }
+    .sel-info span { color: rgba(255,255,255,.75); overflow-wrap: anywhere; }
+    .sel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .sel-bar .btn-primary { background: #10b981; border-color: #10b981; }
+    .sel-bar .btn-primary:hover { background: #059669; }
+    main { padding-bottom: calc(40px + var(--bar-h, 0px)); }
 
     dialog { border: 0; border-radius: 12px; padding: 0; width: min(440px, calc(100vw - 32px)); box-shadow: 0 20px 50px rgba(12,31,58,.3); }
     dialog::backdrop { background: rgba(12,31,58,.45); }
     .dlg { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
     .dlg h3 { margin: 0; font-size: 16px; color: var(--navy-800); }
-    .dlg-slot { font-weight: 700; background: var(--navy-100); border-radius: 8px; padding: 8px 12px; }
+    .dlg-slot { font-weight: 700; background: var(--navy-100); border-radius: 8px; padding: 8px 12px; white-space: pre-line; }
     .dlg label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
     .dlg input { font: 14px var(--font-sans); padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 8px; }
     .dlg input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     .dlg-who { font-size: 13px; color: var(--text-secondary); }
     .dlg-err { color: var(--danger); font-size: 13px; font-weight: 600; min-height: 1em; }
     .dlg-foot { display: flex; gap: 8px; flex-wrap: wrap; }
-    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy-950); color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
+    .toast { position: fixed; left: 50%; bottom: calc(20px + var(--bar-h, 0px)); transform: translateX(-50%); background: var(--navy-950); color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
 
     @media (max-width: 860px) {
       .topbar-inner, main { padding-left: 16px; padding-right: 16px; }
       .shifts { grid-template-columns: 1fr; }
-      .slot { grid-template-columns: 88px 1fr auto; padding: 7px 12px; }
+      .cells { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; padding: 10px; }
+      .topbar { position: static; } /* thanh trên cao ~145px trên điện thoại: không dính để nhường chỗ cho các ô */
     }
   </style>
 </head>
@@ -100,8 +127,8 @@
       <div class="brand">
         <div class="brand-mark">📅</div>
         <div>
-          <div class="brand-title">LỊCH CHỦ TỊCH — ĐẶT LỊCH HỌP</div>
-          <div class="brand-sub">Ca Sáng 08:00–17:30 · Ca Tối 18:00–03:30 · Mỗi lượt 30 phút</div>
+          <div class="brand-title">HẸN LỊCH BOD</div>
+          <div class="brand-sub">Ca Sáng 08:00–17:30 · Ca Tối 18:00–03:30 · Mỗi ô 30 phút</div>
         </div>
       </div>
       <div class="top-actions">
@@ -123,30 +150,46 @@
       <button id="nextBtn" class="btn btn-primary" type="button" hidden></button>
     </section>
     <nav id="days" class="days" aria-label="Chọn ngày"></nav>
+    <div class="legend">
+      <span><i class="lg"></i>Trống — bấm để tick</span>
+      <span><i class="lg on"></i>Đang chọn</span>
+      <span><i class="lg meeting"></i>Đã có lịch</span>
+      <span><i class="lg block"></i>BOD bận</span>
+      <span>Tick nhiều ô rồi bấm <b>Đăng ký</b> · Tick ô của mình để hủy</span>
+    </div>
     <div class="shifts">
       <section class="panel">
         <div class="panel-head"><h2 class="panel-title">☀️ Ca Sáng</h2><span id="daySub" class="panel-sub"></span></div>
-        <div id="daySlots"></div>
+        <div id="daySlots" class="cells"></div>
       </section>
       <section class="panel">
         <div class="panel-head"><h2 class="panel-title">🌙 Ca Tối</h2><span id="nightSub" class="panel-sub"></span></div>
-        <div id="nightSlots"></div>
+        <div id="nightSlots" class="cells"></div>
       </section>
     </div>
   </main>
 
+  <div id="selBar" class="sel-bar" hidden>
+    <div class="sel-info"><b id="selCount"></b><span id="selRanges"></span></div>
+    <div class="sel-actions">
+      <button id="selClear" class="btn" type="button">Bỏ chọn</button>
+      <button id="selCancel" class="btn btn-danger" type="button" hidden></button>
+      <button id="selBook" class="btn btn-primary" type="button" hidden></button>
+    </div>
+  </div>
+
   <dialog id="dlg">
     <form id="dlgForm" class="dlg">
-      <h3>Đặt lịch họp với Chủ tịch</h3>
+      <h3 id="dlgTitle">Hẹn lịch BOD</h3>
       <div id="dlgSlot" class="dlg-slot"></div>
       <div class="dlg-who">Người đặt: <b id="dlgWho"></b></div>
       <label>Nội dung / dòng tiền cần báo cáo<input id="fNote" maxlength="300" placeholder="VD: Dòng tiền 3 – xin chốt phương án" /></label>
       <div id="dlgErr" class="dlg-err"></div>
       <div class="dlg-foot">
-        <button id="fBlock" class="btn" type="button" title="Dành cho thư ký: chặn khung giờ Chủ tịch có việc riêng">⛔ Chủ tịch bận</button>
+        <button id="fBlock" class="btn" type="button" title="Dành cho thư ký: chặn khung giờ BOD có việc riêng">⛔ BOD bận</button>
         <span style="flex:1"></span>
         <button id="fClose" class="btn" type="button">Đóng</button>
-        <button class="btn btn-primary" type="submit">Đặt lịch</button>
+        <button id="fSubmit" class="btn btn-primary" type="submit">Đăng ký</button>
       </div>
     </form>
   </dialog>
@@ -164,8 +207,8 @@
 
     let bookings = {};
     let me = null; // người đang đăng nhập, server trả kèm danh sách lịch
-    let selected = null;
-    let dlgSlotKey = null;
+    let selected = null;         // ngày (của ca) đang xem
+    const sel = new Map();       // các ô đang tick: slot -> "book" (đăng ký) | "cancel" (hủy)
 
     const pad = (n) => String(n).padStart(2, "0");
     const nowVN = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 16);
@@ -195,7 +238,7 @@
       if (res.status === 401) { location.reload(); throw new Error("Phiên đăng nhập đã hết hạn."); }
       const data = await res.json().catch(() => ({}));
       if (res.status === 403 && data.mustChange) { location.href = "/doi-mat-khau"; throw new Error(data.error); }
-      if (!res.ok) { const e = new Error(data.error || `Lỗi ${res.status}`); e.status = res.status; throw e; }
+      if (!res.ok) { const e = new Error(data.error || `Lỗi ${res.status}`); e.status = res.status; e.taken = data.taken; throw e; }
       return data;
     }
 
@@ -217,36 +260,81 @@
       const base = currentShiftDate();
       const dates = Array.from({ length: 7 }, (_, i) => addDays(base, i));
       if (!dates.includes(selected)) selected = base;
+      prune();
 
       $("days").innerHTML = dates.map((d) => {
-        const n = shiftOf(d).day.concat(shiftOf(d).night).filter((s) => bookings[s]?.kind === "meeting").length;
-        return `<button class="day-chip${d === selected ? " active" : ""}" data-date="${d}" type="button"><b>${dayLabel(d)}</b><span>${wd(d)} ${dm(d)} · ${n} lịch</span></button>`;
+        const all = shiftOf(d).day.concat(shiftOf(d).night);
+        const n = all.filter((s) => bookings[s]?.kind === "meeting").length;
+        const k = all.filter((s) => sel.has(s)).length;
+        return `<button class="day-chip${d === selected ? " active" : ""}" data-date="${d}" type="button"><b>${dayLabel(d)}</b><span>${wd(d)} ${dm(d)} · ${n} lịch${k ? ` · ✓${k} chọn` : ""}</span></button>`;
       }).join("");
 
       const { day, night } = shiftOf(selected);
       $("daySub").textContent = `${wd(selected)} ${dm(selected)} · 08:00–17:30`;
       $("nightSub").textContent = `18:00 ${dm(selected)} → 03:30 ${dm(addDays(selected, 1))}`;
-      $("daySlots").innerHTML = day.map(slotRow).join("");
-      $("nightSlots").innerHTML = night.map(slotRow).join("");
+      $("daySlots").innerHTML = day.map(cell).join("");
+      $("nightSlots").innerHTML = night.map(cell).join("");
       renderNow(dates);
+      renderBar();
     }
 
-    function slotRow(s) {
-      const b = bookings[s], past = isPast(s);
-      const cur = !past && s <= nowVN();
-      const cls = ["slot", b ? b.kind : "free", past ? "past" : "", cur ? "now" : ""].join(" ");
-      let body, act = "";
-      if (!b) {
-        body = past ? "—" : "Trống";
-        if (!past) act = `<button class="btn" type="button" data-book="${s}">Đặt</button>`;
-      } else if (b.kind === "block") {
-        body = `⛔ <span class="who">Chủ tịch bận</span>${b.note ? ` · <span class="note">${esc(b.note)}</span>` : ""} <span class="note">(${esc(b.name)})</span>`;
-        if (!past && canCancel(b)) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Bỏ chặn</button>`;
-      } else {
-        body = `<span class="who">${esc(b.name)}</span>${b.note ? ` · <span class="note">${esc(b.note)}</span>` : ""}`;
-        if (!past && canCancel(b)) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Hủy</button>`;
+    // Lịch vừa đổi (người khác đặt/hủy) hoặc khung đã qua: bỏ tick những ô không còn hợp lệ.
+    function prune() {
+      let lost = 0;
+      for (const [s, act] of sel) {
+        const b = bookings[s];
+        if (!isPast(s) && (act === "book" ? !b : b && canCancel(b))) continue;
+        sel.delete(s);
+        if (act === "book" && b && b.username !== me?.username) lost++;
       }
-      return `<div class="${cls.trim()}"${!b && !past ? ` data-book="${s}"` : ""}><div class="slot-time mono">${hm(s)}–${hm(addMin(s, 30))}</div><div class="slot-body">${body}</div><div>${act}</div></div>`;
+      if (lost) toast(`${lost} ô bạn đang chọn vừa có người đặt — đã bỏ chọn`);
+    }
+
+    const tickable = (s) => !isPast(s) && (!bookings[s] || canCancel(bookings[s]));
+
+    function cell(s) {
+      const b = bookings[s], past = isPast(s), act = sel.get(s), tick = tickable(s);
+      const cls = ["cell", b ? b.kind : "free", b && me && b.username === me.username ? "mine" : "",
+        past ? "past" : "", !past && s <= nowVN() ? "now" : "", act ? "on " + act : "", tick ? "" : "locked"];
+      const who = !b ? (past ? "—" : act ? "Đã chọn" : "Trống") : b.kind === "block" ? "⛔ BOD bận" : esc(b.name);
+      const note = b?.note ? `<span class="c-note">${esc(b.note)}</span>` : "";
+      const info = b ? ` · ${b.kind === "block" ? `BOD bận (${b.name})` : b.name}${b.note ? " · " + b.note : ""}` : "";
+      return `<button type="button" class="${cls.filter(Boolean).join(" ")}" data-slot="${s}" ${tick ? `aria-pressed="${!!act}"` : `aria-disabled="true"`} title="${esc(hm(s) + "–" + hm(addMin(s, 30)) + info)}">`
+        + `<span class="c-time mono">${hm(s)}</span>${tick ? `<span class="c-box"></span>` : ""}<span class="c-who">${who}</span>${note}</button>`;
+    }
+
+    function toggle(s) {
+      const b = bookings[s];
+      if (isPast(s)) return;
+      if (!tickable(s)) { toast(`${hm(s)} · ${b.kind === "block" ? "BOD bận" : b.name}${b.note ? " · " + b.note : ""}`); return; }
+      if (sel.has(s)) sel.delete(s); else sel.set(s, b ? "cancel" : "book");
+      render();
+      document.querySelector(`[data-slot="${s}"]`)?.focus({ preventScroll: true });
+    }
+
+    const picked = (act) => [...sel].filter(([, a]) => a === act).map(([s]) => s).sort();
+
+    // Gộp các ô liền nhau thành khoảng: 09:00, 09:30, 14:00 → "Hôm nay 09:00–10:00", "Hôm nay 14:00–14:30"
+    function ranges(slots) {
+      const out = [];
+      for (const s of [...slots].sort()) {
+        const last = out[out.length - 1];
+        if (last && last.end === s) last.end = addMin(s, 30);
+        else out.push({ start: s, end: addMin(s, 30) });
+      }
+      return out.map((r) => `${dayLabel(r.start.slice(0, 10))} ${hm(r.start)}–${hm(r.end)}`);
+    }
+
+    function renderBar() {
+      const book = picked("book"), cancel = picked("cancel");
+      $("selBar").hidden = !sel.size;
+      if (sel.size) {
+        $("selCount").textContent = `Đã chọn ${sel.size} ô · ${sel.size * 30} phút`;
+        $("selRanges").textContent = ranges([...sel.keys()]).join(", ");
+        $("selBook").hidden = !book.length; $("selBook").textContent = `Đăng ký ${book.length} ô`;
+        $("selCancel").hidden = !cancel.length; $("selCancel").textContent = `Hủy ${cancel.length} ô`;
+      }
+      document.documentElement.style.setProperty("--bar-h", sel.size ? $("selBar").offsetHeight + 16 + "px" : "0px");
     }
 
     function renderNow(dates) {
@@ -260,10 +348,10 @@
 
       let end = addMin(cur, 30);
       while (b && bookings[end] && bookings[end].kind === b.kind && bookings[end].name === b.name) end = addMin(end, 30);
-      if (!inShift) { $("nowDot").className = "now-dot"; $("nowText").textContent = "Chủ tịch đang ngoài ca làm việc"; }
-      else if (!b) { $("nowDot").className = "now-dot free"; $("nowText").textContent = "Chủ tịch đang TRỐNG lịch"; }
-      else if (b.kind === "block") { $("nowDot").className = "now-dot busy"; $("nowText").innerHTML = `Chủ tịch đang BẬN${b.note ? " · " + esc(b.note) : ""} (đến ${hm(end)})`; }
-      else { $("nowDot").className = "now-dot busy"; $("nowText").innerHTML = `Chủ tịch đang họp với <b>${esc(b.name)}</b>${b.note ? " · " + esc(b.note) : ""} (đến ${hm(end)})`; }
+      if (!inShift) { $("nowDot").className = "now-dot"; $("nowText").textContent = "BOD đang ngoài ca làm việc"; }
+      else if (!b) { $("nowDot").className = "now-dot free"; $("nowText").textContent = "BOD đang TRỐNG lịch"; }
+      else if (b.kind === "block") { $("nowDot").className = "now-dot busy"; $("nowText").innerHTML = `BOD đang BẬN${b.note ? " · " + esc(b.note) : ""} (đến ${hm(end)})`; }
+      else { $("nowDot").className = "now-dot busy"; $("nowText").innerHTML = `BOD đang họp với <b>${esc(b.name)}</b>${b.note ? " · " + esc(b.note) : ""} (đến ${hm(end)})`; }
 
       const next = all.find((s) => !isPast(s) && !bookings[s]);
       const btn = $("nextBtn");
@@ -275,46 +363,71 @@
       }
     }
 
-    function openDialog(s) {
-      dlgSlotKey = s;
-      const date = dates7().find((d) => shiftOf(d).day.includes(s) || shiftOf(d).night.includes(s));
-      const shift = shiftOf(date).day.includes(s) ? "Ca Sáng" : "Ca Tối";
-      $("dlgSlot").textContent = `${dayLabel(date)} (${wd(s.slice(0, 10))} ${dm(s.slice(0, 10))}) · ${hm(s)}–${hm(addMin(s, 30))} · ${shift}`;
+    function fillDialog() {
+      const slots = picked("book");
+      $("dlgTitle").textContent = `Hẹn lịch BOD: ${slots.length} ô (${slots.length * 30} phút)`;
+      $("dlgSlot").textContent = ranges(slots).join("\n");
+      $("fSubmit").textContent = `Đăng ký ${slots.length} ô`;
+    }
+
+    function openDialog() {
+      if (!picked("book").length) return;
+      fillDialog();
       $("dlgWho").textContent = me ? `${me.fullName} (${me.username})` : "";
       $("fNote").value = "";
       $("dlgErr").textContent = "";
       $("dlg").showModal();
       $("fNote").focus();
     }
-    const dates7 = () => Array.from({ length: 7 }, (_, i) => addDays(currentShiftDate(), i));
 
+    // Đăng ký mọi ô đang tick trong một lần: server nhận tất cả hoặc không ô nào.
     async function book(kind) {
+      const slots = picked("book");
+      if (!slots.length) return;
       try {
-        await api("POST", "", { slot: dlgSlotKey, kind, note: $("fNote").value.trim() });
+        await api("POST", "", { slots, kind, note: $("fNote").value.trim() });
+        slots.forEach((s) => sel.delete(s));
         $("dlg").close();
-        toast(kind === "block" ? "Đã chặn khung giờ" : `Đã đặt lịch ${hm(dlgSlotKey)}`);
+        toast(`${kind === "block" ? "Đã chặn" : "Đã đăng ký"} ${slots.length} ô: ${ranges(slots).join(", ")}`);
       } catch (e) {
-        $("dlgErr").textContent = e.message;
-        if (e.status !== 409) return;
+        if (e.status !== 409) { $("dlgErr").textContent = e.message; return; }
+        const taken = e.taken || [];
+        taken.forEach((s) => sel.delete(s));
+        const msg = taken.length ? `Ô ${ranges(taken).join(", ")} vừa có người đặt — đã bỏ chọn.` : e.message;
+        if (picked("book").length) { fillDialog(); $("dlgErr").textContent = msg + " Bấm Đăng ký để đặt các ô còn lại."; }
+        else { $("dlg").close(); toast(msg); }
       }
       load();
     }
 
-    async function cancel(s) {
-      const b = bookings[s];
-      if (!b || !confirm(`${b.kind === "block" ? "Bỏ chặn" : "Hủy lịch của " + b.name} lúc ${hm(s)} ngày ${dm(s.slice(0, 10))}?`)) return;
-      try { await api("DELETE", `?slot=${encodeURIComponent(s)}`); toast("Đã hủy"); } catch (e) { toast(e.message); }
+    async function cancelSelected() {
+      const slots = picked("cancel");
+      if (!slots.length || !confirm(`Hủy ${slots.length} ô: ${ranges(slots).join(", ")}?`)) return;
+      try {
+        await api("DELETE", "?" + slots.map((s) => "slot=" + encodeURIComponent(s)).join("&"));
+        slots.forEach((s) => sel.delete(s));
+        toast(`Đã hủy ${slots.length} ô`);
+      } catch (e) { toast(e.message); }
       load();
     }
 
     document.addEventListener("click", (e) => {
       const day = e.target.closest("[data-date]");
       if (day) { selected = day.dataset.date; render(); return; }
-      const c = e.target.closest("[data-cancel]");
-      if (c) { cancel(c.dataset.cancel); return; }
-      const bk = e.target.closest("[data-book]");
-      if (bk) openDialog(bk.dataset.book);
+      const c = e.target.closest("[data-slot]");
+      if (c) toggle(c.dataset.slot);
     });
+    // Nút "Đặt lượt trống gần nhất": tick ô đó và mở luôn hộp đăng ký.
+    $("nextBtn").onclick = () => {
+      const s = $("nextBtn").dataset.book;
+      selected = hm(s) < "03:30" ? addDays(s.slice(0, 10), -1) : s.slice(0, 10);
+      sel.set(s, "book"); render(); openDialog();
+    };
+    $("selBook").onclick = openDialog;
+    $("selCancel").onclick = cancelSelected;
+    $("selClear").onclick = () => { sel.clear(); render(); };
+    window.addEventListener("resize", renderBar);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sel.size && !$("dlg").open) { sel.clear(); render(); } });
     $("dlgForm").addEventListener("submit", (e) => { e.preventDefault(); book("meeting"); });
     $("fBlock").onclick = () => book("block");
     $("fClose").onclick = () => $("dlg").close();
