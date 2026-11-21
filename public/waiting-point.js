@@ -956,6 +956,7 @@ if (typeof document !== 'undefined') {
 
       const now = Date.now();
       const curToday = todayKeyVN(now);
+      const wasOnline = state.isOnline;
       state.isOnline = true;
       state.lastSheetPresentRows = Array.isArray(result.sheetPresentRows) ? result.sheetPresentRows : [];
 
@@ -1138,7 +1139,19 @@ if (typeof document !== 'undefined') {
           render();
         }
       } else {
-        render();
+        const snap = buildBoardSnapshot(now);
+        if (
+          !wasOnline ||
+          snap.structSig !== state.lastBoardStructSig ||
+          newEntries.length > 0 ||
+          removedEntries.length > 0 ||
+          newlyAssigned.length > 0 ||
+          hasTimerDelta
+        ) {
+          render();
+        } else {
+          updateHeaderOnly();
+        }
       }
     } catch {
       state.isOnline = false;
@@ -1200,10 +1213,9 @@ if (typeof document !== 'undefined') {
   }
 
   // ---------- Render Views ----------
-  function renderPersonCard(person, idx, now, taskLimit, compact) {
-    const isExp = state.expandedPeople.has(person.key);
-    const shown = isExp ? person.tasks : person.tasks.slice(0, taskLimit);
-    const hidden = isExp ? 0 : Math.max(0, person.tasks.length - taskLimit);
+  function renderPersonCard(person, idx, now, compact) {
+    // Hiển thị đầy đủ tất cả đầu việc của từng người (gấp nhất ở trên cùng) và cuộn mượt trong thẻ khi nhiều việc.
+    const shown = person.tasks;
     const hasNew = person.tasks.some((t) => (state.newHighlights.get(t.id) || 0) > now);
     const topTask = person.tasks.find((t) => !t.isClearing) || person.tasks[0];
 
@@ -1296,7 +1308,6 @@ if (typeof document !== 'undefined') {
           </div>
         </header>
         <div class="wp-timeline">${rowsHtml}</div>
-        ${hidden > 0 || isExp ? `<footer class="wp-card-foot"><button type="button" class="wp-more" data-toggle-person="${esc(person.key)}">${isExp ? 'Thu gọn bớt' : `Xem thêm ${hidden} việc ít gấp hơn`}</button></footer>` : ''}
       </section>
     `;
   }
@@ -1606,11 +1617,10 @@ if (typeof document !== 'undefined') {
     const burnCount = visible.filter((v) => !v.isClearing && v.timing.tier === 'burn').length;
     const structSig = people
       .map((p) => {
-        const exp = state.expandedPeople.has(p.key) ? '1' : '0';
         const tasksSig = p.tasks
-          .map((t) => `${t.id}:${t.isClearing ? 'c' : t.timing.tier}:${(state.newHighlights.get(t.id) || 0) > now ? 'n' : 'o'}`)
+          .map((t) => `${t.id}:${t.owner || ''}:${t.timeRaw || ''}:${t.isClearing ? 'c' : t.timing.tier}:${(state.newHighlights.get(t.id) || 0) > now ? 'n' : 'o'}`)
           .join(',');
-        return `${p.key}[${p.topTier}:${exp}:${tasksSig}]`;
+        return `${p.key}[${p.topTier}:${tasksSig}]`;
       })
       .join('|');
     return { visible, people, activeCount, burnCount, structSig };
@@ -1734,12 +1744,11 @@ if (typeof document !== 'undefined') {
       `;
     } else {
       const gridCls = getPeopleGridLayout(people.length);
-      const taskLimit = getTaskLimitForPeopleCount(people.length);
       const compact = people.length >= 7;
       const rowsCls = people.length <= 3 ? 'rows-1' : people.length <= 8 ? 'rows-2' : 'rows-auto';
       stageHtml = `
         <div class="wp-grid ${gridCls} ${rowsCls}">
-          ${people.map((p, i) => renderPersonCard(p, i + 1, now, taskLimit, compact)).join('')}
+          ${people.map((p, i) => renderPersonCard(p, i + 1, now, compact)).join('')}
         </div>
       `;
     }
@@ -1750,7 +1759,10 @@ if (typeof document !== 'undefined') {
     ui.stage.querySelectorAll('.wp-card').forEach((card) => {
       const k = card.getAttribute('data-person-key');
       const sc = card.querySelector('.wp-timeline');
-      if (k && sc && prevScrolls.has(k)) sc.scrollTop = prevScrolls.get(k);
+      if (k && sc) {
+        if (prevScrolls.has(k)) sc.scrollTop = prevScrolls.get(k);
+        wireCardScroll(card, sc, k);
+      }
     });
 
     if (state.showStats) {
@@ -1763,6 +1775,93 @@ if (typeof document !== 'undefined') {
       requestAnimationFrame(measureStatsPageSize);
     } else {
       statsRo?.disconnect();
+      requestAnimationFrame(syncAllCardOverflow);
+    }
+  }
+
+  // ---------- Tự cuộn mượt trong từng thẻ người khi có nhiều task (tạm dừng khi rê chuột / tự cuộn) ----------
+  const cardScrollMeta = new Map();
+  const CARD_SCROLL_SPEED = 24; // px mỗi giây — đọc thoải mái trên màn hình TV
+  const CARD_HOLD_MS = 3500;
+  const CARD_MANUAL_PAUSE_MS = 10000;
+  const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function getCardScrollState(key) {
+    if (!cardScrollMeta.has(key)) {
+      cardScrollMeta.set(key, { carry: 0, holdUntil: Date.now() + CARD_HOLD_MS, pauseUntil: 0, hovered: false });
+    }
+    return cardScrollMeta.get(key);
+  }
+
+  function updateCardOverflowClass(card, sc) {
+    const room = sc.scrollHeight - sc.clientHeight;
+    card.classList.toggle('has-overflow', room > 8);
+    card.classList.toggle('at-bottom', room <= 8 || sc.scrollTop >= room - 2);
+  }
+
+  function syncAllCardOverflow() {
+    if (!ui.stage || state.showStats) return;
+    ui.stage.querySelectorAll('.wp-card').forEach((card) => {
+      const sc = card.querySelector('.wp-timeline');
+      if (sc) updateCardOverflowClass(card, sc);
+    });
+  }
+
+  function wireCardScroll(card, sc, key) {
+    const meta = getCardScrollState(key);
+    sc.addEventListener('mouseenter', () => { meta.hovered = true; });
+    sc.addEventListener('mouseleave', () => {
+      meta.hovered = false;
+      meta.pauseUntil = Math.max(meta.pauseUntil, Date.now() + 1500);
+    });
+    const onManual = () => { meta.pauseUntil = Date.now() + CARD_MANUAL_PAUSE_MS; };
+    sc.addEventListener('wheel', onManual, { passive: true });
+    sc.addEventListener('touchstart', onManual, { passive: true });
+    sc.addEventListener('scroll', () => updateCardOverflowClass(card, sc), { passive: true });
+    updateCardOverflowClass(card, sc);
+  }
+
+  let lastCardScrollFrame = 0;
+  function stepCardAutoScroll() {
+    const t = performance.now();
+    const dt = lastCardScrollFrame ? Math.min(t - lastCardScrollFrame, 500) : 0;
+    lastCardScrollFrame = t;
+    if (reducedMotion || state.showStats || document.hidden || !ui.stage) return;
+
+    const now = Date.now();
+    const cards = ui.stage.querySelectorAll('.wp-card');
+    for (const card of cards) {
+      const key = card.getAttribute('data-person-key');
+      const sc = card.querySelector('.wp-timeline');
+      if (!key || !sc) continue;
+      const room = sc.scrollHeight - sc.clientHeight;
+      updateCardOverflowClass(card, sc);
+      if (room <= 8) continue;
+
+      const meta = getCardScrollState(key);
+      if (meta.hovered || now < meta.pauseUntil || now < meta.holdUntil) continue;
+
+      if (sc.scrollTop >= room - 1) {
+        meta.holdUntil = now + CARD_HOLD_MS * 2 + 800;
+        meta.carry = 0;
+        setTimeout(() => {
+          if (state.showStats || meta.hovered || Date.now() < meta.pauseUntil) return;
+          const curCard = ui.stage?.querySelector(`.wp-card[data-person-key="${CSS.escape(key)}"]`);
+          const curSc = curCard?.querySelector('.wp-timeline');
+          if (!curSc) return;
+          curSc.scrollTo({ top: 0, behavior: 'smooth' });
+          meta.holdUntil = Date.now() + CARD_HOLD_MS;
+        }, CARD_HOLD_MS);
+        continue;
+      }
+
+      meta.carry += (CARD_SCROLL_SPEED * dt) / 1000;
+      const step = Math.floor(meta.carry);
+      if (step >= 1) {
+        meta.carry -= step;
+        sc.scrollTop = Math.min(room, sc.scrollTop + step);
+        updateCardOverflowClass(card, sc);
+      }
     }
   }
 
@@ -1793,11 +1892,14 @@ if (typeof document !== 'undefined') {
   syncFromSheet();
   connectLiveWs();
   setInterval(syncFromSheet, WP_CONFIG.POLL_INTERVAL_MS);
+  setInterval(stepCardAutoScroll, 40);
   setInterval(() => {
     const now = Date.now();
     checkOverdueAlerts(now);
     tickInPlace(now);
   }, 1000);
+
+  window.addEventListener('resize', syncAllCardOverflow);
 
   window.addEventListener('pointerdown', () => {
     if (!audioUnlocked) {

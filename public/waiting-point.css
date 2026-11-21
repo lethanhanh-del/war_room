@@ -385,12 +385,17 @@
   scrollbar-width: none;
 }
 
+.wp-grid.rows-auto .wp-card {
+  max-height: calc((100vh - 168px) / 2);
+}
+
 .wp-grid.rows-auto::-webkit-scrollbar {
   display: none;
 }
 
 /* ---------- Thẻ Người hỗ trợ (Timeline kiến trúc đồng bộ Night Ops / Light) ---------- */
 .wp-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -399,6 +404,18 @@
   border-radius: var(--r-lg);
   background: var(--bg-surface);
   overflow: hidden;
+}
+
+.wp-card.has-overflow:not(.at-bottom)::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 0;
+  height: 28px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--bg-surface) 92%);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 
 .wp-card.is-burn {
@@ -595,18 +612,33 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: none;
-  padding: 6px 16px 12px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  padding: 6px 14px 14px 16px;
   display: flex;
   flex-direction: column;
 }
 
 .wp-card.compact .wp-timeline {
-  padding: 4px 12px 10px;
+  padding: 4px 10px 12px 12px;
 }
 
 .wp-timeline::-webkit-scrollbar {
-  display: none;
+  width: 5px;
+}
+
+.wp-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wp-timeline::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+.wp-timeline::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 
 .wp-node {
