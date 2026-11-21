@@ -224,10 +224,11 @@ export async function planImport(env, book, getWorksuite, target = '') {
 }
 
 /**
- * Lưu kết quả planImport() vào D1. Sheet trống của file tổng -> gỡ task Excel cũ của dòng tiền đó.
+ * Lưu kết quả planImport() vào D1. Sheet trống của file tổng -> gỡ task Excel cũ của dòng tiền đó,
+ * trừ khi keepEmpty (đồng bộ Google Sheet: giữ thẻ dòng tiền 0 task để dashboard hiện đủ các dòng tiền).
  * @returns {Promise<{ error: string, status: number } | { total: number, results: object[] }>}
  */
-export async function saveImport(env, plan, { fileName, user, now }) {
+export async function saveImport(env, plan, { fileName, user, now, keepEmpty = false }) {
   await ensureTable(env);
   const existing = new Set((await listImports(env, { withTasks: false })).map((r) => r.key));
   const at = new Date(now).toISOString();
@@ -235,7 +236,7 @@ export async function saveImport(env, plan, { fileName, user, now }) {
   const results = [];
   for (const { sec, key, match } of plan) {
     const streamName = match?.fullName || match?.name || sec.title;
-    if (!sec.tasks.length) {
+    if (!sec.tasks.length && !keepEmpty) {
       // File tổng: sheet của dòng tiền này đã trống -> gỡ task Excel cũ (nếu có).
       if (existing.has(key)) {
         statements.push(env.DB.prepare('DELETE FROM excel_imports WHERE stream_key = ?').bind(key));

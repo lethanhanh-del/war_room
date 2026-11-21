@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { csvSheet, NOT_PUBLIC, parseCsv, parseSheetList, readSheet, sheetId } from '../src/excel/gsheet.js';
+import { csvSheet, NOT_PUBLIC, parseCsv, parseSheetList, readSheet, sheetId, streamSections } from '../src/excel/gsheet.js';
 import { extractWorkbook } from '../src/excel/tasks.js';
 
 const NOW = Date.UTC(2026, 10, 21, 8, 0, 0); // 21/11/2026 15:00 giờ VN
@@ -79,20 +79,48 @@ function fakeGoogle(routes) {
   return () => { globalThis.fetch = real; };
 }
 
-test('readSheet: đọc từng sheet qua CSV; sheet "Dòng tiền …" hỏng tiêu đề -> cảnh báo rõ ràng', async () => {
-  const header = 'STT,Dòng tiền,Nhóm công việc,Task / Đầu việc,Người phụ trách,Người phối hợp,Hạn hoàn thành,Trạng thái,Ưu tiên,Đầu ra cần có,Điểm nghẽn / Cần hỗ trợ';
+const HEADER = 'STT,Dòng tiền,Nhóm công việc,Task / Đầu việc,Người phụ trách,Người phối hợp,Hạn hoàn thành,Trạng thái,Ưu tiên,Đầu ra cần có,Điểm nghẽn / Cần hỗ trợ';
+const sheetOf = (name, csv) => csvSheet(name, parseCsv(csv));
+
+test('readSheet: mỗi sheet "Dòng tiền …" là 1 thẻ theo thứ tự file, kể cả sheet trống / hỏng tiêu đề (kèm cảnh báo)', async () => {
   const restore = fakeGoogle({
-    '/htmlview': ['items.push({name: "Dòng tiền Banking", pageUrl: "x", gid: "11"}); items.push({name: "Dòng tiền nợ khó đòi", pageUrl: "x", gid: "22"});', 'text/html'],
-    'gid=11': [`${header}\n1,Banking,SS1,Chốt hạn mức,Nguyễn Thế Nhiên,,25/11/2026,Đang thực hiện,P0,Biên bản,`, 'text/csv; charset=utf-8'],
+    '/htmlview': ['items.push({name: "Dòng tiền Tài chính", pageUrl: "x", gid: "33"}); items.push({name: "Dòng tiền Banking", pageUrl: "x", gid: "11"}); items.push({name: "Dòng tiền nợ khó đòi", pageUrl: "x", gid: "22"});', 'text/html'],
+    'gid=33': [HEADER, 'text/csv; charset=utf-8'],
+    'gid=11': [`${HEADER}\n1,Dòng tiền 2: Banking,SS1,Chốt hạn mức,Nguyễn Thế Nhiên,,25/11/2026,Đang thực hiện,P0,Biên bản,`, 'text/csv; charset=utf-8'],
     'gid=22': ['STT,Cột 2,Cột 3,Cột 4,Cột 5,Người phối hợp,Hạn hoàn thành,Trạng thái,Ưu tiên,Đầu ra cần có,Điểm nghẽn / Cần hỗ trợ', 'text/csv; charset=utf-8'],
   });
   try {
     const book = await readSheet('X', { now: NOW });
-    assert.deepEqual(book.sections.map((s) => [s.name, s.tasks.length]), [['Banking', 1]]);
+    assert.deepEqual(book.sections.map((s) => [s.sheet, s.code, s.title, s.tasks.length]), [
+      ['Dòng tiền Tài chính', '', 'Dòng tiền: Tài chính', 0],
+      ['Dòng tiền Banking', 'DT02', 'Dòng tiền 2: Banking', 1],
+      ['Dòng tiền nợ khó đòi', '', 'Dòng tiền: Nợ khó đòi', 0],
+    ]);
     assert.match(book.warnings.join('\n'), /Sheet “Dòng tiền nợ khó đòi” không có dòng tiêu đề hợp lệ/);
   } finally {
     restore();
   }
+});
+
+test('streamSections: số dòng tiền lấy từ cột "Dòng tiền" (khớp tên, bỏ qua dấu câu); mọi sheet trống -> đủ thẻ 0 task', () => {
+  const thu = sheetOf('Dòng tiền thu trước hạn quá hạn', `${HEADER}\n1,Dòng tiền 4: Thu trước hạn/quá hạn,,Thu hồi công nợ,Nguyễn Thế Nhiên,,,Chưa cập nhật,,,`);
+  const other = sheetOf('Dòng tiền Banking', `${HEADER}\n1,Dòng tiền 9: Tài chính,,Việc lạc sheet,Nguyễn Thế Nhiên,,,Chưa cập nhật,,,`);
+  const book = streamSections([thu, other, sheetOf('Hướng dẫn', 'Ghi chú')], { now: NOW });
+  assert.deepEqual(book.sections.map((s) => [s.code, s.name]), [['DT04', 'Thu trước hạn quá hạn'], ['', 'Banking']]);
+
+  const empty = streamSections([sheetOf('Dòng tiền Tài chính', HEADER), sheetOf('Dòng tiền Banking', '')], { now: NOW });
+  assert.deepEqual(empty.sections.map((s) => [s.name, s.tasks.length]), [['Tài chính', 0], ['Banking', 0]]);
+  assert.match(empty.warnings.join('\n'), /chưa có task nào/);
+
+  assert.throws(() => streamSections([sheetOf('Trang tính1', HEADER)]), /không có sheet nào tên “Dòng tiền …”/);
+});
+
+test('streamSections: PIC ghi ở 1 ô phía trên dòng tiêu đề ("PIC phụ trách: …")', () => {
+  const banking = sheetOf('Dòng tiền Banking', `PIC phụ trách: Chị Nguyễn Thị Mai Thu,,\n${HEADER}\n1,Dòng tiền 2: Banking,SS1,Chốt hạn mức,Nguyễn Thế Nhiên,,25/11/2026,Đang xử lý,P0,Biên bản,`);
+  const [sec] = streamSections([banking], { now: NOW }).sections;
+  assert.equal(sec.pic, 'Nguyễn Thị Mai Thu');
+  assert.equal(sec.code, 'DT02');
+  assert.equal(sec.tasks.length, 1);
 });
 
 test('readSheet: Sheet chưa chia sẻ công khai -> lỗi hướng dẫn chia sẻ', async () => {

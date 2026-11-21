@@ -8,7 +8,9 @@
 //   3. dựng lại bảng như readXlsx() rồi đọc bằng extractWorkbook() — đúng quy tắc của "Nạp task Excel".
 // Nếu Google đổi định dạng trang htmlview: đọc cả file .xlsx (chậm hơn nhưng vẫn đúng).
 
-import { extractWorkbook, parseStreamTitle, parseWorkbookFile } from './tasks.js';
+import { normKey } from '../worksuite/model.js';
+import { extractWorkbook, parseStreamTitle } from './tasks.js';
+import { readXlsx } from './xlsx.js';
 
 const DEFAULT_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK
 const FETCH_TIMEOUT_MS = 15000;
@@ -89,25 +91,66 @@ async function fetchGoogle(url, accept) {
   return res;
 }
 
+/** Số dòng tiền ghi trong ô của sheet (cột "Dòng tiền": "Dòng tiền 2: Banking" -> 2), khi tên sheet không có số. */
+function streamNoInCells(sheet, name) {
+  const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, ''); // "Thu trước hạn/quá hạn" = "Thu trước hạn quá hạn"
+  const key = loose(name);
+  for (const row of sheet.rows) {
+    for (const cell of row.cells) {
+      const st = cell && typeof cell.v === 'string' && /\d/.test(cell.v) ? parseStreamTitle(cell.v) : null;
+      if (st?.no && loose(st.name) === key) return st.no;
+    }
+  }
+  return null;
+}
+
 /**
- * Đọc Google Sheet -> kết quả như parseWorkbookFile(): { format, sections, warnings }, thêm cảnh báo cho sheet
- * "Dòng tiền …" không nhận ra bảng task (vd tiêu đề cột bị đổi thành "Cột 2", "Cột 3"… khi chuyển vùng thành Bảng).
+ * Sheet là nguồn duy nhất của dashboard: mỗi sheet "Dòng tiền …" là 1 thẻ dòng tiền, theo thứ tự trong file —
+ * kể cả sheet chưa có task hoặc hỏng dòng tiêu đề (thẻ 0 task, kèm cảnh báo để người nhập sửa).
+ * @returns {{ format: 'master', sections: object[], warnings: string[] }}
  */
+export function streamSections(sheets, { now = Date.now() } = {}) {
+  const streams = sheets.filter((s) => !s.hidden && parseStreamTitle(s.name)?.name);
+  if (!streams.length) throw new Error('Google Sheet không có sheet nào tên “Dòng tiền …” — kiểm tra lại link Sheet.');
+  let book;
+  try {
+    book = extractWorkbook({ sheets: streams }, { fileName: SHEET_FILE_NAME, now });
+  } catch (e) {
+    // Mọi sheet dòng tiền đều trống / hỏng tiêu đề: vẫn hiện đủ thẻ dòng tiền, mỗi thẻ 0 task.
+    if (!/Không tìm thấy bảng task|chưa có task nào/.test(e?.message || '')) throw e;
+    book = { format: 'master', sections: [], warnings: ['Google Sheet chưa có task nào.'] };
+  }
+  const bySheet = new Map(book.sections.map((s) => [s.sheet, s]));
+  const sections = streams.map((sheet) => {
+    let sec = bySheet.get(sheet.name);
+    if (!sec) {
+      const st = parseStreamTitle(sheet.name);
+      sec = { sheet: sheet.name, streamNo: st.no ?? null, name: st.name, pic: '', asOf: '', tasks: [], warnings: [] };
+      book.warnings.push(`Sheet “${sheet.name}” không có dòng tiêu đề hợp lệ (cần các cột “Task / Đầu việc”, “Người phụ trách”, “Hạn hoàn thành”, “Trạng thái”) — chưa đọc được task của sheet này.`);
+    }
+    const no = sec.streamNo || streamNoInCells(sheet, sec.name);
+    return {
+      ...sec,
+      streamNo: no,
+      code: no ? `DT${String(no).padStart(2, '0')}` : '',
+      title: `Dòng tiền${no ? ` ${no}` : ''}: ${sec.name}`,
+    };
+  });
+  return { format: 'master', sections, warnings: book.warnings };
+}
+
+/** Đọc Google Sheet -> { format, sections, warnings } (xem streamSections). */
 export async function readSheet(id, { now = Date.now() } = {}) {
   const base = `https://docs.google.com/spreadsheets/d/${id}`;
   const list = parseSheetList(await (await fetchGoogle(`${base}/htmlview`)).text());
-  if (!list.length) {
+  let sheets;
+  if (list.length) {
+    sheets = await Promise.all(
+      list.map(async ({ name, gid }) => csvSheet(name, parseCsv(await (await fetchGoogle(`${base}/export?format=csv&gid=${gid}`, /text\/csv/)).text())))
+    );
+  } else {
     const bytes = new Uint8Array(await (await fetchGoogle(`${base}/export?format=xlsx`, /spreadsheetml/)).arrayBuffer());
-    return parseWorkbookFile(bytes, { fileName: SHEET_FILE_NAME, now });
+    sheets = (await readXlsx(bytes)).sheets;
   }
-  const sheets = await Promise.all(
-    list.map(async ({ name, gid }) => csvSheet(name, parseCsv(await (await fetchGoogle(`${base}/export?format=csv&gid=${gid}`, /text\/csv/)).text())))
-  );
-  const book = extractWorkbook({ sheets }, { fileName: SHEET_FILE_NAME, now });
-  for (const { name } of list) {
-    if (parseStreamTitle(name)?.name && !book.sections.some((s) => s.sheet === name)) {
-      book.warnings.push(`Sheet “${name}” không có dòng tiêu đề hợp lệ (cần các cột “Task / Đầu việc”, “Người phụ trách”, “Hạn hoàn thành”, “Trạng thái”) — chưa đọc được task của sheet này.`);
-    }
-  }
-  return book;
+  return streamSections(sheets, { now });
 }

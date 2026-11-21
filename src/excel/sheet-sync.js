@@ -51,20 +51,18 @@ async function claim(env, minGapMs, now) {
 // Dòng tiền thuộc quyền đồng bộ: do đồng bộ ghi, hoặc nạp tay từ chính file tổng (bản tải về của Google Sheet này).
 const owned = (r) => r.uploaded_by === SYNC_USER.username || /master[\s_.-]*task/i.test(r.file_name || '');
 
-/** Dữ liệu đang lưu có khớp sheet không; orphans = dòng tiền thuộc quyền đồng bộ mà sheet đã bỏ / đổi tên / hỏng tiêu đề. */
+/** Dữ liệu đang lưu có khớp sheet không; orphans = dòng tiền thuộc quyền đồng bộ mà sheet đã bỏ / đổi tên. */
 async function diff(env, plan) {
   const { results } = await env.DB.prepare('SELECT stream_key, title, code, name, pic, as_of, tasks, uploaded_by, file_name FROM excel_imports').all();
-  const want = new Map(plan.filter((p) => p.sec.tasks.length).map((p) => [p.key, p.sec]));
-  const inPlan = new Set(plan.map((p) => p.key));
   const have = new Map(results.map((r) => [r.stream_key, r]));
-  const stale = [...want].some(([key, sec]) => {
+  const stale = plan.some(({ key, sec }) => {
     const r = have.get(key);
     return !r || r.title !== sec.title || r.code !== sec.code || r.name !== sec.name || r.pic !== sec.pic
       || r.as_of !== sec.asOf || r.tasks !== JSON.stringify(sec.tasks);
   });
-  const emptied = results.some((r) => inPlan.has(r.stream_key) && !want.has(r.stream_key)); // saveImport tự gỡ
+  const inPlan = new Set(plan.map((p) => p.key));
   const orphans = results.filter((r) => !inPlan.has(r.stream_key) && owned(r)).map((r) => r.stream_key);
-  return { changed: stale || emptied || orphans.length > 0, orphans };
+  return { changed: stale || orphans.length > 0, orphans };
 }
 
 const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet không phản hồi (quá 15 giây).' : e?.message || e).slice(0, 300);
@@ -85,7 +83,7 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
     const { changed, orphans } = await diff(env, planned.plan);
     if (changed) {
-      const saved = await saveImport(env, planned.plan, { fileName: SHEET_FILE_NAME, user: SYNC_USER, now });
+      const saved = await saveImport(env, planned.plan, { fileName: SHEET_FILE_NAME, user: SYNC_USER, now, keepEmpty: true });
       if (saved.error) throw new Error(saved.error);
       if (orphans.length) await env.DB.batch(orphans.map((k) => env.DB.prepare('DELETE FROM excel_imports WHERE stream_key = ?').bind(k)));
       await log(env, new Request('https://sync.invalid/'), SYNC_USER.username, 'excel_sync', importSummary(SHEET_FILE_NAME, saved));
