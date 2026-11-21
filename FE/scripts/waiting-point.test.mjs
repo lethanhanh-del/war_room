@@ -12,6 +12,8 @@ import {
   groupItemsByPerson,
   getPeopleGridLayout,
   getTaskLimitForPeopleCount,
+  buildDailyStats,
+  formatDateLabelVN,
   fetchWaitingPoints,
 } from '../src/waiting-point/sheetService.js';
 import { emptyWaitingPointState, mergeWaitingPointState } from '../api/_lib/waitingPointSync.js';
@@ -145,40 +147,105 @@ test('groupItemsByPerson gom theo người hỗ trợ, xếp việc gấp nhất
   assert.equal(getTaskLimitForPeopleCount(8), 2);
 });
 
-test('mergeWaitingPointState giữ startedAt sớm nhất, cập nhật khi sửa SLA và chống trùng clearedItems', () => {
-  const now = 1_700_000_100_000;
-  const s0 = emptyWaitingPointState(now);
+test('mergeWaitingPointState giữ lastSupporter khi xóa cột G trước cột D, backfill trùng và lưu thống kê theo ngày', () => {
+  const day1Ms = Date.UTC(2026, 10, 21, 5, 0, 0); // 2026-11-21 12:00 VN
+  const day2Ms = Date.UTC(2026, 10, 22, 5, 0, 0); // 2026-11-22 12:00 VN
+
+  const s0 = emptyWaitingPointState(day1Ms);
   const s1 = mergeWaitingPointState(
     s0,
     {
-      timers: { a: { startedAt: now - 5000, totalSec: 600, endAt: now + 595000, rawTime: '10 phút', updatedAt: now } },
+      timers: {
+        a: {
+          startedAt: day1Ms - 5000,
+          totalSec: 600,
+          endAt: day1Ms + 595000,
+          rawTime: '10 phút',
+          updatedAt: day1Ms,
+          lastSupporter: 'Tuấn',
+          lastOwner: 'Phong',
+        },
+      },
     },
-    now,
+    day1Ms,
   );
+  // Máy khác mở sau cập nhật nhưng cột G vừa bị xóa -> vẫn giữ lastSupporter = 'Tuấn'
   const s2 = mergeWaitingPointState(
     s1,
     {
-      timers: { a: { startedAt: now - 20000, totalSec: 600, endAt: now + 580000, rawTime: '10 phút', updatedAt: now + 1000 } },
-      clearedItems: [{ id: 'x', group: 'Data', issue: 'Thiếu SĐT', clearedAt: now }],
+      timers: {
+        a: {
+          startedAt: day1Ms - 20000,
+          totalSec: 600,
+          endAt: day1Ms + 580000,
+          rawTime: '10 phút',
+          updatedAt: day1Ms + 1000,
+          lastSupporter: '',
+          lastOwner: '',
+        },
+      },
+      clearedItems: [{ id: 'x', group: 'Data', issue: 'Thiếu SĐT', supporter: '', owner: '', clearedAt: day1Ms }],
     },
-    now + 1000,
+    day1Ms + 1000,
   );
-  assert.equal(s2.timers.a.startedAt, now - 20000);
+  assert.equal(s2.timers.a.startedAt, day1Ms - 20000);
+  assert.equal(s2.timers.a.lastSupporter, 'Tuấn');
+  assert.equal(s2.timers.a.lastOwner, 'Phong');
   assert.equal(s2.recentCleared.length, 1);
 
-  // Máy thứ 2 báo lại cùng item trong cửa sổ 30s -> không nhân đôi
+  // Máy thứ 2 báo lại cùng item 'x' trong cửa sổ 30s CÓ tên người hỗ trợ -> backfill chứ không bỏ qua!
+  // Đồng thời xóa item 'a' dù payload clearedItem thiếu supporter -> tự hồi phục từ removedMeta ('Tuấn')!
   const s3 = mergeWaitingPointState(
     s2,
     {
-      clearedItems: [{ id: 'x', group: 'Data', issue: 'Thiếu SĐT', clearedAt: now + 4000 }],
+      clearedItems: [
+        { id: 'x', group: 'Data', issue: 'Thiếu SĐT', supporter: 'Chiến', owner: 'Mai', clearedAt: day1Ms + 4000 },
+        { id: 'a', group: 'Networking', issue: 'Hư máy lạnh', supporter: '', owner: '', clearedAt: day1Ms + 4000 },
+      ],
       removedIds: ['a'],
     },
-    now + 4000,
+    day1Ms + 4000,
   );
-  assert.equal(s3.recentCleared.length, 1);
+  assert.equal(s3.recentCleared.length, 2);
   assert.equal(s3.timers.a, undefined);
+  assert.ok(s3.removedTimers.a);
+  const recX = s3.recentCleared.find((r) => r.id === 'x');
+  const recA = s3.recentCleared.find((r) => r.id === 'a');
+  assert.equal(recX.supporter, 'Chiến');
+  assert.equal(recX.owner, 'Mai');
+  assert.equal(recA.supporter, 'Tuấn');
+  assert.equal(recA.owner, 'Phong');
 
-  const resolved = resolveDeadlineFromSpec(parseTimeSpec('15 phút'), now);
+  // Sang ngày hôm sau (22/11): dữ liệu ngày 21/11 VẪN được giữ trong historyByDate!
+  const s4 = mergeWaitingPointState(
+    s3,
+    {
+      clearedItems: [{ id: 'b', group: 'Pháp lý', issue: 'Scan sổ', supporter: 'Chiến', spentSec: 120, clearedAt: day2Ms }],
+    },
+    day2Ms,
+  );
+  assert.equal(s4.date, '2026-11-22');
+  assert.equal(s4.recentCleared.length, 1);
+  assert.equal(s4.historyByDate['2026-11-21'].length, 2);
+  assert.equal(s4.historyByDate['2026-11-22'].length, 1);
+
+  const stats = buildDailyStats([
+    { supporter: 'Chiến', spentSec: 300 },
+    { supporter: ' chiến ', spentSec: 100 },
+    { supporter: 'Tuấn', spentSec: 200 },
+    { supporter: '', spentSec: 400 },
+  ]);
+  assert.equal(stats.total, 4);
+  assert.equal(stats.supporterCount, 2);
+  assert.equal(stats.avgSec, 250);
+  assert.equal(stats.fastestSec, 100);
+  assert.equal(stats.bySupporter[0].name, 'Chiến');
+  assert.equal(stats.bySupporter[0].count, 2);
+  assert.equal(stats.bySupporter[0].avgSec, 200);
+  assert.equal(stats.bySupporter[2].isUnassigned, true);
+  assert.equal(formatDateLabelVN('2026-11-22', '2026-11-22'), 'Hôm nay · 22/11');
+
+  const resolved = resolveDeadlineFromSpec(parseTimeSpec('15 phút'), day1Ms);
   assert.equal(resolved.totalSec, 900);
 });
 

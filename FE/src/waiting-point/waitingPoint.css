@@ -796,14 +796,193 @@
   background: #f0fdfa;
 }
 
-/* ===== Bảng lịch sử Vừa hoàn thành (dạng dọc phân trang) ===== */
+/* ===== Bảng thống kê & lịch sử Vừa hoàn thành theo ngày ===== */
 .wp-cleared-panel {
   flex: 1;
+  gap: 0.72rem;
 }
 
 .wp-cl-head {
-  padding-bottom: 0.6rem;
+  padding-bottom: 0.65rem;
   border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.wp-cl-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.wp-date-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.wp-date-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.15rem;
+  padding: 0 0.65rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 140ms ease;
+}
+
+.wp-date-chip:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.wp-date-chip.is-active {
+  background: var(--ink-brand);
+  border-color: var(--ink-brand);
+  color: #f4f1ea;
+}
+
+.wp-date-chip b {
+  font-size: 0.72rem;
+  padding: 0.05rem 0.34rem;
+  border-radius: var(--r-pill);
+  background: var(--inset);
+  color: var(--text);
+}
+
+.wp-date-chip.is-active b {
+  background: rgba(255, 255, 255, 0.16);
+  color: #f4f1ea;
+}
+
+.wp-date-input {
+  height: 2.15rem;
+  padding: 0 0.55rem;
+  border-radius: var(--r-ctrl);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+/* 4 thẻ KPI tổng hợp theo ngày */
+.wp-stats-strip {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.wp-stat-tile {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-left: 0.26rem solid var(--c, var(--accent));
+  border-radius: var(--r-ctrl);
+  padding: 0.52rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+
+.wp-stat-tile span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wp-stat-tile b {
+  font-size: 1.48rem;
+  font-weight: 800;
+  line-height: 1.08;
+  color: var(--text);
+}
+
+.wp-stat-tile.st-done b { color: var(--done); }
+.wp-stat-tile.is-zero b { color: var(--dim); }
+
+/* Dãy thống kê & lọc nhanh theo từng Người hỗ trợ trong ngày */
+.wp-sup-stats {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.wp-sup-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 0.25rem;
+}
+
+.wp-sup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+  padding: 0.24rem 0.68rem;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.wp-sup-chip:hover {
+  border-color: var(--line-strong);
+  background: var(--inset);
+}
+
+.wp-sup-chip.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.wp-sup-chip.is-unassigned:not(.is-active) {
+  border-color: #e6c69c;
+  color: var(--blocker);
+}
+
+.wp-sup-chip b {
+  font-size: 0.76rem;
+  padding: 0.04rem 0.36rem;
+  border-radius: var(--r-pill);
+  background: var(--inset);
+  color: var(--text);
+}
+
+.wp-sup-chip.is-active b {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.wp-sup-chip small {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.wp-sup-chip.is-active small {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 .wp-sw-close:hover {
@@ -815,7 +994,7 @@
 .wp-pager {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
 .wp-pager-num {
@@ -824,7 +1003,7 @@
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--muted);
-  min-width: 5.5rem;
+  min-width: 3.6rem;
   text-align: center;
 }
 
@@ -846,37 +1025,41 @@
   color: var(--dim);
 }
 
+.wp-cleared-grid {
+  width: 100%;
+}
+
 .wp-cleared-grid th:first-child {
   padding-left: 0.6rem;
 }
 
 .wp-cleared-grid .wp-c-at {
-  width: 6.2rem;
+  width: 5.5rem;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 700;
   color: var(--done);
   white-space: nowrap;
 }
 
 .wp-cleared-grid .wp-c-sup {
-  width: 12.5rem;
+  width: 11.5rem;
 }
 
 .wp-cleared-grid .wp-c-grp {
-  width: 11.5rem;
+  width: 10rem;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .wp-cleared-grid .wp-c-flow {
-  width: 10.5rem;
+  width: 9.5rem;
   color: var(--muted);
-  font-size: 0.84rem;
+  font-size: 0.82rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -892,8 +1075,9 @@
 }
 
 .wp-cleared-grid .wp-c-spent {
-  width: 8.8rem;
+  width: 7.8rem;
   text-align: right !important;
+  padding-right: 0.5rem;
 }
 
 .wp-spent-tag {
@@ -1042,6 +1226,10 @@
   .wp-empty-panel {
     min-height: 60vh;
     padding: 2rem 1rem;
+  }
+
+  .wp-stats-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

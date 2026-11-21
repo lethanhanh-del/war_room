@@ -487,3 +487,85 @@ export function getTaskLimitForPeopleCount(peopleCount) {
   if (peopleCount <= 6) return 3;
   return 2;
 }
+
+/**
+ * Thống kê kết quả xử lý trong 1 ngày cụ thể:
+ * - Tổng số yêu cầu đã đóng, thời gian xử lý trung bình, nhanh nhất, tổng thời lượng
+ * - Bảng phân bổ theo từng Người hỗ trợ (xếp số việc nhiều nhất lên đầu)
+ */
+export function buildDailyStats(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  if (total === 0) {
+    return {
+      total: 0,
+      avgSec: 0,
+      fastestSec: 0,
+      totalSpentSec: 0,
+      supporterCount: 0,
+      bySupporter: [],
+    };
+  }
+
+  let totalSpentSec = 0;
+  let fastestSec = Number.POSITIVE_INFINITY;
+  const supMap = new Map();
+
+  for (const rec of list) {
+    const sec = Math.max(1, Number(rec.spentSec) || 5);
+    totalSpentSec += sec;
+    if (sec < fastestSec) fastestSec = sec;
+
+    const rawName = String(rec.supporter || '').trim();
+    const isUnassigned = !rawName;
+    const key = isUnassigned ? '__unassigned__' : normalizeText(rawName);
+    if (!supMap.has(key)) {
+      supMap.set(key, {
+        key,
+        name: isUnassigned ? 'Chưa phân công' : rawName,
+        isUnassigned,
+        count: 0,
+        totalSec: 0,
+        fastestSec: Number.POSITIVE_INFINITY,
+      });
+    }
+    const entry = supMap.get(key);
+    entry.count += 1;
+    entry.totalSec += sec;
+    if (sec < entry.fastestSec) entry.fastestSec = sec;
+  }
+
+  const bySupporter = [...supMap.values()]
+    .map((e) => ({
+      ...e,
+      avgSec: Math.round(e.totalSec / e.count),
+    }))
+    .sort((a, b) => {
+      if (a.isUnassigned !== b.isUnassigned) return a.isUnassigned ? 1 : -1;
+      if (b.count !== a.count) return b.count - a.count;
+      return a.avgSec - b.avgSec;
+    });
+
+  const supporterCount = bySupporter.filter((s) => !s.isUnassigned).length;
+
+  return {
+    total,
+    avgSec: Math.round(totalSpentSec / total),
+    fastestSec: Number.isFinite(fastestSec) ? fastestSec : 0,
+    totalSpentSec,
+    supporterCount,
+    bySupporter,
+  };
+}
+
+const WEEKDAYS_VN = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+
+/** '2026-11-22' -> 'Hôm nay · 22/11' hoặc 'T7 · 21/11' */
+export function formatDateLabelVN(iso, todayIso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return iso || '';
+  const [y, m, d] = iso.split('-').map(Number);
+  const ddmm = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+  if (iso === todayIso) return `Hôm nay · ${ddmm}`;
+  const wd = WEEKDAYS_VN[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${wd} · ${ddmm}`;
+}

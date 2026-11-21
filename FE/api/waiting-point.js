@@ -1,4 +1,4 @@
-// GET / POST /api/waiting-point -> đồng bộ mốc đếm ngược & lịch sử "Vừa hoàn thành" giữa các màn hình.
+// GET / POST /api/waiting-point -> đồng bộ mốc đếm ngược & thống kê "Vừa hoàn thành" theo ngày giữa các màn hình.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,10 +8,15 @@ import { emptyWaitingPointState, mergeWaitingPointState, getTodayKey } from './_
 const STATE_FILE = path.join(os.tmpdir(), 'warroom-waiting-point-state.json');
 let memState = null;
 
+function ensureNormalized(raw) {
+  // Chạy qua mergeWaitingPointState với incoming rỗng để đảm bảo nâng cấp historyByDate & đúng ngày hôm nay
+  return mergeWaitingPointState(raw, {}, Date.now());
+}
+
 function readState() {
   if (memState) {
     if (memState.date !== getTodayKey()) {
-      memState = { ...memState, date: getTodayKey(), recentCleared: [] };
+      memState = ensureNormalized(memState);
     }
     return memState;
   }
@@ -19,7 +24,7 @@ function readState() {
     if (fs.existsSync(STATE_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
       if (parsed && typeof parsed === 'object') {
-        memState = parsed.date === getTodayKey() ? parsed : { ...parsed, date: getTodayKey(), recentCleared: [] };
+        memState = ensureNormalized(parsed);
         return memState;
       }
     }

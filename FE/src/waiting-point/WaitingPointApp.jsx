@@ -27,11 +27,12 @@ import ClearedPanel from './ClearedPanel.jsx';
 import './waitingPoint.css';
 
 const STORAGE_TIMERS = 'warroom_oc_timers_v1';
-const STORAGE_HISTORY = 'warroom_oc_history_v2';
+const STORAGE_HISTORY = 'warroom_oc_history_v3';
+const LEGACY_HISTORY = 'warroom_oc_history_v2';
 const SYNC_CHANNEL_NAME = 'warroom_wp_sync_v1';
 
-function todayKeyVN() {
-  const vn = new Date(Date.now() + 7 * 3600 * 1000);
+function todayKeyVN(nowMs = Date.now()) {
+  const vn = new Date(nowMs + 7 * 3600 * 1000);
   return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, '0')}-${String(vn.getUTCDate()).padStart(2, '0')}`;
 }
 
@@ -51,30 +52,52 @@ function saveTimerStore(store) {
   }
 }
 
-function loadDailyHistory() {
+function loadHistoryByDate() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || '{}');
-    if (saved.date === todayKeyVN() && Array.isArray(saved.recentCleared)) {
-      return saved.recentCleared.slice(0, 100);
+    const saved = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || 'null');
+    if (saved && typeof saved === 'object' && saved.historyByDate && typeof saved.historyByDate === 'object') {
+      return saved.historyByDate;
+    }
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_HISTORY) || 'null');
+    if (legacy && /^\d{4}-\d{2}-\d{2}$/.test(legacy.date || '') && Array.isArray(legacy.recentCleared)) {
+      return { [legacy.date]: legacy.recentCleared.slice(0, 200) };
     }
   } catch {
     // ignore
   }
-  return [];
+  return {};
 }
 
-function saveDailyHistory(list) {
+function saveHistoryByDate(historyByDate) {
   try {
-    localStorage.setItem(
-      STORAGE_HISTORY,
-      JSON.stringify({
-        date: todayKeyVN(),
-        recentCleared: list.slice(0, 100),
-      }),
-    );
+    localStorage.setItem(STORAGE_HISTORY, JSON.stringify({ historyByDate }));
   } catch {
     // ignore
   }
+}
+
+function mergeDayRecords(prevList = [], incomingList = []) {
+  const out = [...prevList];
+  for (const item of incomingList) {
+    if (!item || !item.issue) continue;
+    const clearedAt = Number(item.clearedAt) || Date.now();
+    const baseKey = item.id || `${item.group || ''}|${item.issue}`;
+    const bucket = Math.floor(clearedAt / 30000);
+    const candidates = new Set([`${baseKey}@${bucket}`, `${baseKey}@${bucket - 1}`, `${baseKey}@${bucket + 1}`]);
+    const idx = out.findIndex((c) => {
+      const k = c.dedupKey || `${c.id || c.issue}@${Math.floor((c.clearedAt || 0) / 30000)}`;
+      return candidates.has(k);
+    });
+    if (idx >= 0) {
+      const ex = out[idx];
+      if ((!ex.supporter && item.supporter) || (!ex.owner && item.owner)) {
+        out[idx] = { ...ex, supporter: ex.supporter || item.supporter, owner: ex.owner || item.owner };
+      }
+      continue;
+    }
+    out.unshift({ ...item, dedupKey: item.dedupKey || `${baseKey}@${bucket}` });
+  }
+  return out.sort((a, b) => (b.clearedAt || 0) - (a.clearedAt || 0)).slice(0, 200);
 }
 
 export default function WaitingPointApp() {
@@ -85,8 +108,9 @@ export default function WaitingPointApp() {
   const [bellRinging, setBellRinging] = useState(false);
   const [liveItems, setLiveItems] = useState([]);
   const [clearingItems, setClearingItems] = useState([]);
-  const [recentCleared, setRecentCleared] = useState(() => loadDailyHistory());
+  const [historyByDate, setHistoryByDate] = useState(() => loadHistoryByDate());
   const [showCleared, setShowCleared] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => todayKeyVN());
   const [clearedPage, setClearedPage] = useState(0);
   const [expandedPeople, setExpandedPeople] = useState(() => new Set());
   const [toasts, setToasts] = useState([]);
@@ -100,15 +124,18 @@ export default function WaitingPointApp() {
   const soundEnabledRef = useRef(true);
   const bellTimerRef = useRef(null);
   const bcRef = useRef(null);
-  const recentClearedRef = useRef(recentCleared);
+  const historyByDateRef = useRef(historyByDate);
+
+  const todayKey = todayKeyVN(nowMs);
+  const todayCleared = useMemo(() => historyByDate[todayKey] || [], [historyByDate, todayKey]);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
   useEffect(() => {
-    recentClearedRef.current = recentCleared;
-  }, [recentCleared]);
+    historyByDateRef.current = historyByDate;
+  }, [historyByDate]);
 
   useEffect(() => {
     document.title = 'War Room CT Homes — Waiting Point';
@@ -135,33 +162,65 @@ export default function WaitingPointApp() {
     const localTimers = loadTimerStore();
     let timerChanged = false;
 
+    // Dọn các timer đã bị xóa trên máy khác để không bị tính nhầm thời gian cũ nếu tạo lại cùng nội dung
+    if (shared.removedTimers && typeof shared.removedTimers === 'object') {
+      for (const [id, removedAt] of Object.entries(shared.removedTimers)) {
+        const cur = localTimers[id];
+        if (cur && (cur.startedAt || 0) <= Number(removedAt)) {
+          delete localTimers[id];
+        }
+      }
+    }
+
     if (shared.timers && typeof shared.timers === 'object') {
       for (const [id, st] of Object.entries(shared.timers)) {
         if (!st || !st.startedAt) continue;
         const cur = localTimers[id];
+        const mergedMeta = {
+          lastSupporter: st.lastSupporter || cur?.lastSupporter || '',
+          lastOwner: st.lastOwner || cur?.lastOwner || '',
+        };
         if (
           !cur ||
           (cur.rawTime === st.rawTime && st.startedAt < cur.startedAt) ||
           (cur.rawTime !== st.rawTime && (st.updatedAt || 0) >= (cur.updatedAt || 0))
         ) {
-          localTimers[id] = st;
+          localTimers[id] = { ...st, ...mergedMeta };
           const live = liveMapRef.current.get(id);
           if (live) {
             live.startedAt = st.startedAt;
             live.totalSec = st.totalSec;
             live.endAt = st.endAt;
+            live.lastKnownSupporter = live.lastKnownSupporter || mergedMeta.lastSupporter;
+            live.lastKnownOwner = live.lastKnownOwner || mergedMeta.lastOwner;
             timerChanged = true;
           }
+        } else if (mergedMeta.lastSupporter !== cur.lastSupporter || mergedMeta.lastOwner !== cur.lastOwner) {
+          localTimers[id] = { ...cur, ...mergedMeta };
         }
       }
       saveTimerStore(localTimers);
       if (timerChanged) setLiveItems([...liveMapRef.current.values()]);
     }
 
-    if (shared.date === todayKeyVN() && Array.isArray(shared.recentCleared)) {
-      const sliced = shared.recentCleared.slice(0, 100);
-      setRecentCleared(sliced);
-      saveDailyHistory(sliced);
+    if (shared.historyByDate && typeof shared.historyByDate === 'object') {
+      const nextHist = { ...historyByDateRef.current };
+      for (const [dKey, list] of Object.entries(shared.historyByDate)) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dKey) && Array.isArray(list)) {
+          nextHist[dKey] = mergeDayRecords(nextHist[dKey], list);
+        }
+      }
+      historyByDateRef.current = nextHist;
+      setHistoryByDate(nextHist);
+      saveHistoryByDate(nextHist);
+    } else if (shared.date && Array.isArray(shared.recentCleared)) {
+      const nextHist = {
+        ...historyByDateRef.current,
+        [shared.date]: mergeDayRecords(historyByDateRef.current[shared.date], shared.recentCleared),
+      };
+      historyByDateRef.current = nextHist;
+      setHistoryByDate(nextHist);
+      saveHistoryByDate(nextHist);
     }
   }, []);
 
@@ -181,12 +240,16 @@ export default function WaitingPointApp() {
   }, []);
 
   const pushSharedDelta = useCallback(
-    async (delta, latestHistory) => {
+    async (delta, latestHistoryByDate) => {
       if (bcRef.current) {
         try {
           bcRef.current.postMessage({
             type: 'state_sync',
-            payload: { date: todayKeyVN(), timers: loadTimerStore(), recentCleared: latestHistory || recentClearedRef.current },
+            payload: {
+              date: todayKeyVN(),
+              timers: loadTimerStore(),
+              historyByDate: latestHistoryByDate || historyByDateRef.current,
+            },
           });
         } catch {
           // ignore
@@ -213,6 +276,7 @@ export default function WaitingPointApp() {
       if (shared) applySharedState(shared);
 
       const now = Date.now();
+      const curToday = todayKeyVN(now);
       setIsOnline(true);
 
       const timerStore = loadTimerStore();
@@ -248,10 +312,35 @@ export default function WaitingPointApp() {
           hasTimerDelta = true;
         }
 
-        const fullItem = { ...rawItem, startedAt, totalSec, endAt };
+        // Giữ lại Người hỗ trợ & Người phụ trách gần nhất để không mất khi xóa cột G/F trước cột D
+        const lastKnownSupporter = rawItem.supporter || existing?.lastKnownSupporter || stored?.lastSupporter || '';
+        const lastKnownOwner = rawItem.owner || existing?.lastKnownOwner || stored?.lastOwner || '';
+        if (
+          (rawItem.supporter && rawItem.supporter !== stored?.lastSupporter) ||
+          (rawItem.owner && rawItem.owner !== stored?.lastOwner)
+        ) {
+          hasTimerDelta = true;
+        }
+
+        const fullItem = {
+          ...rawItem,
+          startedAt,
+          totalSec,
+          endAt,
+          lastKnownSupporter,
+          lastKnownOwner,
+        };
         nextMap.set(fullItem.id, fullItem);
 
-        const timerEntry = { startedAt, totalSec, endAt, rawTime: rawItem.timeRaw, updatedAt };
+        const timerEntry = {
+          startedAt,
+          totalSec,
+          endAt,
+          rawTime: rawItem.timeRaw,
+          updatedAt,
+          lastSupporter: lastKnownSupporter,
+          lastOwner: lastKnownOwner,
+        };
         timerStore[fullItem.id] = timerEntry;
         deltaTimers[fullItem.id] = timerEntry;
 
@@ -285,36 +374,43 @@ export default function WaitingPointApp() {
       setLiveItems([...nextMap.values()]);
 
       let clearedPayload = [];
-      let latestHistory = recentClearedRef.current;
+      let latestHistory = historyByDateRef.current;
 
       if (removedEntries.length > 0) {
         const clearingBatch = [];
         for (const item of removedEntries) {
           const spentSec = Math.max(5, Math.floor((now - item.startedAt) / 1000));
-          clearingBatch.push({ ...item, clearedAt: now });
+          const resolvedSupporter = item.supporter || item.lastKnownSupporter || '';
+          const resolvedOwner = item.owner || item.lastKnownOwner || '';
+          clearingBatch.push({ ...item, supporter: resolvedSupporter, owner: resolvedOwner, clearedAt: now });
           burnedAlertedRef.current.delete(item.id);
           newHighlightsRef.current.delete(item.id);
 
           const record = {
+            date: curToday,
             id: item.id,
             group: item.group,
             stream: item.stream,
             issue: item.issue,
-            owner: item.owner || '',
-            supporter: item.supporter || '',
+            owner: resolvedOwner,
+            supporter: resolvedSupporter,
             spentSec,
             at: fmtTime(new Date(now)).slice(0, 5),
             clearedAt: now,
           };
           clearedPayload.push(record);
-          const byWho = item.supporter ? ` · ${item.supporter}` : '';
+          const byWho = resolvedSupporter ? ` · ${resolvedSupporter}` : '';
           pushToast(`ĐÃ HOÀN THÀNH (${formatClock(spentSec)})`, `${item.group}${byWho} — ${item.issue}`, 'clear');
         }
 
-        latestHistory = [...clearedPayload, ...recentClearedRef.current].slice(0, 100);
-        setRecentCleared(latestHistory);
+        latestHistory = {
+          ...historyByDateRef.current,
+          [curToday]: mergeDayRecords(historyByDateRef.current[curToday], clearedPayload),
+        };
+        historyByDateRef.current = latestHistory;
+        setHistoryByDate(latestHistory);
         setClearedPage(0);
-        saveDailyHistory(latestHistory);
+        saveHistoryByDate(latestHistory);
 
         setClearingItems((prev) => [...clearingBatch, ...prev]);
         const removeIds = new Set(clearingBatch.map((c) => c.id));
@@ -524,13 +620,14 @@ export default function WaitingPointApp() {
             className={`wp-sw-ctrl ${showCleared ? 'is-active' : ''}`}
             onClick={() => {
               setShowCleared((v) => !v);
+              setSelectedDate(todayKey);
               setClearedPage(0);
             }}
-            title="Xem danh sách yêu cầu vừa hoàn thành trong ngày"
+            title="Xem thống kê & lịch sử xử lý theo ngày"
           >
             <IconHistory className="wp-ico-sm" />
-            <span>Đã xong</span>
-            <b className={`wp-sw-badge ${recentCleared.length === 0 ? 'zero' : ''}`}>{recentCleared.length}</b>
+            <span>Thống kê</span>
+            <b className={`wp-sw-badge ${todayCleared.length === 0 ? 'zero' : ''}`}>{todayCleared.length}</b>
           </button>
 
           <div className="wp-sw-clock" aria-label="Giờ hiện tại">
@@ -542,7 +639,10 @@ export default function WaitingPointApp() {
       <div className="wp-stage">
         {showCleared ? (
           <ClearedPanel
-            items={recentCleared}
+            historyByDate={historyByDate}
+            todayKey={todayKey}
+            selectedDate={selectedDate}
+            onSelectDate={setSelectedDate}
             page={clearedPage}
             onPageChange={setClearedPage}
             onClose={() => setShowCleared(false)}
@@ -558,18 +658,19 @@ export default function WaitingPointApp() {
                 <span className={`wp-live-dot ${isOnline ? 'st-done' : 'st-late'}`} aria-hidden="true" />
                 <span>{isOnline ? 'Đang đồng bộ trực tiếp với bảng điều phối' : 'Đang thử kết nối lại nguồn dữ liệu…'}</span>
               </div>
-              {recentCleared.length > 0 && (
+              {todayCleared.length > 0 && (
                 <button
                   type="button"
                   className="wp-empty-history-btn"
                   onClick={() => {
                     setShowCleared(true);
+                    setSelectedDate(todayKey);
                     setClearedPage(0);
                   }}
                 >
                   <IconHistory className="wp-ico-xs" />
                   <span>
-                    Đã hoàn thành hôm nay: <b className="wp-mono">{recentCleared.length}</b>
+                    Thống kê hôm nay: <b className="wp-mono">{todayCleared.length}</b> đã xử lý
                   </span>
                 </button>
               )}

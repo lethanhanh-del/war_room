@@ -1,63 +1,175 @@
-import { formatClock, shortStreamName, WP_CONFIG } from './sheetService.js';
+import { useMemo, useState } from 'react';
+import { buildDailyStats, formatClock, formatDateLabelVN, normalizeText, shortStreamName, WP_CONFIG } from './sheetService.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
 import { IconCheckCircle, IconChevronLeft, IconChevronRight, IconHistory, IconX } from './Icons.jsx';
 
-export default function ClearedPanel({ items, page, onPageChange, onClose }) {
+export default function ClearedPanel({ historyByDate, todayKey, selectedDate, onSelectDate, page, onPageChange, onClose }) {
+  const [supporterFilter, setSupporterFilter] = useState('all');
+
+  // Danh sách các ngày có dữ liệu (luôn gồm hôm nay ở đầu)
+  const availableDates = useMemo(() => {
+    const set = new Set([todayKey, ...Object.keys(historyByDate || {})]);
+    return [...set]
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort((a, b) => b.localeCompare(a));
+  }, [historyByDate, todayKey]);
+
+  const activeDate = selectedDate || todayKey;
+  const dayItems = useMemo(() => (historyByDate && Array.isArray(historyByDate[activeDate]) ? historyByDate[activeDate] : []), [historyByDate, activeDate]);
+  const stats = useMemo(() => buildDailyStats(dayItems), [dayItems]);
+
+  const filteredItems = useMemo(() => {
+    if (supporterFilter === 'all') return dayItems;
+    return dayItems.filter((rec) => {
+      const key = String(rec.supporter || '').trim() ? normalizeText(rec.supporter) : '__unassigned__';
+      return key === supporterFilter;
+    });
+  }, [dayItems, supporterFilter]);
+
   const pageSize = WP_CONFIG.CLEARED_PAGE_SIZE;
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(Math.max(0, page), totalPages - 1);
   const start = safePage * pageSize;
-  const pageItems = items.slice(start, start + pageSize);
-  const scrollRef = useAutoScroll([safePage, pageItems.length]);
+  const pageItems = filteredItems.slice(start, start + pageSize);
+  const scrollRef = useAutoScroll([safePage, pageItems.length, activeDate, supporterFilter]);
+
+  const handleDateChange = (nextDate) => {
+    if (!nextDate) return;
+    setSupporterFilter('all');
+    onSelectDate(nextDate);
+    onPageChange(0);
+  };
 
   return (
     <section className="panel detail wp-cleared-panel">
       <header className="dt-head wp-cl-head">
         <div className="dt-title">
-          <span className="dt-kicker">Lịch sử xử lý hôm nay</span>
+          <span className="dt-kicker">Thống kê theo ngày</span>
           <h2>
-            Vừa hoàn thành
-            <span className="dt-scope"> · {items.length} yêu cầu đã đóng</span>
+            Lịch sử xử lý
+            <span className="dt-scope"> · {formatDateLabelVN(activeDate, todayKey)}</span>
           </h2>
         </div>
 
-        {totalPages > 1 && (
-          <div className="wp-pager" aria-label="Phân trang lịch sử">
-            <button
-              type="button"
-              className="wp-sw-ctrl"
-              disabled={safePage <= 0}
-              onClick={() => onPageChange(Math.max(0, safePage - 1))}
-            >
-              <IconChevronLeft className="wp-ico-sm" />
-              <span>Trước</span>
-            </button>
-            <span className="wp-pager-num">
-              Trang {safePage + 1} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="wp-sw-ctrl"
-              disabled={safePage >= totalPages - 1}
-              onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
-            >
-              <span>Sau</span>
-              <IconChevronRight className="wp-ico-sm" />
-            </button>
+        <div className="wp-cl-actions">
+          <div className="wp-date-bar" aria-label="Chọn ngày thống kê">
+            {availableDates.slice(0, 5).map((d) => {
+              const cnt = (historyByDate?.[d] || []).length;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  className={`wp-date-chip ${d === activeDate ? 'is-active' : ''}`}
+                  onClick={() => handleDateChange(d)}
+                >
+                  <span>{formatDateLabelVN(d, todayKey)}</span>
+                  <b className="wp-mono">{cnt}</b>
+                </button>
+              );
+            })}
+            <input
+              type="date"
+              className="wp-date-input"
+              value={activeDate}
+              max={todayKey}
+              onChange={(e) => handleDateChange(e.target.value)}
+              title="Chọn ngày khác để xem thống kê"
+              aria-label="Chọn ngày xem thống kê"
+            />
           </div>
-        )}
 
-        <button type="button" className="wp-sw-ctrl wp-sw-close" onClick={onClose}>
-          <IconX className="wp-ico-sm" />
-          <span>Về bảng chờ</span>
-        </button>
+          {totalPages > 1 && (
+            <div className="wp-pager" aria-label="Phân trang lịch sử">
+              <button
+                type="button"
+                className="wp-sw-ctrl"
+                disabled={safePage <= 0}
+                onClick={() => onPageChange(Math.max(0, safePage - 1))}
+              >
+                <IconChevronLeft className="wp-ico-sm" />
+                <span>Trước</span>
+              </button>
+              <span className="wp-pager-num">
+                {safePage + 1} / {totalPages}
+              </span>
+              <button
+                type="button"
+                className="wp-sw-ctrl"
+                disabled={safePage >= totalPages - 1}
+                onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
+              >
+                <span>Sau</span>
+                <IconChevronRight className="wp-ico-sm" />
+              </button>
+            </div>
+          )}
+
+          <button type="button" className="wp-sw-ctrl wp-sw-close" onClick={onClose}>
+            <IconX className="wp-ico-sm" />
+            <span>Về bảng chờ</span>
+          </button>
+        </div>
       </header>
 
+      {/* Khối KPI thống kê tổng hợp của ngày đang chọn */}
+      <div className="wp-stats-strip">
+        <div className={`wp-stat-tile st-done ${stats.total === 0 ? 'is-zero' : ''}`}>
+          <span>Đã xử lý trong ngày</span>
+          <b className="wp-mono">{stats.total}</b>
+        </div>
+        <div className={`wp-stat-tile st-in_progress ${stats.supporterCount === 0 ? 'is-zero' : ''}`}>
+          <span>Người hỗ trợ tham gia</span>
+          <b className="wp-mono">{stats.supporterCount}</b>
+        </div>
+        <div className={`wp-stat-tile wp-st-warn ${stats.total === 0 ? 'is-zero' : ''}`}>
+          <span>Thời gian xử lý TB</span>
+          <b className="wp-mono">{stats.total ? formatClock(stats.avgSec) : '–'}</b>
+        </div>
+        <div className={`wp-stat-tile st-upcoming ${stats.total === 0 ? 'is-zero' : ''}`}>
+          <span>Xử lý nhanh nhất</span>
+          <b className="wp-mono">{stats.total ? formatClock(stats.fastestSec) : '–'}</b>
+        </div>
+      </div>
+
+      {/* Thống kê chi tiết từng Người hỗ trợ trong ngày (bấm để lọc nhanh bảng) */}
+      {stats.bySupporter.length > 0 && (
+        <div className="wp-sup-stats" role="group" aria-label="Thống kê theo người hỗ trợ trong ngày">
+          <span className="wp-sup-label">Theo người hỗ trợ</span>
+          <button
+            type="button"
+            className={`wp-sup-chip ${supporterFilter === 'all' ? 'is-active' : ''}`}
+            onClick={() => {
+              setSupporterFilter('all');
+              onPageChange(0);
+            }}
+          >
+            <span>Tất cả</span>
+            <b className="wp-mono">{stats.total}</b>
+          </button>
+          {stats.bySupporter.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`wp-sup-chip ${supporterFilter === s.key ? 'is-active' : ''} ${s.isUnassigned ? 'is-unassigned' : ''}`}
+              onClick={() => {
+                setSupporterFilter((cur) => (cur === s.key ? 'all' : s.key));
+                onPageChange(0);
+              }}
+              title={`${s.name}: ${s.count} việc · TB ${formatClock(s.avgSec)}`}
+            >
+              <span>{s.name}</span>
+              <b className="wp-mono">{s.count}</b>
+              <small className="wp-mono">TB {formatClock(s.avgSec)}</small>
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="dt-body" ref={scrollRef}>
-        {!items.length ? (
+        {!filteredItems.length ? (
           <div className="wp-cl-empty">
             <IconHistory className="wp-cl-empty-ico" />
-            <p>Chưa có yêu cầu nào được xử lý hoàn tất trong hôm nay</p>
+            <p>Không có yêu cầu nào hoàn thành trong ngày {formatDateLabelVN(activeDate, todayKey)}</p>
           </div>
         ) : (
           <table className="grid dgrid wp-cleared-grid">
@@ -76,8 +188,8 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
                 <tr key={rec.dedupKey || `${rec.id}-${rec.clearedAt}-${idx}`} className="row st-done">
                   <td className="wp-c-at">{rec.at || '–'}</td>
                   <td className="wp-c-sup">
-                    <div className="nm" title={rec.supporter || 'Chưa phân công'}>
-                      {rec.supporter || '–'}
+                    <div className={`nm ${rec.supporter ? '' : 'muted'}`} title={rec.supporter || 'Chưa phân công'}>
+                      {rec.supporter || 'Chưa phân công'}
                     </div>
                     {rec.owner && (
                       <div className="pic" title={`PIC: ${rec.owner}`}>
