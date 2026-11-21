@@ -1,4 +1,4 @@
-// Dashboard "Tiến độ dòng tiền" (v4). Dữ liệu: GET /api/streams (CT Worksuite), ?demo=1 = dữ liệu mẫu.
+// Dashboard "Tiến độ dòng tiền" (v4). Dữ liệu: GET /api/streams (CT Worksuite + task từ sheet WR - MASTER TASK).
 (() => {
   'use strict';
 
@@ -6,7 +6,6 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const safeUrl = (u) => (/^https:\/\//i.test(String(u || '')) ? String(u) : '');
   const params = new URLSearchParams(location.search);
-  const DEMO = params.get('demo') === '1';
 
   const ICONS = {
     chevronRight: '<path d="m9 18 6-6-6-6"/>',
@@ -93,7 +92,7 @@
     if (S.loading) { S.again = true; return; }
     S.loading = true;
     try {
-      const res = await fetch(`/api/streams${DEMO ? '?demo=1' : ''}`, { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
+      const res = await fetch('/api/streams', { headers: { Accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' });
       const type = res.headers.get('content-type') || '';
       if (!type.includes('application/json')) {
         // Phiên đăng nhập hết hạn: Worker trả trang đăng nhập.
@@ -121,12 +120,11 @@
 
   function schedule(seconds) {
     clearTimeout(S.timer);
-    if (DEMO) return;
     S.timer = setTimeout(load, Math.max(30, Number(seconds) || 60) * 1000);
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && S.data && !DEMO && Date.now() - (S.data.syncedAt || 0) > 90000) load();
+    if (document.visibilityState === 'visible' && S.data && Date.now() - (S.data.syncedAt || 0) > 90000) load();
   });
   setInterval(() => { if (S.data) renderSync(); }, 30000);
 
@@ -178,7 +176,7 @@
       $('pageSub').textContent = `Task và tiến độ của từng người trong dự án ${d.project.name} trên CT Worksuite${fromExcel} · cập nhật tự động`;
       if (safeUrl(d.project.url)) $('openWs').href = d.project.url;
     } else if (fromExcel) {
-      $('pageSub').textContent = 'Task và tiến độ của từng người theo file Excel đã nạp';
+      $('pageSub').textContent = 'Task và tiến độ của từng người theo sheet WR - MASTER TASK · War Room 21–25/11/2026';
     }
     document.title = `Tiến độ ${n} dòng tiền · War Room`;
     if (d.worksuiteUrl && !d.project?.url) $('openWs').href = safeUrl(d.worksuiteUrl) || $('openWs').href;
@@ -209,8 +207,8 @@
     const el = $('sync');
     let state = 'live';
     let label;
-    if (d.mode === 'demo') { state = 'demo'; label = `Dữ liệu mẫu · ${clock(d.syncedAt)}`; }
-    else if (d.mode === 'unconfigured' && d.streams?.length) { state = 'stale'; label = 'Task từ Excel · chưa kết nối Worksuite'; }
+    const lastImport = Math.max(0, ...(d.excelImports || []).map((i) => Date.parse(i.uploadedAt) || 0));
+    if (d.mode === 'unconfigured' && d.streams?.length) label = lastImport ? `Sheet WR - MASTER TASK · ${ago(lastImport)}` : 'Sheet WR - MASTER TASK';
     else if (d.mode === 'unconfigured') { state = 'error'; label = 'Chưa kết nối Worksuite'; }
     else if (d.error && !d.syncedAt) { state = 'error'; label = 'Không đọc được Worksuite'; }
     else if (d.stale || d.error) { state = 'stale'; label = `Dữ liệu Worksuite lúc ${clock(d.syncedAt)}`; }
@@ -222,14 +220,8 @@
   function renderNotices() {
     const d = S.data;
     const out = [];
-    if (d.mode === 'demo') {
-      out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Đang xem dữ liệu mẫu</b> — số liệu giả định để duyệt giao diện, không phải tiến độ thật trên Worksuite.</div><a class="linkbtn" href="/">Thoát dữ liệu mẫu</a></div>`);
-    }
     if (d.error) {
       out.push(`<div class="notice err">${icon('alert')}<div class="grow"><b>Không đọc được CT Worksuite.</b> ${esc(d.error)}${d.syncedAt ? ` Đang hiển thị dữ liệu lúc ${clock(d.syncedAt)}.` : ''}${d.excelImports?.length ? ' Task nạp từ Excel vẫn hiển thị.' : ''}</div></div>`);
-    }
-    if (d.mode === 'unconfigured' && d.streams?.length) {
-      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Chưa kết nối CT Worksuite</b> — đang hiển thị task nạp từ file Excel.</div></div>`);
     }
     if (d.warnings && d.warnings.length) {
       out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý cấu hình Worksuite</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
@@ -252,7 +244,6 @@
         <li>Đặt biến bí mật <code>WORKSUITE_API_KEY</code> + <code>WORKSUITE_API_SECRET</code> (mục API Access › Generate Keys), hoặc <code>WORKSUITE_USERNAME</code> + <code>WORKSUITE_PASSWORD</code> của tài khoản đó, cho Worker (Cloudflare › Settings › Variables and secrets) hoặc trong file <code>.env</code>.</li>
         <li>Dòng tiền được đọc từ dự án <b>WAR ROOM</b>: mỗi task cấp cao có tiêu đề “Dòng tiền …” là 1 dòng tiền, người thực hiện task đó là PIC. Có thể chỉ định dự án bằng <code>WORKSUITE_PROJECT=PROJ-0536</code>.</li>
       </ol>
-      <div><a class="btn" href="/?demo=1">Xem bản mẫu với dữ liệu giả định</a></div>
     </div>`;
   }
 
@@ -541,7 +532,6 @@
   const XL = { file: null, preview: null, busy: false };
   const MAX_XL_BYTES = 5 * 1024 * 1024;
   const dlg = $('xlDlg');
-  $('xlBtn').hidden = DEMO;
 
   function xlStatus(msg, kind) {
     const el = $('xlStatus');
