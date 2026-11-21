@@ -73,7 +73,12 @@ export function createServer() {
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   loadEnv(path.join(root, '.env'));
   createServer().listen(PORT, () => {
-    const mode = process.env.MOCK_SHEETS === 'true' ? 'MOCK (dữ liệu giả)' : 'Google Sheets';
+    const mode =
+      process.env.MOCK_SHEETS === 'true'
+        ? 'MOCK (dữ liệu giả)'
+        : process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY
+          ? 'Google Sheets API (Service Account)'
+          : 'Google Sheets Công khai (Publish to web / Public CSV)';
     console.log(`[dev-api] http://localhost:${PORT}/api  —  chế độ: ${mode}`);
   });
 }

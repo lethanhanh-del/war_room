@@ -101,7 +101,7 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
                     <tr className={`row st-${r.status}`}>
                       <td className="c-name">
                         <div className={`nm ${it.placeholder ? 'muted' : ''}`}>
-                          {it.kpi || (it.placeholder ? 'Chưa có dòng KPI' : it.group)}
+                          {it.kpi || (it.placeholder ? 'Chưa có dòng KPI' : it.days.find((d) => d.task)?.task || it.group)}
                         </div>
                         <div className="pic">{it.pic}</div>
                         {compact && !weekMode && dayTask?.task && <div className="tsk" title={dayTask.task}>{dayTask.task}</div>}

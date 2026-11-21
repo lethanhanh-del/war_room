@@ -6,7 +6,7 @@ process.env.MOCK_SHEETS = 'false';
 process.env.GOOGLE_SHEET_ID = 'SHEET123';
 delete process.env.CASHFLOW_SHEETS;
 
-const { getDashboardData, __setClientForTest } = await import('../api/_lib/sheets.js');
+const { getDashboardData, __setClientForTest, extractPubId, parseCsv, parsePublicTabs } = await import('../api/_lib/sheets.js');
 
 const HEAD = [
   ['BẢNG KPI (21/11/2026 - 25/11/2026)'],
@@ -93,4 +93,18 @@ test('lỗi Google API -> 502 có thông điệp rõ ràng', async () => {
     },
   });
   await assert.rejects(getDashboardData({ force: true }), (e) => e.status === 502 && /403/.test(e.message));
+});
+
+test('đọc URL Publish to web (iframe / pubhtml) và CSV không cần Service Account', () => {
+  const iframe = '<iframe src="https://docs.google.com/spreadsheets/d/e/2PACX-1vABC_123/pubhtml?widget=true&headers=false"></iframe>';
+  assert.equal(extractPubId(iframe), '2PACX-1vABC_123');
+  const html = '<title>WR - MASTER TASK - Google Drive</title><script>items.push({name: "Dòng tiền Equity \\/ IPO", gid: "674"});</script>';
+  const parsed = parsePublicTabs(html);
+  assert.equal(parsed.title, 'WR - MASTER TASK');
+  assert.deepEqual(parsed.tabs, [{ name: 'Dòng tiền Equity / IPO', gid: '674' }]);
+  assert.deepEqual(parseCsv('Stt,Nhóm\r\n1,"A, B"\r\n2,"He said ""ok"""'), [
+    ['Stt', 'Nhóm'],
+    ['1', 'A, B'],
+    ['2', 'He said "ok"'],
+  ]);
 });

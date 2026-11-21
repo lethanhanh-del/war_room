@@ -150,9 +150,31 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
       done: toBool(row[d.resultCol]),
     }));
     const hasTasks = dayVals.some((d) => d.task !== null || d.done === true);
-    if (!stt && !colB && !colC && !hasTasks) continue; // dòng trống
+    if (!colB && !colC && !hasTasks) continue; // dòng trống (kể cả dòng mẫu chỉ đánh số Stt)
 
     if (stt) {
+      // Nếu cùng tên Nhóm với nhóm đang mở (vd: nhiều dòng đánh số 1, 2, 3... cùng thuộc "Networking" hoặc "H300 – DELTA")
+      // thì gộp vào cùng 1 nhóm thay vì lặp lại tiêu đề nhóm ở mọi dòng.
+      if (colB && current && current.name && normalize(current.name) === normalize(colB)) {
+        if (hasTasks || colC) {
+          const firstTask = dayVals.find((d) => d.task)?.task || '';
+          current.count += 1;
+          items.push({
+            row: r + 1,
+            stt,
+            groupKey: current.key,
+            group: current.name,
+            lead: current.lead,
+            kpi: firstTask,
+            pic: colC || current.lead,
+            note: noteOf(row),
+            folder: folderOf(row) || current.folder,
+            days: dayVals,
+          });
+        }
+        continue;
+      }
+
       current = { key: `g${r + 1}`, stt, name: colB, lead: colC, row: r + 1, note: noteOf(row), folder: folderOf(row), count: 0 };
       groups.push(current);
       if (hasTasks) {
@@ -197,7 +219,7 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
   items.sort((a, b) => a.row - b.row);
 
   return {
-    title,
+    title: h > 0 ? title : '',
     days: days.map((d) => d.date),
     groups: groups.map(({ key, stt, name, lead }) => ({ key, stt, name, lead })),
     items,
