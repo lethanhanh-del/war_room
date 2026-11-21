@@ -5,6 +5,7 @@ Dashboard điều hành War Room của CT Group, chạy trên **Cloudflare Worke
 | Trang | Nội dung |
 |---|---|
 | `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn — bấm 1 chỉ số để bảng task chỉ còn các task đó), block **Điểm nghẽn · Cần hỗ trợ** theo từng nhóm công việc, bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK**; nhóm, PIC và nhiệm vụ từng thành viên tự đồng bộ từ Google Sheet phân chia nhiệm vụ **WarRoom_CTHomes_Final** (DS nhân sự War-Room). Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
+| `/kpi` | **KPI & kết quả**: KPI từng ngày của mỗi nhóm và người thực hiện, kết quả Đạt / Không đạt từ Google Sheet KPI. Bộ lọc ngày / dòng tiền / kết quả, 4 thẻ chỉ số, Cần xử lý (không đạt, chưa cập nhật), bảng theo dòng tiền, kế hoạch & kết quả theo nhóm (PIC + người thực hiện). Màn hình TV `/kpi?tv=1`, dữ liệu minh họa `/kpi?demo=1`. |
 | `/war-room` | Bảng War Room live: dữ liệu chung trên máy chủ, cập nhật thời gian thực, ai đang online (`src/live.js`) |
 | `/lich` | Hẹn lịch BOD (D1) |
 | `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`) |
@@ -46,6 +47,17 @@ Không cần nạp tay: Worker tự đọc Google Sheet task [WR - MASTER TASK](
 - Nhiều Sheet task được gộp lại: cùng dòng tiền (cùng số "Dòng tiền 2: …" hoặc cùng tên) thì nối task, task của sheet sau xếp sau; dòng tiền chỉ có ở 1 sheet thì thêm thẻ. Mỗi sheet có nút **Mở Sheet n** ở góc trên trang.
 - 1 Sheet đọc lỗi (mạng, chưa / bị tắt chia sẻ) trong khi sheet khác vẫn đọc được: dùng tạm bản đọc được lần trước của sheet đó (bảng D1 `excel_sheet_cache`) và cảnh báo ở đầu trang; sheet chưa từng đọc được thì bỏ qua, kèm cảnh báo. Riêng sheet đầu tiên chưa từng đọc được, hoặc không sheet nào đọc được: không đồng bộ lượt đó, dashboard giữ nguyên dữ liệu.
 - Đổi / thêm Sheet: biến `EXCEL_SHEET_URL` (1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy hoặc xuống dòng; trống = 2 Google Sheet ở trên); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
+
+## Trang KPI & kết quả (`/kpi`)
+
+Đọc Google Sheet KPI [thamkhao_kpi](https://docs.google.com/spreadsheets/d/1vjhwDkU2-pdktEqGvqWHy2Op86cpjq8JAFVv5e1GjHg/edit) (chia sẻ "Bất kỳ ai có đường liên kết" – Người xem). Mỗi phút (cron) và mỗi 20 giây khi có người xem, Worker đọc lại sheet, lưu vào D1 (bảng `kpi_sheet`) và báo các màn hình tải lại khi có thay đổi.
+
+- Mỗi tab tên "Dòng tiền …" là 1 dòng tiền; tab khác ("KPI 21-25.11", "Trang_tính1"…) bị bỏ qua.
+- Dòng tiêu đề có cột Nhóm, PIC và các ô ngày (21/11 …); mỗi ngày 2 cột KPI | Kết quả. Cột Ghi chú / Vướng mắc và Thư mục dữ liệu lưu trữ (link https) được hiện kèm. Cột Tổng kết không dùng: dashboard tự tính.
+- **Mỗi người 1 dòng**: cột Nhóm giữ nguyên tên nhóm ở mọi dòng của nhóm, cột PIC ghi người thực hiện dòng đó. Dòng có Stt La Mã (I, II…) không có PIC / KPI là dòng mục. PIC của nhóm lấy theo Đội trưởng trong file phân chia nhiệm vụ (bảng `excel_teams`).
+- Kết quả: Đạt / Không đạt (nhận thêm Hoàn thành, Xong = Đạt; Chưa / Không hoàn thành = Không đạt). Ô Kết quả trống của ngày đã qua hoặc hôm nay = Chưa cập nhật; ngày chưa tới = Sắp tới. Tồn đọng = Không đạt + Chưa cập nhật tính đến ngày đang xem.
+- Bộ lọc nằm trên địa chỉ để gửi link: `?ngay=2026-11-23` hoặc `?ngay=all`, `&dong=<tên dòng tiền viết liền không dấu>`, `&kq=D|T|C`.
+- API: `GET /api/kpi` (dữ liệu, đọc lại sheet chạy nền), `POST /api/kpi/sync` (đọc lại ngay). Đổi sheet: biến `KPI_SHEET_URL` (link hoặc ID; `off` để tắt). Mã nguồn: `src/kpi/sheet.js` (đọc sheet), `src/kpi/index.js` (đồng bộ, API), `public/kpi-model.js` (tính trạng thái), `public/kpi.js`, `public/kpi.css`, `public/kpi-demo.js` (dữ liệu minh họa).
 
 ## Cấu hình trên Cloudflare
 

@@ -31,13 +31,14 @@ import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.
 import { json, redirect, text } from "./http.js";
 import { handleExcel, sheetOnlyBase, withExcel } from "./excel/index.js";
 import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
+import { handleKpi, syncKpi } from "./kpi/index.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
 
-const VIEW_PAGES = new Set(["/", "/war-room", "/lich", "/admin"]);
-// Trang được chèn nút "Hẹn lịch BOD" + ô người dùng: dashboard dòng tiền (/) và Bảng War Room live (/war-room).
-const DASHBOARD_PAGES = new Set(["/", "/war-room"]);
+const VIEW_PAGES = new Set(["/", "/kpi", "/war-room", "/lich", "/admin"]);
+// Trang được chèn nút "Hẹn lịch BOD" + ô người dùng: dashboard dòng tiền (/), KPI & kết quả (/kpi), Bảng War Room live (/war-room).
+const DASHBOARD_PAGES = new Set(["/", "/kpi", "/war-room"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -81,6 +82,8 @@ export default {
     }
     // Đồng bộ task từ Google Sheet WR - MASTER TASK (src/excel/sheet-sync.js): GET trạng thái, POST đồng bộ ngay.
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
+    // KPI & kết quả 5 ngày từ Google Sheet KPI (src/kpi/): trang /kpi.
+    if (path === "/api/kpi" || path === "/api/kpi/sync") return handleKpi(request, env, url, ctx);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
     if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, async () => sheetOnlyBase());
@@ -106,9 +109,11 @@ export default {
     return out;
   },
 
-  // Cron mỗi phút (wrangler.jsonc › triggers): đọc lại Google Sheet WR - MASTER TASK — xem src/excel/sheet-sync.js.
+  // Cron mỗi phút (wrangler.jsonc › triggers): đọc lại Google Sheet task + phân chia nhóm (src/excel/sheet-sync.js)
+  // và Google Sheet KPI (src/kpi/).
   async scheduled(event, env, ctx) {
     ctx.waitUntil(syncSheet(env));
+    ctx.waitUntil(syncKpi(env));
   },
 };
 

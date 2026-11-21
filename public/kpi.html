@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>KPI & kết quả · War Room</title>
+  <meta name="description" content="KPI và kết quả từng ngày War Room theo dòng tiền, nhóm và người thực hiện, lấy từ Google Sheet KPI." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="/dong-tien.css" />
+  <link rel="stylesheet" href="/kpi.css" />
+  <script type="module" src="/kpi.js"></script>
+</head>
+<body>
+  <div class="page k-page">
+    <header class="head">
+      <div>
+        <h1 id="pageTitle">KPI & kết quả</h1>
+        <p class="sub" id="pageSub">KPI từng ngày của mỗi nhóm và người thực hiện, lấy từ Google Sheet KPI</p>
+      </div>
+      <div class="head-actions">
+        <span class="sync" id="sync" data-state="loading" role="status"><span class="dot"></span><span id="syncText">Đang tải dữ liệu…</span></span>
+        <a class="btn" id="openSheet" href="#" target="_blank" rel="noopener noreferrer" hidden>
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          Mở Google Sheet KPI
+        </a>
+        <button class="btn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng / tối">
+          <svg class="ic" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg>
+          <span id="themeLabel">Giao diện sáng</span>
+        </button>
+        <button class="btn" id="tvBtn" type="button" aria-pressed="false">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+          <span id="tvLabel">Màn hình TV</span>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Trang">
+      <a class="tab" href="/">Dòng tiền</a>
+      <a class="tab" href="/kpi" aria-current="page">KPI & kết quả</a>
+      <a class="tab" href="/war-room#shifts">Lịch trực 24/7 (2 Ca)</a>
+      <a class="tab" href="/lich">Hẹn lịch BOD</a>
+    </nav>
+
+    <div id="filters" class="k-filters"></div>
+    <div id="notices" class="k-notices"></div>
+    <main id="main" class="k-main">
+      <section class="k-panel k-empty"><p class="hint">Đang tải KPI từ Google Sheet…</p></section>
+    </main>
+  </div>
+</body>
+</html>
