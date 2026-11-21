@@ -10,17 +10,21 @@
 //   POST /api/excel/sync    đồng bộ ngay
 //
 // Biến cấu hình (tuỳ chọn): EXCEL_SHEET_URL = 1 hoặc nhiều link / ID Google Sheet, cách nhau bởi dấu phẩy hoặc xuống dòng
-// (mặc định: WR - MASTER TASK + sheet thứ 2, xem gsheet.js › DEFAULT_SHEETS); "off" để tắt. Nhiều sheet được gộp lại (readSheets).
+// (mặc định: WR - MASTER TASK + file phân chia nhiệm vụ WarRoom_CTHomes_Final, xem gsheet.js › DEFAULT_SHEETS); "off" để tắt.
+// Sheet task được gộp lại (readSheets). Sheet phân chia nhiệm vụ (DS nhân sự War-Room) thay bảng excel_teams khi khác —
+// như nạp file phân chia nhiệm vụ bằng nút "Nạp task Excel".
 
 import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
 import { SHEET_FILE_NAME, readSheets, sheetIds } from './gsheet.js';
 import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport, sheetOnlyBase } from './index.js';
+import { matchStream } from './merge.js';
 
 export const SYNC_EVERY_MS = 20000;
 const FORCE_EVERY_MS = 5000;
 const SYNC_USER = { username: 'google-sheet', fullName: 'Google Sheet (tự đồng bộ)' };
+const TEAMS_FILE_NAME = 'Google Sheet phân chia nhiệm vụ';
 
 let ready = false;
 async function ensureTable(env) {
@@ -100,6 +104,33 @@ async function diff(env, plan) {
   return { changed: stale || orphans.length > 0, orphans };
 }
 
+/**
+ * Phân chia nhóm từ Google Sheet: thay toàn bộ bảng excel_teams khi khác dữ liệu đang lưu (giống nạp file phân chia nhiệm vụ:
+ * chỉ giữ khối khớp 1 dòng tiền trên dashboard hoặc được tạo thẻ mới, vd bỏ "Cố vấn, chỉ đạo", "Nhóm IT").
+ * @param choices  dòng tiền từ sheet task: [{ id, name, fullName, code }]
+ * @returns {Promise<boolean>} có thay đổi
+ */
+async function syncTeams(env, roster, choices, now) {
+  const byKey = (a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  const sections = roster.sections.filter((sec) => sec.canCreate || matchStream(choices, sec));
+  if (!sections.length) return false;
+  const rows = sections.map((sec) => [sec.key, sec.name, sec.code, sec.raw, sec.canCreate ? 1 : 0, JSON.stringify(sec.groups), sec.memberCount]).sort(byKey);
+  const { results } = await env.DB.prepare('SELECT team_key, name, code, raw, can_create, groups, member_count FROM excel_teams').all();
+  const have = results.map((r) => [r.team_key, r.name, r.code, r.raw, Number(r.can_create), r.groups, Number(r.member_count)]).sort(byKey);
+  if (JSON.stringify(have) === JSON.stringify(rows)) return false;
+  const at = new Date(now).toISOString();
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM excel_teams'),
+    ...rows.map((v) => env.DB.prepare(
+      `INSERT INTO excel_teams (team_key, name, code, raw, can_create, groups, member_count, file_name, uploaded_by, uploaded_by_name, uploaded_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(...v, TEAMS_FILE_NAME, SYNC_USER.username, SYNC_USER.fullName, at)),
+  ]);
+  const summary = sections.map((sec) => `${sec.raw}: ${sec.groups.length} nhóm`).join('; ');
+  await log(env, new Request('https://sync.invalid/'), SYNC_USER.username, 'excel_teams', `${TEAMS_FILE_NAME} · ${summary}`.slice(0, 1000));
+  return true;
+}
+
 const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet không phản hồi (quá 15 giây).' : e?.message || e).slice(0, 300);
 
 /**
@@ -115,19 +146,29 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
   try {
     const cache = await cachedBooks(env);
     const book = await readSheets(ids, { now, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
-    const planned = await planImport(env, book, async () => sheetOnlyBase()); // không kết nối Worksuite
-    if (planned.error) throw new Error(planned.error);
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
-    const { changed, orphans } = await diff(env, planned.plan);
-    if (changed) {
-      const saved = await saveImport(env, planned.plan, { fileName: SHEET_FILE_NAME, user: SYNC_USER, now, keepEmpty: true });
-      if (saved.error) throw new Error(saved.error);
-      if (orphans.length) await env.DB.batch(orphans.map((k) => env.DB.prepare('DELETE FROM excel_imports WHERE stream_key = ?').bind(k)));
-      await log(env, new Request('https://sync.invalid/'), SYNC_USER.username, 'excel_sync', importSummary(SHEET_FILE_NAME, saved));
-      await notifyLive(env, { scope: 'streams' });
+    let changed = false;
+    let notes = book.warnings;
+    let choices = [];
+    // Chỉ đồng bộ task khi có ít nhất 1 sheet task (mới đọc hoặc bản trước): tránh gỡ hết task khi chỉ còn sheet phân chia nhóm.
+    if (book.taskSheets) {
+      const planned = await planImport(env, book, async () => sheetOnlyBase()); // không kết nối Worksuite
+      if (planned.error) throw new Error(planned.error);
+      notes = planned.warnings;
+      choices = planned.plan.map(({ key, sec }) => ({ id: key, name: sec.name, fullName: sec.title, code: sec.code }));
+      const { changed: stale, orphans } = await diff(env, planned.plan);
+      if (stale) {
+        const saved = await saveImport(env, planned.plan, { fileName: SHEET_FILE_NAME, user: SYNC_USER, now, keepEmpty: true });
+        if (saved.error) throw new Error(saved.error);
+        if (orphans.length) await env.DB.batch(orphans.map((k) => env.DB.prepare('DELETE FROM excel_imports WHERE stream_key = ?').bind(k)));
+        await log(env, new Request('https://sync.invalid/'), SYNC_USER.username, 'excel_sync', importSummary(SHEET_FILE_NAME, saved));
+        changed = true;
+      }
     }
+    if (book.roster && (await syncTeams(env, book.roster, choices, now))) changed = true;
+    if (changed) await notifyLive(env, { scope: 'streams' });
     await saveCache(env, book.fresh, cache, now);
-    const warnings = JSON.stringify([...planned.warnings].slice(0, 20).map((w) => String(w).slice(0, 300)));
+    const warnings = JSON.stringify([...notes].slice(0, 20).map((w) => String(w).slice(0, 300)));
     await env.DB.prepare(`UPDATE excel_sync SET error = '', warnings = ?, total = ?, sheets = ?${changed ? ', changed_at = ?' : ''} WHERE id = 1`)
       .bind(warnings, total, book.sections.length, ...(changed ? [new Date(now).toISOString()] : []))
       .run();

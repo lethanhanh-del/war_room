@@ -156,6 +156,15 @@ const publicSheet = (id, tabs) => Object.fromEntries([
   ...tabs.map(([, csv], i) => [`${id}/export?format=csv&gid=${i + 1}`, [csv, 'text/csv; charset=utf-8']]),
 ]);
 const privateSheet = (id) => ({ [`/d/${id}/htmlview`]: ['', 'text/html', 401] });
+
+// D1 giả lập dùng chung trong file: các module chỉ tạo bảng 1 lần mỗi tiến trình (biến ready), nên test sau dọn dữ liệu
+// thay vì tạo database mới.
+let sharedDb = null;
+async function freshEnv(vars) {
+  sharedDb ??= fakeD1();
+  for (const t of ['excel_imports', 'excel_teams', 'excel_sync', 'excel_sheet_cache']) await sharedDb.prepare(`DELETE FROM ${t}`).run().catch(() => {});
+  return { DB: sharedDb, ...vars };
+}
 const row = (stt, stream, group, task, owner, status = 'Đang thực hiện', blocker = '') => `${stt},${stream},${group},${task},${owner},,25/11/2026,${status},P0,Biên bản,${blocker}`;
 const TABS_A = [['Dòng tiền Banking', `${HEADER}\n${row(1, 'Dòng tiền 2: Banking', 'SS1', 'Chốt hạn mức', 'Nguyễn Thế Nhiên')}`]];
 const TABS_B = [
@@ -226,7 +235,7 @@ test('syncSheet: nhiều Google Sheet — sheet đọc lỗi giữ task lần tr
   const { ensureSchema } = await import('../src/db.js');
   const { sheetSyncStatus, syncSheet } = await import('../src/excel/sheet-sync.js');
   const { sheetOnlyBase, withExcel } = await import('../src/excel/index.js');
-  const env = { DB: fakeD1(), EXCEL_SHEET_URL: `https://docs.google.com/spreadsheets/d/${A}/edit, ${B}` };
+  const env = await freshEnv({ EXCEL_SHEET_URL: `https://docs.google.com/spreadsheets/d/${A}/edit, ${B}` });
   await ensureSchema(env);
   const streams = async () => (await withExcel(env, sheetOnlyBase(NOW))).streams.map((s) => [s.name, s.counts.total]);
   let restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(B, TABS_B) });
@@ -249,6 +258,79 @@ test('syncSheet: nhiều Google Sheet — sheet đọc lỗi giữ task lần tr
     r = await syncSheet(env, { force: true, now: NOW + 120000 });
     assert.deepEqual(r, { changed: true, total: 1 });
     assert.deepEqual(await streams(), [['Banking', 1]]);
+  } finally {
+    restore();
+  }
+});
+
+// ---------- Google Sheet phân chia nhiệm vụ (WarRoom_CTHomes_Final: DS nhân sự War-Room) ----------
+
+const R = 'SHEET_R_000000000000000003';
+const rosterTabs = (extra = '') => [['DS nhân sự War-Room', [
+  ',,,,,,,,Ngày 21/11/2026',
+  'STT,STT dòng tiền,Dòng tiền,Thành viên,Chức danh,Phòng ban,Đội trưởng/Đội phó,Nhiệm vụ thực hiện,Ngày',
+  '1,,"Cố vấn, chỉ đạo",Trần Kim Chung,Chủ tịch,,,,',
+  '2,2,Dòng tiền Banking,Nguyễn Thị Mai Thu,Giám đốc Ban Kế toán 1,Ban Tài chính - Kế toán,Đội trưởng,Làm việc với ngân hàng,X',
+  '3,,,Võ Trường Sơn,Chuyên viên,Ban Tài chính - Kế toán,,Làm việc với ngân hàng,X',
+  extra,
+  '4,3,Dòng tiền nợ khó đòi,Mạc Thị Thúy Hiền,Trưởng phòng Đối ngoại,Ban Đối ngoại,Đội trưởng,Thu hồi nợ,X',
+].filter(Boolean).join('\n')]];
+
+test('readSheets: Google Sheet phân chia nhiệm vụ -> roster (nhóm, PIC, nhiệm vụ từng người), không phải task', async () => {
+  const restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(R, rosterTabs()) });
+  try {
+    const book = await readSheets([A, R], { now: NOW });
+    assert.equal(book.taskSheets, 1);
+    assert.deepEqual(book.sections.map((s) => s.name), ['Banking']);
+    assert.deepEqual(book.roster.sections.map((s) => [s.raw, s.code, s.groups.length, s.memberCount, s.groups[0].lead?.name ?? null]), [
+      ['Cố vấn, chỉ đạo', '', 1, 1, null],
+      ['Dòng tiền Banking', 'DT02', 1, 2, 'Nguyễn Thị Mai Thu'],
+      ['Dòng tiền nợ khó đòi', 'DT03', 1, 1, 'Mạc Thị Thúy Hiền'],
+    ]);
+    assert.deepEqual([...book.fresh.keys()], [A]); // bản dự phòng chỉ dành cho sheet task
+    assert.deepEqual(book.warnings, []);
+  } finally {
+    restore();
+  }
+});
+
+test('syncSheet: sheet phân chia nhiệm vụ -> bảng nhóm tự cập nhật; đọc lỗi thì giữ nguyên; chỉ còn sheet phân chia thì không đụng task', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
+  const { ensureSchema } = await import('../src/db.js');
+  const { sheetSyncStatus, syncSheet } = await import('../src/excel/sheet-sync.js');
+  const { sheetOnlyBase, withExcel } = await import('../src/excel/index.js');
+  const env = await freshEnv({ EXCEL_SHEET_URL: `${A}\n${R}` });
+  await ensureSchema(env);
+  const view = async () => (await withExcel(env, sheetOnlyBase(NOW))).streams.map((s) => [s.name, s.counts.total, s.teams?.groups.map((g) => g.members.length) ?? null]);
+  let restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(R, rosterTabs()) });
+  try {
+    assert.deepEqual(await syncSheet(env, { force: true, now: NOW }), { changed: true, total: 1 });
+    const first = await view();
+    assert.deepEqual(first[0], ['Banking', 1, [2]]);
+    assert.equal(first.length, 2); // + thẻ "Nợ khó đòi" từ phân chia nhóm; "Cố vấn, chỉ đạo" không tạo thẻ
+    assert.deepEqual(first[1].slice(1), [0, [1]]);
+
+    assert.deepEqual(await syncSheet(env, { force: true, now: NOW + 60000 }), { changed: false, total: 1 });
+
+    // Thêm 1 thành viên trên sheet: bảng nhóm cập nhật.
+    const extra = '5,,,Lê Công Sum,Chuyên viên,Ban Tài chính - Kế toán,,Làm việc với ngân hàng,X';
+    restore();
+    restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(R, rosterTabs(extra)) });
+    assert.deepEqual(await syncSheet(env, { force: true, now: NOW + 120000 }), { changed: true, total: 1 });
+    assert.deepEqual((await view())[0], ['Banking', 1, [3]]);
+
+    // Sheet phân chia bị tắt chia sẻ: nhóm giữ nguyên, có cảnh báo.
+    restore();
+    restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...privateSheet(R) });
+    assert.deepEqual(await syncSheet(env, { force: true, now: NOW + 180000 }), { changed: false, total: 1 });
+    assert.deepEqual((await view())[0], ['Banking', 1, [3]]);
+    assert.match((await sheetSyncStatus(env)).warnings[0], /^Google Sheet 2 \(…000003\): /);
+
+    // Chỉ còn sheet phân chia: task giữ nguyên, nhóm vẫn đồng bộ.
+    env.EXCEL_SHEET_URL = R;
+    restore();
+    restore = fakeGoogle(publicSheet(R, rosterTabs()));
+    assert.deepEqual(await syncSheet(env, { force: true, now: NOW + 240000 }), { changed: true, total: 0 });
+    assert.deepEqual((await view())[0], ['Banking', 1, [2]]);
   } finally {
     restore();
   }

@@ -352,7 +352,7 @@
   /** Bảng nhóm (file phân chia nhiệm vụ): Nhóm | PIC | Nhiệm vụ chính | Thành viên · nhiệm vụ từng người. */
   function teamsTableHtml(s) {
     const groups = s.teams?.groups || [];
-    if (!groups.length) return '<p class="d-empty">Chưa có phân chia nhóm. Nạp file phân chia nhiệm vụ (DS nhân sự War-Room) bằng nút “Nạp task Excel”.</p>';
+    if (!groups.length) return '<p class="d-empty">Chưa có phân chia nhóm cho dòng tiền này. Bảng nhóm tự lấy từ Google Sheet phân chia nhiệm vụ (sheet “DS nhân sự War-Room”).</p>';
     const rows = groups.map((g, i) => {
       const people = g.members.filter((m) => !m.placeholder);
       const main = g.mainTask || (people.length === 1 ? people[0].task || '—' : 'Mỗi người một nhiệm vụ');

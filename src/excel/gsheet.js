@@ -9,11 +9,12 @@
 // Nếu Google đổi định dạng trang htmlview: đọc cả file .xlsx (chậm hơn nhưng vẫn đúng).
 
 import { normKey } from '../worksuite/model.js';
+import { extractRoster, isRoster } from './roster.js';
 import { extractWorkbook, parseStreamTitle, unreadableWarning } from './tasks.js';
 import { readXlsx } from './xlsx.js';
 
 const DEFAULT_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK
-const SECOND_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY'; // sheet thứ 2 (thêm 21/11/2026)
+const SECOND_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY'; // WarRoom_CTHomes_Final: phân chia nhiệm vụ (thêm 21/11/2026)
 export const DEFAULT_SHEETS = [DEFAULT_SHEET, SECOND_SHEET];
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_SHEETS = 20;
@@ -23,7 +24,7 @@ export const NOT_PUBLIC = 'Không đọc được Google Sheet: hãy chia sẻ �
 
 /**
  * Các Google Sheet cần đồng bộ ([] = tắt). EXCEL_SHEET_URL: 1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy, chấm phẩy,
- * khoảng trắng hoặc xuống dòng; "off" để tắt; trống = DEFAULT_SHEETS (WR - MASTER TASK + sheet thứ 2).
+ * khoảng trắng hoặc xuống dòng; "off" để tắt; trống = DEFAULT_SHEETS (WR - MASTER TASK + file phân chia nhiệm vụ).
  */
 export function sheetIds(env = {}) {
   const raw = String(env.EXCEL_SHEET_URL ?? '').trim();
@@ -152,8 +153,8 @@ export function streamSections(sheets, { now = Date.now() } = {}) {
   return { format: 'master', sections, warnings: book.warnings };
 }
 
-/** Đọc Google Sheet -> { format, sections, warnings } (xem streamSections). */
-export async function readSheet(id, { now = Date.now() } = {}) {
+/** Các sheet đang hiện của 1 Google Sheet, cùng dạng với readXlsx: htmlview + CSV từng sheet; dự phòng: cả file .xlsx. */
+export async function fetchSheetTabs(id) {
   const base = `https://docs.google.com/spreadsheets/d/${id}`;
   const list = parseSheetList(await (await fetchGoogle(`${base}/htmlview`)).text());
   let sheets;
@@ -165,7 +166,12 @@ export async function readSheet(id, { now = Date.now() } = {}) {
     const bytes = new Uint8Array(await (await fetchGoogle(`${base}/export?format=xlsx`, /spreadsheetml/)).arrayBuffer());
     sheets = (await readXlsx(bytes)).sheets;
   }
-  return streamSections(sheets, { now });
+  return sheets;
+}
+
+/** Đọc Google Sheet task -> { format, sections, warnings } (xem streamSections). */
+export async function readSheet(id, { now = Date.now() } = {}) {
+  return streamSections(await fetchSheetTabs(id), { now });
 }
 
 /**
@@ -174,10 +180,14 @@ export async function readSheet(id, { now = Date.now() } = {}) {
  *   - có bản đọc được lần trước (previous) -> dùng tạm bản đó, kèm cảnh báo, để task của file này không biến mất;
  *   - chưa từng đọc được -> bỏ qua file đó, kèm cảnh báo (riêng file đầu tiên: dừng cả lượt, giữ dữ liệu đang hiện).
  * Chỉ 1 file, hoặc không đọc được file nào -> báo lỗi như trước.
+ * File phân chia nhiệm vụ (vd WarRoom_CTHomes_Final, sheet "DS nhân sự War-Room" + "Nhóm hỗ trợ": cột Dòng tiền, Thành viên,
+ * Nhiệm vụ thực hiện) không phải file task: đọc nhóm, PIC, nhiệm vụ từng người vào `roster` (xem roster.js).
  * @param {string[]} ids
  * @param {{ now?: number, previous?: Map<string, {sections: object[], warnings: string[]}> }} [opts]
- * @returns {Promise<{ format: 'master', sections: object[], warnings: string[], fresh: Map<string, object> }>}
- *   fresh = kết quả đọc mới của từng file (để lưu làm bản dự phòng)
+ * @returns {Promise<{ format: 'master', sections: object[], warnings: string[], fresh: Map<string, object>,
+ *   taskSheets: number, roster: { sections: object[] } | null }>}
+ *   fresh = kết quả đọc mới của từng file task (để lưu làm bản dự phòng); taskSheets = số file task có dữ liệu (mới hoặc
+ *   bản trước); roster = phân chia nhóm từ các file phân chia nhiệm vụ đọc được (null = không có / đọc lỗi)
  */
 export async function readSheets(ids, { now = Date.now(), previous = new Map() } = {}) {
   const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
@@ -188,11 +198,20 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
   const errors = [];
   const failed = []; // cảnh báo sheet đọc lỗi: đưa lên đầu danh sách
   const fresh = new Map();
+  const rosters = [];
+  let taskSheets = 0;
   for (const [i, id] of ids.entries()) {
     const label = `Google Sheet ${i + 1} (…${id.slice(-6)})`;
     let book;
     try {
-      book = await readSheet(id, { now });
+      const tabs = await fetchSheetTabs(id);
+      if (isRoster({ sheets: tabs })) {
+        const roster = extractRoster({ sheets: tabs });
+        rosters.push(roster);
+        warnings.push(...roster.warnings.map((w) => `${label}: ${w}`));
+        continue;
+      }
+      book = streamSections(tabs, { now });
       fresh.set(id, book);
     } catch (e) {
       if (ids.length === 1) throw e;
@@ -203,6 +222,7 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
       failed.push(book ? `${error} Đang giữ dữ liệu lần đọc trước.` : error);
       if (!book) continue;
     }
+    taskSheets++;
     warnings.push(...(i ? book.warnings.map((w) => `${label}: ${w}`) : book.warnings));
     for (const sec of book.sections) {
       // Dòng của file sau đánh số tiếp sau file trước, để thứ tự task và mã task không trùng.
@@ -229,6 +249,9 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
       }
     }
   }
-  if (!fresh.size) throw new Error(errors.join(' · '));
-  return { format: 'master', sections, warnings: [...failed, ...warnings], fresh };
+  if (!fresh.size && !rosters.length) throw new Error(errors.join(' · '));
+  // Nhiều file phân chia nhiệm vụ: cùng dòng tiền thì lấy theo file đứng trước.
+  const teams = [];
+  for (const r of rosters) for (const sec of r.sections) if (!teams.some((x) => x.key === sec.key)) teams.push(sec);
+  return { format: 'master', sections, warnings: [...failed, ...warnings], fresh, taskSheets, roster: rosters.length ? { sections: teams } : null };
 }

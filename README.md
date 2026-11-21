@@ -4,7 +4,7 @@ Dashboard điều hành War Room của CT Group, chạy trên **Cloudflare Worke
 
 | Trang | Nội dung |
 |---|---|
-| `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn — bấm 1 chỉ số để bảng task chỉ còn các task đó), block **Điểm nghẽn · Cần hỗ trợ** theo từng nhóm công việc, bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK** và sheet thứ 2; nhóm lấy từ file phân chia nhiệm vụ. Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
+| `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn — bấm 1 chỉ số để bảng task chỉ còn các task đó), block **Điểm nghẽn · Cần hỗ trợ** theo từng nhóm công việc, bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK**; nhóm, PIC và nhiệm vụ từng thành viên tự đồng bộ từ Google Sheet phân chia nhiệm vụ **WarRoom_CTHomes_Final** (DS nhân sự War-Room). Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
 | `/war-room` | Bảng War Room live: dữ liệu chung trên máy chủ, cập nhật thời gian thực, ai đang online (`src/live.js`) |
 | `/lich` | Hẹn lịch BOD (D1) |
 | `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`) |
@@ -17,7 +17,7 @@ Từ 21/11/2026 dashboard **không kết nối CT Worksuite** nữa (kể cả k
 
 ## Nạp file Excel: phân chia nhóm, hoặc task nạp tay
 
-Task chính lấy từ Google Sheet WR - MASTER TASK (tự đồng bộ, xem mục dưới). Nút **Nạp task Excel** ở góc trên trang `/` dùng để:
+Task và phân chia nhóm tự đồng bộ từ Google Sheet (xem mục dưới); lần sửa kế tiếp trên Sheet ghi đè dữ liệu nạp tay. Nút **Nạp task Excel** ở góc trên trang `/` dùng khi cần nạp tay:
 
 - **Nạp file phân chia nhiệm vụ** (vd `WarRoom_CTHomes_Final_20.11.2026.xlsx`, sheet “DS nhân sự War-Room”: Dòng tiền · Thành viên · Chức danh · Phòng ban · Đội trưởng/Đội phó · Nhiệm vụ thực hiện). Dashboard tự nhận ra đây là file phân chia. Trong mỗi dòng tiền, mỗi “Đội trưởng / Trưởng nhóm” mở 1 nhóm và là PIC của nhóm; nhiệm vụ chính = “Nhiệm vụ thực hiện” các thành viên cùng làm (mỗi người một việc thì ghi “Mỗi người một nhiệm vụ” và hiện việc của từng người). Cùng dòng tiền ở sheet khác (vd “Nhóm hỗ trợ”) được gộp vào. Nạp lại sẽ thay toàn bộ phân chia cũ (bảng `excel_teams`); dòng tiền chưa có thẻ thì tạo thẻ mới; “Cố vấn, chỉ đạo” và các nhóm hỗ trợ (IT, hậu cần…) không tạo thẻ. Gỡ trong cùng hộp thoại.
 - **Nạp tay file task** `.xlsx` khi cần: file tổng WR - MASTER TASK, hoặc file "Nhập task & theo dõi" của 1 dòng tiền (vd `DONG_TIEN_2_BANKING_Template….xlsx`, sheet `01_NHAP_TASK`). Xem trước rồi bấm **Đưa lên dashboard**.
@@ -36,15 +36,16 @@ Task lưu trong D1 (bảng `excel_imports`), nhóm trong `excel_teams`; không g
 
 ### Tự đồng bộ từ Google Sheet
 
-Không cần nạp tay: Worker tự đọc các Google Sheet task — [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) và [sheet thứ 2](https://docs.google.com/spreadsheets/d/1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY/edit) (thêm 21/11/2026) — mỗi phút (Cron Trigger) và mỗi 20 giây khi có người đang xem trang `/`. Sửa trên Sheet → dashboard cập nhật sau khoảng 20–60 giây, mọi màn hình tự tải lại.
+Không cần nạp tay: Worker tự đọc Google Sheet task [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) và Google Sheet phân chia nhiệm vụ [WarRoom_CTHomes_Final](https://docs.google.com/spreadsheets/d/1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY/edit) (thêm 21/11/2026) mỗi phút (Cron Trigger) và mỗi 20 giây khi có người đang xem trang `/`. Sửa trên Sheet → dashboard cập nhật sau khoảng 20–60 giây, mọi màn hình tự tải lại.
 
 - Sheet phải chia sẻ **"Bất kỳ ai có đường liên kết" – Người xem** (Worker đọc không cần tài khoản Google). Mỗi sheet tên "Dòng tiền …" là 1 thẻ dòng tiền (kể cả sheet chưa có task), đọc theo đúng quy tắc của Nạp task Excel ở trên. Số dòng tiền lấy từ cột "Dòng tiền" (`Dòng tiền 2: Banking` → thẻ **DT02**), thẻ xếp theo số.
 - Sheet là nguồn chính (không dùng Worksuite): task nạp tay từ file tổng của cùng dòng tiền bị thay bằng dữ liệu Sheet; sheet trống hoặc hỏng dòng tiêu đề → thẻ 0 task kèm cảnh báo. File riêng của dòng tiền khác không bị đụng tới.
 - PIC của dòng tiền: ghi 1 ô `PIC phụ trách: Họ tên` phía trên dòng tiêu đề của sheet (chèn thêm 1 dòng trên bảng).
 - Trạng thái (lần đọc gần nhất, lỗi, cảnh báo như "sheet không có dòng tiêu đề hợp lệ") có trong trường `sheetSync` của `/api/streams`; `POST /api/excel/sync` đồng bộ ngay.
-- Nhiều Sheet được gộp lại: cùng dòng tiền (cùng số "Dòng tiền 2: …" hoặc cùng tên) thì nối task, task của sheet sau xếp sau; dòng tiền chỉ có ở 1 sheet thì thêm thẻ. Mỗi sheet có nút **Mở Sheet n** ở góc trên trang.
+- Sheet phân chia nhiệm vụ (sheet "DS nhân sự War-Room" + "Nhóm hỗ trợ": Dòng tiền · Thành viên · Chức danh · Phòng ban · Đội trưởng/Đội phó · Nhiệm vụ thực hiện) được nhận ra tự động và đọc như nạp file phân chia nhiệm vụ ở trên: khác dữ liệu đang lưu thì thay toàn bộ bảng `excel_teams`. Sheet này đọc lỗi thì giữ nguyên bảng nhóm, kèm cảnh báo.
+- Nhiều Sheet task được gộp lại: cùng dòng tiền (cùng số "Dòng tiền 2: …" hoặc cùng tên) thì nối task, task của sheet sau xếp sau; dòng tiền chỉ có ở 1 sheet thì thêm thẻ. Mỗi sheet có nút **Mở Sheet n** ở góc trên trang.
 - 1 Sheet đọc lỗi (mạng, chưa / bị tắt chia sẻ) trong khi sheet khác vẫn đọc được: dùng tạm bản đọc được lần trước của sheet đó (bảng D1 `excel_sheet_cache`) và cảnh báo ở đầu trang; sheet chưa từng đọc được thì bỏ qua, kèm cảnh báo. Riêng sheet đầu tiên chưa từng đọc được, hoặc không sheet nào đọc được: không đồng bộ lượt đó, dashboard giữ nguyên dữ liệu.
-- Đổi / thêm Sheet: biến `EXCEL_SHEET_URL` (1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy hoặc xuống dòng; trống = 2 sheet ở trên); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
+- Đổi / thêm Sheet: biến `EXCEL_SHEET_URL` (1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy hoặc xuống dòng; trống = 2 Google Sheet ở trên); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
 
 ## Cấu hình trên Cloudflare
 
