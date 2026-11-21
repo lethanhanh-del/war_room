@@ -19,6 +19,7 @@ import {
   fetchWaitingPoints,
 } from '../public/waiting-point.js';
 import { emptyWaitingPointState, mergeWaitingPointState, pruneHistoryAgainstSheetRows } from '../src/waiting-point-sync.js';
+import { AUTO_ROTATE_TABS, nextRotateTarget, navBar } from '../src/pages.js';
 
 test('parseTimeSpec xử lý đủ 12 mốc dropdown và các định dạng giờ', () => {
   const presets = [
@@ -272,6 +273,44 @@ test('Bảng thống kê tự đối chiếu với Sheet: dòng còn trên Sheet
   const s2 = mergeWaitingPointState(s1, { activeSheetRows: sheetRows }, now + 5000);
   assert.equal(s2.recentCleared.length, 1);
   assert.equal(s2.recentCleared[0].issue, 'Hư Người');
+});
+
+test('Tự động chuyển tab: đúng thời lượng 3p/3p/5p, bật tắt từng tab và render đủ trong navBar', () => {
+  assert.deepEqual(
+    AUTO_ROTATE_TABS.map((t) => [t.href, t.sec]),
+    [
+      ['/', 180],
+      ['/kpi', 180],
+      ['/waiting-point', 300],
+    ],
+  );
+
+  // Vòng xoay đủ 3 tab
+  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/kpi');
+  assert.equal(nextRotateTarget('/kpi', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/waiting-point');
+  assert.equal(nextRotateTarget('/waiting-point', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/');
+
+  // Tắt 1 tab (/kpi) -> chỉ xoay giữa Dòng tiền và Waiting Point
+  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': false, '/waiting-point': true }).href, '/waiting-point');
+  assert.equal(nextRotateTarget('/waiting-point', { '/': true, '/kpi': false, '/waiting-point': true }).href, '/');
+
+  // Đang ở trang ngoài vòng xoay (/lich) -> trả tab bật đầu tiên
+  assert.equal(nextRotateTarget('/lich', { '/': false, '/kpi': true, '/waiting-point': true }).href, '/kpi');
+
+  // Chỉ bật 0 hoặc 1 tab -> không tự chuyển
+  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': false, '/waiting-point': false }), null);
+  assert.equal(nextRotateTarget('/', { '/': false, '/kpi': false, '/waiting-point': false }), null);
+
+  // navBar chèn đủ công tắc, popover chọn 3 tab và giữ đúng 1 aria-current="page"
+  const html = navBar({ role: 'admin', fullName: 'Quản trị viên' }, '/waiting-point');
+  assert.match(html, /id="wrRotToggle"/);
+  assert.match(html, /id="wrRotCfg"/);
+  assert.match(html, /id="wrRotPop"/);
+  assert.match(html, /data-rot-href="\/"/);
+  assert.match(html, /data-rot-href="\/kpi"/);
+  assert.match(html, /data-rot-href="\/waiting-point"/);
+  assert.match(html, /3 phút/);
+  assert.match(html, /5 phút/);
 });
 
 test('Đọc trực tiếp tab Waiting Point (read-only) trên Google Sheet thành công', async () => {

@@ -89,6 +89,22 @@ export const NAV_PAGES = [
   ["/waiting-point", "Waiting Point"],
 ];
 
+// Danh sách 3 tab hỗ trợ tự động chuyển luân phiên trên màn hình War Room (có thể bật / tắt từng tab).
+export const AUTO_ROTATE_TABS = [
+  { href: "/", label: "Dòng tiền", sec: 180 },
+  { href: "/kpi", label: "KPI & kết quả", sec: 180 },
+  { href: "/waiting-point", label: "Waiting Point", sec: 300 },
+];
+
+/** Tính tab kế tiếp khi bật tự động chuyển tab; trả null nếu bật ít hơn 2 tab. */
+export function nextRotateTarget(currentPath, enabledMap = {}) {
+  const active = AUTO_ROTATE_TABS.filter((t) => enabledMap[t.href] !== false);
+  if (active.length < 2) return null;
+  const idx = active.findIndex((t) => t.href === currentPath);
+  if (idx < 0) return active[0];
+  return active[(idx + 1) % active.length];
+}
+
 const NAV_STYLE = `<style>
 .wr-nav{position:relative;z-index:9000;display:flex;align-items:stretch;gap:2px;height:44px;margin:0;padding:0 16px;box-sizing:border-box;background:#0e1218;border-bottom:1px solid #1c232e;color:#b6c0ce;font:500 13px/1.2 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;letter-spacing:0;text-transform:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-font-smoothing:antialiased}
 .wr-nav::-webkit-scrollbar{display:none}
@@ -99,7 +115,7 @@ const NAV_STYLE = `<style>
 .wr-link:hover{color:#f3f6fa}
 .wr-link[aria-current=page]{border-bottom-color:#c8ff4d;color:#f3f6fa;font-weight:600}
 .wr-sp{flex:1 0 12px}
-.wr-auto{display:flex;align-items:center;gap:8px;margin:8px 12px 8px 0;padding:0 12px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.wr-auto{display:flex;align-items:center;gap:8px;margin:8px 8px 8px 0;padding:0 12px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
 .wr-auto:hover{border-color:#c8ff4d;color:#f3f6fa}
 .wr-auto i{position:relative;width:28px;height:16px;border-radius:999px;background:#2a3442;flex:none;transition:background .2s}
 .wr-auto i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#8994a6;transition:transform .2s,background .2s}
@@ -107,14 +123,45 @@ const NAV_STYLE = `<style>
 .wr-auto[aria-pressed=true] i{background:color-mix(in srgb,#c8ff4d 30%,#151a23)}
 .wr-auto[aria-pressed=true] i::after{transform:translateX(12px);background:#c8ff4d}
 .wr-auto[hidden]{display:none}
+.wr-rot-grp{display:inline-flex;align-items:stretch;margin:8px 12px 8px 0;border:1px solid #2a3442;border-radius:999px;background:#151a23;overflow:hidden;flex:none}
+.wr-rot-grp[data-on=true]{border-color:#c8ff4d}
+.wr-rot-btn{display:flex;align-items:center;gap:7px;padding:0 10px 0 11px;border:0;background:transparent;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.wr-rot-btn:hover{color:#f3f6fa}
+.wr-rot-btn i{position:relative;width:28px;height:16px;border-radius:999px;background:#2a3442;flex:none;transition:background .2s}
+.wr-rot-btn i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#8994a6;transition:transform .2s,background .2s}
+.wr-rot-btn[aria-pressed=true]{color:#f3f6fa}
+.wr-rot-btn[aria-pressed=true] i{background:color-mix(in srgb,#c8ff4d 30%,#151a23)}
+.wr-rot-btn[aria-pressed=true] i::after{transform:translateX(12px);background:#c8ff4d}
+.wr-rot-cd{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;color:#c8ff4d}
+.wr-rot-cd:empty{display:none}
+.wr-rot-cfg{display:inline-flex;align-items:center;justify-content:center;width:26px;padding:0;border:0;border-left:1px solid #2a3442;background:transparent;color:#8994a6;font:inherit;font-size:11px;cursor:pointer}
+.wr-rot-cfg:hover,.wr-rot-cfg[aria-expanded=true]{background:#1b222d;color:#f3f6fa}
+.wr-rot-pop{position:fixed;top:48px;right:16px;z-index:9500;width:296px;padding:12px;border:1px solid #2a3442;border-radius:12px;background:#0e1218;color:#f3f6fa;font:500 13px/1.35 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;box-shadow:0 16px 36px rgba(0,0,0,.55);box-sizing:border-box}
+.wr-rot-pop[hidden]{display:none}
+.wr-rot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1c232e}
+.wr-rot-head b{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#f3f6fa}
+.wr-rot-head span{font-size:11px;color:#8994a6}
+.wr-rot-list{display:flex;flex-direction:column;gap:6px}
+.wr-rot-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid #1c232e;border-radius:8px;background:#151a23;cursor:pointer;user-select:none}
+.wr-rot-item:hover{border-color:#2a3442;background:#1b222d}
+.wr-rot-item-l{display:flex;align-items:center;gap:9px;min-width:0}
+.wr-rot-item input{width:15px;height:15px;margin:0;accent-color:#c8ff4d;cursor:pointer;flex:none}
+.wr-rot-item strong{font-size:13px;font-weight:600;color:#f3f6fa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wr-rot-item em{font-style:normal;font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:600;color:#c8ff4d;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,#c8ff4d 12%,transparent);white-space:nowrap}
+.wr-rot-item.is-off strong{color:#6e7a8c}
+.wr-rot-item.is-off em{color:#6e7a8c;background:#1c232e}
+.wr-rot-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #1c232e;font-size:11.5px;color:#8994a6}
+.wr-rot-next{padding:4px 9px;border:1px solid #2a3442;border-radius:6px;background:#151a23;color:#f3f6fa;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.wr-rot-next:hover:not(:disabled){border-color:#c8ff4d;color:#c8ff4d}
+.wr-rot-next:disabled{opacity:.4;cursor:default}
 .wr-user{display:flex;align-items:center;gap:12px;color:#8994a6;font-size:12.5px;white-space:nowrap}
 .wr-user b{color:#f3f6fa;font-weight:600}
 .wr-user a{color:#b6c0ce}
 .wr-user a:hover,.wr-user a[aria-current=page]{color:#c8ff4d}
 .wr-nav~#root{height:calc(100% - 44px)}.wr-nav~#root .wall{height:calc(100vh - 44px)}
-:root[data-tv] .wr-nav,:root[data-theme=tv] .wr-nav{display:none}
-@media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name,.wr-auto span{display:none}}
-@media (prefers-reduced-motion:reduce){.wr-auto i,.wr-auto i::after{transition:none}}
+:root[data-tv] .wr-nav,:root[data-theme=tv] .wr-nav,:root[data-tv] .wr-rot-pop,:root[data-theme=tv] .wr-rot-pop{display:none}
+@media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name,.wr-auto span,.wr-rot-lbl{display:none}}
+@media (prefers-reduced-motion:reduce){.wr-auto i,.wr-auto i::after,.wr-rot-btn i,.wr-rot-btn i::after{transition:none}}
 </style>`;
 
 // Nút "Tự cuộn": cuộn chậm từ đầu đến cuối trang, dừng 5 giây ở cuối, về đầu trang, dừng 5 giây rồi cuộn lại — cho màn hình
@@ -170,10 +217,200 @@ const AUTO_SCROLL = `<script>(() => {
   if (on) set(true);
 })();</script>`;
 
+// Nút "Tự chuyển tab": xoay vòng giữa 3 tab Dòng tiền (3p), KPI & kết quả (3p), Waiting Point (5p).
+// Cho phép bật/tắt công tắc chung và bật/tắt từng tab trong popover; lưu trạng thái vào localStorage (wr-autotab-v1).
+// Hỗ trợ ?chuyentab=1 / ?chuyentab=0 trên URL; chạy kể cả khi đang ẩn thanh nav ở chế độ TV.
+const AUTO_ROTATE = `<script>(() => {
+  const TABS = ${JSON.stringify(AUTO_ROTATE_TABS)};
+  const KEY = "wr-autotab-v1";
+  const grp = document.getElementById("wrRotGrp");
+  const btn = document.getElementById("wrRotToggle");
+  const cdEl = document.getElementById("wrRotCd");
+  const cfgBtn = document.getElementById("wrRotCfg");
+  const pop = document.getElementById("wrRotPop");
+  const statEl = document.getElementById("wrRotStat");
+  const nextBtn = document.getElementById("wrRotNext");
+  if (!btn || !pop) return;
+
+  function defaultState() {
+    const tabs = {};
+    for (const t of TABS) tabs[t.href] = true;
+    return { on: false, tabs };
+  }
+  function loadState() {
+    const def = defaultState();
+    try {
+      const raw = JSON.parse(localStorage.getItem(KEY) || "null");
+      if (raw && typeof raw === "object") {
+        def.on = Boolean(raw.on);
+        if (raw.tabs && typeof raw.tabs === "object") {
+          for (const t of TABS) if (typeof raw.tabs[t.href] === "boolean") def.tabs[t.href] = raw.tabs[t.href];
+        }
+      }
+    } catch (e) {}
+    const q = new URLSearchParams(location.search).get("chuyentab");
+    if (q === "1") def.on = true;
+    else if (q === "0") def.on = false;
+    return def;
+  }
+  function saveState(st) {
+    try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {}
+  }
+  function fmtSec(s) {
+    const v = Math.max(0, Math.ceil(s));
+    return String(Math.floor(v / 60)).padStart(2, "0") + ":" + String(v % 60).padStart(2, "0");
+  }
+  function getEnabled() {
+    return TABS.filter((t) => st.tabs[t.href] !== false);
+  }
+  function getCurrentTab() {
+    return TABS.find((t) => t.href === location.pathname) || null;
+  }
+  function getNextTab() {
+    const active = getEnabled();
+    if (active.length < 2) return null;
+    const idx = active.findIndex((t) => t.href === location.pathname);
+    return idx < 0 ? active[0] : active[(idx + 1) % active.length];
+  }
+  function goTab(href) {
+    const sp = new URLSearchParams(location.search);
+    sp.delete("chuyentab");
+    const qs = sp.toString();
+    location.assign(href + (qs ? "?" + qs : ""));
+  }
+
+  const st = loadState();
+  saveState(st);
+  let remainSec = (getCurrentTab() || TABS[0]).sec;
+
+  function resetCountdown() {
+    const cur = getCurrentTab();
+    remainSec = cur ? cur.sec : TABS[0].sec;
+  }
+
+  function syncPopPos() {
+    if (pop.hidden || !grp) return;
+    const r = grp.getBoundingClientRect();
+    const rightGap = Math.max(12, Math.round(window.innerWidth - r.right));
+    pop.style.right = rightGap + "px";
+    pop.style.top = Math.round(r.bottom + 6) + "px";
+  }
+
+  function render() {
+    const active = getEnabled();
+    const cur = getCurrentTab();
+    const curEnabled = Boolean(cur && st.tabs[cur.href] !== false);
+    const next = getNextTab();
+    const running = st.on && active.length >= 2 && curEnabled;
+
+    if (grp) grp.dataset.on = String(st.on && active.length >= 2);
+    btn.setAttribute("aria-pressed", String(st.on));
+    cdEl.textContent = running ? fmtSec(remainSec) : "";
+    btn.title = running
+      ? "Đang tự chuyển sang " + next.label + " sau " + fmtSec(remainSec) + ". Bấm để tắt."
+      : st.on && active.length < 2
+        ? "Cần bật ít nhất 2 tab để tự chuyển."
+        : "Tự động chuyển luân phiên: Dòng tiền (3p) → KPI & kết quả (3p) → Waiting Point (5p).";
+
+    pop.querySelectorAll("input[data-rot-href]").forEach((cb) => {
+      const h = cb.getAttribute("data-rot-href");
+      const checked = st.tabs[h] !== false;
+      cb.checked = checked;
+      cb.closest(".wr-rot-item")?.classList.toggle("is-off", !checked);
+    });
+
+    if (statEl) {
+      if (active.length < 2) statEl.textContent = "Chọn tối thiểu 2 tab để xoay vòng";
+      else if (running) statEl.textContent = "Kế tiếp: " + next.label + " (" + fmtSec(remainSec) + ")";
+      else if (st.on && !curEnabled) statEl.textContent = "Đang bật (" + active.length + " tab) · Ngoài vòng xoay";
+      else statEl.textContent = "Đang tắt · " + active.length + "/3 tab được chọn";
+    }
+    if (nextBtn) nextBtn.disabled = !next;
+  }
+
+  btn.addEventListener("click", () => {
+    st.on = !st.on;
+    saveState(st);
+    resetCountdown();
+    render();
+    if (st.on) {
+      const active = getEnabled();
+      const cur = getCurrentTab();
+      if (active.length >= 2 && (!cur || st.tabs[cur.href] === false)) {
+        goTab(active[0].href);
+      } else if (active.length < 2) {
+        pop.hidden = false;
+        cfgBtn.setAttribute("aria-expanded", "true");
+        syncPopPos();
+      }
+    }
+  });
+
+  cfgBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const open = pop.hidden;
+    pop.hidden = !open;
+    cfgBtn.setAttribute("aria-expanded", String(open));
+    if (open) syncPopPos();
+  });
+
+  pop.addEventListener("change", (e) => {
+    const cb = e.target.closest("input[data-rot-href]");
+    if (!cb) return;
+    const h = cb.getAttribute("data-rot-href");
+    st.tabs[h] = cb.checked;
+    saveState(st);
+    resetCountdown();
+    render();
+  });
+
+  nextBtn?.addEventListener("click", () => {
+    const next = getNextTab();
+    if (next) goTab(next.href);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (pop.hidden) return;
+    if (pop.contains(e.target) || (grp && grp.contains(e.target))) return;
+    pop.hidden = true;
+    cfgBtn.setAttribute("aria-expanded", "false");
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !pop.hidden) {
+      pop.hidden = true;
+      cfgBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  window.addEventListener("resize", syncPopPos);
+
+  setInterval(() => {
+    const active = getEnabled();
+    const cur = getCurrentTab();
+    if (!st.on || active.length < 2 || !cur || st.tabs[cur.href] === false) return;
+    if (document.hidden || !pop.hidden) return;
+    remainSec -= 1;
+    if (remainSec <= 0) {
+      const next = getNextTab();
+      if (next) { goTab(next.href); return; }
+      resetCountdown();
+    }
+    render();
+  }, 1000);
+
+  render();
+})();</script>`;
+
 /** Thanh điều hướng cho trang `path` (đánh dấu trang đang mở), kèm tên người dùng, Quản trị / Đổi mật khẩu, Đăng xuất. */
 export function navBar(user, path) {
   const cur = (href) => (href === path ? ' aria-current="page"' : "");
   const links = NAV_PAGES.map(([href, label]) => `<a class="wr-link" href="${href}"${cur(href)}>${label}</a>`).join("");
   const account = user.role === "admin" ? `<a href="/admin"${cur("/admin")}>Quản trị</a>` : `<a href="/doi-mat-khau">Đổi mật khẩu</a>`;
-  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><button type="button" class="wr-auto" id="wrAuto" aria-pressed="false" hidden><i aria-hidden="true"></i><span>Tự cuộn</span></button><span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>${AUTO_SCROLL}`;
+  const rotItems = AUTO_ROTATE_TABS.map(
+    (t) => `<label class="wr-rot-item"><span class="wr-rot-item-l"><input type="checkbox" data-rot-href="${t.href}" checked /><strong>${esc(t.label)}</strong></span><em>${Math.round(t.sec / 60)} phút</em></label>`
+  ).join("");
+  const rotControl = `<div class="wr-rot-grp" id="wrRotGrp" data-on="false"><button type="button" class="wr-rot-btn" id="wrRotToggle" aria-pressed="false"><i aria-hidden="true"></i><span class="wr-rot-lbl">Chuyển tab</span><b class="wr-rot-cd" id="wrRotCd"></b></button><button type="button" class="wr-rot-cfg" id="wrRotCfg" aria-expanded="false" aria-controls="wrRotPop" title="Chọn các tab tự chuyển">▾</button></div>`;
+  const rotPopover = `<div class="wr-rot-pop" id="wrRotPop" hidden role="dialog" aria-label="Cấu hình tự chuyển tab"><div class="wr-rot-head"><b>Tự động chuyển tab</b><span>Bật / tắt từng tab</span></div><div class="wr-rot-list">${rotItems}</div><div class="wr-rot-foot"><span id="wrRotStat"></span><button type="button" class="wr-rot-next" id="wrRotNext">Chuyển ngay →</button></div></div>`;
+  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><button type="button" class="wr-auto" id="wrAuto" aria-pressed="false" hidden><i aria-hidden="true"></i><span>Tự cuộn</span></button>${rotControl}<span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>${rotPopover}${AUTO_SCROLL}${AUTO_ROTATE}`;
 }
