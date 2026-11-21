@@ -1,35 +1,40 @@
 // Cổng mật khẩu cho dashboard War Room.
-// Mật khẩu lấy từ secret ACCESS_PASSWORD (đặt trên Cloudflare, không lưu trong repo).
+// Mật khẩu ACCESS_PASSWORD đặt trên Cloudflare (không lưu trong repo), ở một trong hai chỗ:
+//   - Settings > Variables and Secrets (runtime): ưu tiên dùng nếu có;
+//   - Settings > Build > Variables and secrets: được băm lúc build (scripts/build-password.mjs),
+//     đổi giá trị thì phải build lại (Retry build hoặc push).
 // Đăng nhập đúng -> cookie phiên ký HMAC, hiệu lực 30 ngày.
 // Đổi ACCESS_PASSWORD -> mọi phiên cũ tự mất hiệu lực.
 // Dashboard nằm ở public/index.html.
+
+import { BUILD_PASSWORD_HASH } from "../generated/password.js";
 
 const COOKIE = "wr_session";
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 
 export default {
   async fetch(request, env) {
-    const password = env.ACCESS_PASSWORD;
-    if (!password) return new Response("ACCESS_PASSWORD chưa được cấu hình.", { status: 500 });
+    const pwHash = env.ACCESS_PASSWORD ? await sha256Hex(env.ACCESS_PASSWORD) : BUILD_PASSWORD_HASH;
+    if (!pwHash) return new Response("ACCESS_PASSWORD chưa được cấu hình.", { status: 500 });
 
     const url = new URL(request.url);
 
     if (url.pathname === "/login" && request.method === "POST") {
       const form = await request.formData();
-      if (await safeEqual(String(form.get("password") || ""), password)) {
+      if (await safeEqual(await sha256Hex(String(form.get("password") || "")), pwHash)) {
         const exp = String(Math.floor(Date.now() / 1000) + SESSION_SECONDS);
         return new Response(null, {
           status: 303,
           headers: {
             Location: "/",
-            "Set-Cookie": `${COOKIE}=${exp}.${await sign(password, exp)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+            "Set-Cookie": `${COOKIE}=${exp}.${await sign(pwHash, exp)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
           },
         });
       }
       return loginPage("Sai mật khẩu.");
     }
 
-    if (!(await hasValidSession(request, password))) return loginPage("");
+    if (!(await hasValidSession(request, pwHash))) return loginPage("");
 
     const res = await env.ASSETS.fetch(request);
     const out = new Response(res.body, res);
@@ -38,10 +43,15 @@ export default {
   },
 };
 
-async function hasValidSession(request, password) {
+async function hasValidSession(request, key) {
   const m = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=(\\d+)\\.([0-9a-f]+)`));
   if (!m || Number(m[1]) < Date.now() / 1000) return false;
-  return safeEqual(m[2], await sign(password, m[1]));
+  return safeEqual(m[2], await sign(key, m[1]));
+}
+
+async function sha256Hex(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 async function sign(secret, value) {

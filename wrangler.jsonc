@@ -2,6 +2,8 @@
   "name": "ctgwarroom",
   "main": "src/index.js",
   "compatibility_date": "2026-11-21",
+  // Băm ACCESS_PASSWORD (biến Build trên Cloudflare) vào generated/password.js.
+  "build": { "command": "node scripts/build-password.mjs" },
   "assets": {
     // Dashboard: public/index.html
     "directory": "./public",
