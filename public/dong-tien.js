@@ -126,6 +126,23 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && S.data && Date.now() - (S.data.syncedAt || 0) > 90000) load();
   });
+
+  // Realtime (src/live.js): máy chủ báo {type:"change", scope:"streams"} khi sheet/Excel đổi -> tải lại ngay.
+  // Kéo định kỳ ở trên chỉ để dự phòng khi mất kết nối.
+  let ws = null;
+  let wsDelay = 1000;
+  function connect() {
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/ws'); } catch { return; }
+    ws.onopen = () => { if (wsDelay > 1000 && S.data) load(); wsDelay = 1000; }; // kết nối lại: tải bù thay đổi bị lỡ
+    ws.onmessage = (e) => {
+      let m;
+      try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === 'change' && m.scope === 'streams') load();
+    };
+    ws.onclose = () => { ws = null; setTimeout(connect, wsDelay); wsDelay = Math.min(wsDelay * 2, 30000); };
+  }
+  connect();
+  setInterval(() => { if (ws && ws.readyState === 1) ws.send('ping'); }, 30000);
   setInterval(() => { if (S.data) renderSync(); }, 30000);
 
   // ---------- helpers ----------
@@ -207,8 +224,12 @@
     const el = $('sync');
     let state = 'live';
     let label;
-    const lastImport = Math.max(0, ...(d.excelImports || []).map((i) => Date.parse(i.uploadedAt) || 0));
-    if (d.mode === 'unconfigured' && d.streams?.length) label = lastImport ? `Sheet WR - MASTER TASK · ${ago(lastImport)}` : 'Sheet WR - MASTER TASK';
+    // Giờ đọc sheet gần nhất (đồng bộ tự động); chưa có thì lấy giờ nạp file gần nhất.
+    const sheetAt = Date.parse(d.sheetSync?.checkedAt || '') || Math.max(0, ...(d.excelImports || []).map((i) => Date.parse(i.uploadedAt) || 0));
+    if (d.mode === 'unconfigured' && d.streams?.length) {
+      if (d.sheetSync?.error) state = 'stale';
+      label = sheetAt ? `Google Sheet WR - MASTER TASK · cập nhật ${clock(sheetAt).slice(6)}` : 'Google Sheet WR - MASTER TASK';
+    }
     else if (d.mode === 'unconfigured') { state = 'error'; label = 'Chưa kết nối Worksuite'; }
     else if (d.error && !d.syncedAt) { state = 'error'; label = 'Không đọc được Worksuite'; }
     else if (d.stale || d.error) { state = 'stale'; label = `Dữ liệu Worksuite lúc ${clock(d.syncedAt)}`; }
@@ -222,6 +243,9 @@
     const out = [];
     if (d.error) {
       out.push(`<div class="notice err">${icon('alert')}<div class="grow"><b>Không đọc được CT Worksuite.</b> ${esc(d.error)}${d.syncedAt ? ` Đang hiển thị dữ liệu lúc ${clock(d.syncedAt)}.` : ''}${d.excelImports?.length ? ' Task nạp từ Excel vẫn hiển thị.' : ''}</div></div>`);
+    }
+    if (d.sheetSync?.error) {
+      out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Chưa đọc được Google Sheet WR - MASTER TASK.</b> ${esc(d.sheetSync.error)} Đang hiển thị dữ liệu lần đọc trước.</div></div>`);
     }
     if (d.warnings && d.warnings.length) {
       out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý cấu hình Worksuite</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
