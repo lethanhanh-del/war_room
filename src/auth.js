@@ -7,7 +7,9 @@ const ITERATIONS = 20000; // ~3 ms CPU mỗi lần băm, nằm trong giới hạ
 const COOKIE = "wr_session";
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
 const LOCK_FAILS = 10; // sai liên tiếp cho cùng tên đăng nhập, từ cùng IP
-const LOCK_FAILS_PER_IP = 30; // sai từ cùng IP trên mọi tên đăng nhập (chặn dò mật khẩu hàng loạt)
+// Sai từ cùng IP trên mọi tên đăng nhập (chặn dò mật khẩu hàng loạt). Để cao vì cả văn phòng
+// thường đi chung một IP public: nhiều người gõ nhầm cùng lúc không được làm khóa cả văn phòng.
+const LOCK_FAILS_PER_IP = 100;
 const LOCK_MINUTES = 15;
 const enc = new TextEncoder();
 let sessionKey = null;
