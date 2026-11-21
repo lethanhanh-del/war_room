@@ -81,7 +81,7 @@ const STYLE = `<style>
 @media (max-width:600px){.wr-pill{padding:9px 12px;gap:6px}.wr-cal .wr-txt,.wr-user .wr-name{display:none}}
 </style>`;
 
-export const CHAIRMAN_LINK = `${STYLE}<a href="/lich" class="wr-pill wr-cal" title="Đặt lịch Chủ tịch">📅<span class="wr-txt"> Đặt lịch Chủ tịch</span></a>`;
+export const CHAIRMAN_LINK = `${STYLE}<a href="/lich" class="wr-pill wr-cal" title="Hẹn lịch BOD">📅<span class="wr-txt"> Hẹn lịch BOD</span></a>`;
 
 export function userChip(user) {
   const links = user.role === "admin" ? `<a href="/admin">Quản trị</a>` : `<a href="/doi-mat-khau" class="wr-dim">Đổi mật khẩu</a>`;

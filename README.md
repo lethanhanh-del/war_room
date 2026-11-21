@@ -5,8 +5,8 @@ Dashboard điều hành War Room của CT Group, chạy trên **Cloudflare Worke
 | Trang | Nội dung |
 |---|---|
 | `/` | **Tiến độ dòng tiền**: đọc từ dự án WAR ROOM trên CT Worksuite và từ file Excel "Nhập task" đã nạp, gồm PIC, % tiến độ và task của từng người. Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
-| `/war-room` | Bảng War Room cũ, nạp dữ liệu từ file Excel |
-| `/lich` | Đặt lịch họp với Chủ tịch (D1) |
+| `/war-room` | Bảng War Room live: dữ liệu chung trên máy chủ, cập nhật thời gian thực, ai đang online (`src/live.js`) |
+| `/lich` | Hẹn lịch BOD (D1) |
 | `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`) |
 
 Mọi trang đều phải đăng nhập. Mỗi người có một tài khoản trong D1; tài khoản `admin` dùng mật khẩu `ACCESS_PASSWORD`.
@@ -75,7 +75,7 @@ npm test
 
 ## Cấu trúc
 
-- `src/index.js`: Worker (đăng nhập, định tuyến, chèn nút "Đặt lịch Chủ tịch")
+- `src/index.js`: Worker (đăng nhập, định tuyến, chèn nút "Hẹn lịch BOD")
 - `src/auth.js`, `src/db.js`, `src/admin.js`, `src/pages.js`: tài khoản, D1, quản trị
 - `src/bookings.js`: lịch Chủ tịch
 - `src/worksuite/`: `client.js` gọi API Worksuite, `model.js` tính số liệu dashboard, `demo.js` dữ liệu mẫu

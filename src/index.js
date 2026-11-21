@@ -26,13 +26,17 @@ import {
 } from "./auth.js";
 import { handleBookings } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
+import { handleLive, LiveRoom } from "./live.js";
 import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
 import { json, redirect, text } from "./http.js";
 import { getStreams } from "./worksuite/index.js";
 import { handleExcel, withExcel } from "./excel/index.js";
 
+// Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
+export { LiveRoom };
+
 const VIEW_PAGES = new Set(["/", "/war-room", "/lich", "/admin"]);
-// Trang được chèn nút "Đặt lịch Chủ tịch" + ô người dùng: dashboard dòng tiền (/) và bảng War Room cũ (/war-room).
+// Trang được chèn nút "Hẹn lịch BOD" + ô người dùng: dashboard dòng tiền (/) và Bảng War Room live (/war-room).
 const DASHBOARD_PAGES = new Set(["/", "/war-room"]);
 
 export default {
@@ -44,6 +48,11 @@ export default {
 
     const url = new URL(request.url);
     const path = url.pathname;
+    // Chống CSRF: cookie SameSite=Lax vẫn được gửi khi một subdomain khác của ctgrouphitech.com POST tới đây,
+    // nên mọi request ghi dữ liệu phải đến từ chính trang này (trình duyệt luôn gửi Origin khi POST/DELETE).
+    if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Origin") !== url.origin) {
+      return text("Yêu cầu không hợp lệ.", 403);
+    }
     if (path === "/login" && request.method === "POST") return login(request, env, adminHash);
 
     const user = await readSession(env, request, adminHash);
@@ -58,7 +67,8 @@ export default {
       return path.startsWith("/api/") ? json({ error: "Bạn cần đổi mật khẩu trước.", mustChange: true }, 403) : redirect("/doi-mat-khau");
     }
 
-    if (path === "/api/bookings") return handleBookings(request, env, url, user);
+    if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
+    if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task nạp từ file Excel (src/excel/). ?demo=1: dữ liệu mẫu.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
@@ -67,7 +77,7 @@ export default {
       if (!demo) data = await withExcel(env, data);
       return json(data, data.error && !data.streams.length ? 502 : 200);
     }
-    // Nạp task từ file Excel "Nhập task" của từng dòng tiền. Task Excel không qua cache Worksuite:
+    // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
     if (path === "/api/excel") return handleExcel(request, env, url, user, (e) => getStreams(e));
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {

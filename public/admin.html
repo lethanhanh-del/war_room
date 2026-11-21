@@ -43,6 +43,7 @@
     .input { font: 13px var(--font-sans); padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 8px; min-width: 220px; }
     .input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     .notice { margin: 12px 16px 0; padding: 9px 12px; border-radius: 8px; background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); font-size: 13px; }
+    .online { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px; font-size: 13px; }
     .err-banner { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); border-radius: 10px; padding: 10px 14px; font-weight: 600; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -74,7 +75,7 @@
       </div>
       <div class="row">
         <a class="btn btn-ghost-top" href="/">← Dashboard</a>
-        <a class="btn btn-ghost-top" href="/lich">📅 Lịch Chủ tịch</a>
+        <a class="btn btn-ghost-top" href="/lich">📅 Hẹn lịch BOD</a>
         <a class="btn btn-ghost-top" href="/logout">Đăng xuất</a>
       </div>
     </div>
@@ -82,6 +83,7 @@
 
   <main>
     <div id="errBanner" class="err-banner" hidden></div>
+    <div id="onlineBox" class="online" hidden></div>
 
     <section class="panel">
       <div class="panel-head">
@@ -133,7 +135,7 @@
     const ACTIONS = {
       login: ["Đăng nhập", "ok"], login_failed: ["Đăng nhập sai", "bad"], login_locked: ["Bị tạm khóa", "bad"], logout: ["Đăng xuất", "info"],
       password_changed: ["Đổi mật khẩu", "ok"], password_change_failed: ["Đổi mật khẩu lỗi", "warn"], password_reset: ["Reset mật khẩu", "warn"],
-      users_synced: ["Đồng bộ user", "info"], booking_created: ["Đặt lịch Chủ tịch", "ok"], booking_blocked: ["Chặn lịch (CT bận)", "warn"],
+      users_synced: ["Đồng bộ user", "info"], booking_created: ["Hẹn lịch BOD", "ok"], booking_blocked: ["Chặn lịch (BOD bận)", "warn"],
       booking_cancelled: ["Hủy lịch", "warn"], view: ["Xem trang", "info"],
     };
     let users = [];
@@ -217,8 +219,25 @@
     $("logUser").addEventListener("keydown", (e) => { if (e.key === "Enter") loadLogs(); });
     $("logUser").addEventListener("search", loadLogs);
 
+    // Ai đang mở web: server đẩy danh sách qua WebSocket (src/live.js); mất kết nối thì thử lại.
+    let wsDelay = 1000;
+    function connect() {
+      const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/live/ws");
+      const ping = setInterval(() => ws.readyState === WebSocket.OPEN && ws.send("ping"), 30000);
+      ws.onopen = () => { wsDelay = 1000; };
+      ws.onmessage = (e) => {
+        let m; try { m = JSON.parse(e.data); } catch (_) { return; } // "pong"
+        if (m.type !== "presence") return;
+        const list = m.online || [];
+        $("onlineBox").innerHTML = `🟢 <b>Đang online (${list.length})</b>: ${list.map((p) => `${esc(p.fullName || p.name || p.username)} <span class="muted mono">(${esc(p.username)})</span>`).join(", ") || '<span class="muted">không có ai</span>'}`;
+        $("onlineBox").hidden = false;
+      };
+      ws.onclose = () => { clearInterval(ping); setTimeout(connect, wsDelay); wsDelay = Math.min(wsDelay * 2, 30000); };
+    }
+
     loadUsers();
     loadLogs();
+    connect();
   })();
   </script>
 </body>
