@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quản trị – Tài khoản &amp; Nhật ký | WAR ROOM</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+  <style>
+    :root {
+      --bg: #f4f6f9; --surface: #fff; --surface-subtle: #f8fafc; --surface-hover: #f1f5f9;
+      --border: #e2e8f0; --border-strong: #cbd5e1;
+      --navy-950: #0c1f3a; --navy-800: #17365d; --navy-700: #1e477a; --navy-100: #e8f0fa;
+      --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #64748b; --accent: #1d4ed8;
+      --success: #0f766e; --success-bg: #ecfdf5; --success-border: #a7f3d0;
+      --warning: #b45309; --warning-bg: #fffbeb; --warning-border: #fde68a;
+      --danger: #dc2626; --danger-bg: #fef2f2; --danger-border: #fecaca;
+      --font-sans: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+      --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text-primary); background: var(--bg); }
+    .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+    .topbar { background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-800) 100%); color: #fff; box-shadow: 0 4px 16px rgba(12,31,58,.2); }
+    .topbar-inner, main { max-width: 1240px; margin: 0 auto; padding: 12px 20px; }
+    .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+    .brand-title { font-weight: 800; font-size: 16px; letter-spacing: .02em; }
+    .brand-sub { font-size: 12px; color: rgba(255,255,255,.72); }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font: 600 12.5px var(--font-sans); cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); text-decoration: none; white-space: nowrap; }
+    .btn:hover { background: var(--surface-hover); }
+    .btn:disabled { opacity: .6; cursor: wait; }
+    .btn-primary { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
+    .btn-primary:hover { background: var(--navy-700); }
+    .btn-ghost-top { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.22); color: #fff; }
+    .btn-ghost-top:hover { background: rgba(255,255,255,.18); }
+    .btn-danger { color: var(--danger); border-color: var(--danger-border); }
+    .btn-danger:hover { background: var(--danger-bg); }
+    main { padding-top: 18px; padding-bottom: 40px; display: flex; flex-direction: column; gap: 16px; }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .panel-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .panel-title { margin: 0; font-size: 15px; color: var(--navy-800); }
+    .panel-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
+    .input { font: 13px var(--font-sans); padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 8px; min-width: 220px; }
+    .input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .notice { margin: 12px 16px 0; padding: 9px 12px; border-radius: 8px; background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); font-size: 13px; }
+    .err-banner { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); border-radius: 10px; padding: 10px 14px; font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: var(--surface-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 700; white-space: nowrap; position: sticky; top: 0; }
+    tbody tr:hover { background: var(--surface-hover); }
+    td.nowrap { white-space: nowrap; }
+    .uname { color: var(--accent); cursor: pointer; font-weight: 700; background: none; border: 0; padding: 0; font: 700 13px var(--font-mono); }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap; border: 1px solid; }
+    .pill.ok { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+    .pill.warn { color: var(--warning); background: var(--warning-bg); border-color: var(--warning-border); }
+    .pill.bad { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }
+    .pill.info { color: var(--navy-800); background: var(--navy-100); border-color: #c7d7ee; }
+    .logs-wrap { max-height: 560px; overflow: auto; }
+    .muted { color: var(--text-muted); }
+    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy-950); color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
+    @media (max-width: 760px) {
+      .topbar-inner, main { padding-left: 16px; padding-right: 16px; }
+      .input { min-width: 0; flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <div class="brand-title">🛡️ QUẢN TRỊ — TÀI KHOẢN &amp; NHẬT KÝ</div>
+        <div class="brand-sub">Tài khoản mới / vừa reset dùng mật khẩu mặc định CTG@2026 và bắt buộc đổi ở lần đăng nhập đầu</div>
+      </div>
+      <div class="row">
+        <a class="btn btn-ghost-top" href="/">← Dashboard</a>
+        <a class="btn btn-ghost-top" href="/lich">📅 Lịch Chủ tịch</a>
+        <a class="btn btn-ghost-top" href="/logout">Đăng xuất</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div id="errBanner" class="err-banner" hidden></div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2 class="panel-title">Tài khoản <span id="userCount" class="panel-sub"></span></h2>
+        <div class="row">
+          <input id="userSearch" class="input" type="search" placeholder="Tìm tên, tên đăng nhập, phòng ban…" />
+          <button id="syncBtn" class="btn btn-primary" type="button" title="Tạo tài khoản cho người có trong dữ liệu dashboard (nạp từ file Excel) mà chưa có tài khoản">Đồng bộ user từ dữ liệu Excel</button>
+        </div>
+      </div>
+      <div id="syncResult" class="notice" hidden></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Tên đăng nhập</th><th>Họ tên</th><th>Chức danh</th><th>Phòng ban</th><th>Mật khẩu</th><th>Đăng nhập gần nhất</th><th></th></tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="logsPanel">
+      <div class="panel-head">
+        <h2 class="panel-title">Nhật ký thao tác <span class="panel-sub">500 dòng mới nhất</span></h2>
+        <div class="row">
+          <input id="logUser" class="input" type="search" placeholder="Lọc theo tên đăng nhập (VD: vdhhoang)" />
+          <button id="logReload" class="btn" type="button">Tải lại</button>
+        </div>
+      </div>
+      <div class="table-wrap logs-wrap">
+        <table>
+          <thead><tr><th>Thời gian</th><th>Người dùng</th><th>Thao tác</th><th>Chi tiết</th><th>IP</th></tr></thead>
+          <tbody id="logsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <div id="toast" class="toast"></div>
+
+  <script>
+  (() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const norm = (s) => String(s || "").toLowerCase().replace(/đ/g, "d").normalize("NFD").replace(/[̀-ͯ]/g, "");
+    // Giờ Việt Nam, dạng dd/mm/yyyy hh:mm
+    const fmt = (iso) => {
+      if (!iso) return "—";
+      const s = new Date(Date.parse(iso) + 7 * 3600e3).toISOString();
+      return `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)} ${s.slice(11, 16)}`;
+    };
+    const ACTIONS = {
+      login: ["Đăng nhập", "ok"], login_failed: ["Đăng nhập sai", "bad"], login_locked: ["Bị tạm khóa", "bad"], logout: ["Đăng xuất", "info"],
+      password_changed: ["Đổi mật khẩu", "ok"], password_change_failed: ["Đổi mật khẩu lỗi", "warn"], password_reset: ["Reset mật khẩu", "warn"],
+      users_synced: ["Đồng bộ user", "info"], booking_created: ["Đặt lịch Chủ tịch", "ok"], booking_blocked: ["Chặn lịch (CT bận)", "warn"],
+      booking_cancelled: ["Hủy lịch", "warn"], view: ["Xem trang", "info"],
+    };
+    let users = [];
+
+    function toast(msg) {
+      const t = $("toast"); t.textContent = msg; t.style.display = "block";
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 2800);
+    }
+
+    async function api(method, path, body) {
+      const res = await fetch(path, { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+      if (res.status === 401) { location.reload(); throw new Error("Phiên đăng nhập đã hết hạn."); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+      return data;
+    }
+
+    function showError(e) { $("errBanner").textContent = e.message; $("errBanner").hidden = false; }
+
+    async function loadUsers() {
+      try { users = (await api("GET", "/api/admin/users")).users; renderUsers(); } catch (e) { showError(e); }
+    }
+
+    function renderUsers() {
+      const q = norm($("userSearch").value.trim());
+      const rows = users.filter((u) => !q || norm(`${u.username} ${u.full_name} ${u.title} ${u.department}`).includes(q));
+      const pending = users.filter((u) => u.must_change).length;
+      $("userCount").textContent = `${users.length} tài khoản · ${pending} chưa đổi mật khẩu`;
+      $("usersBody").innerHTML = rows.length ? rows.map((u) => `<tr>
+        <td class="nowrap"><button class="uname" type="button" data-logs="${esc(u.username)}" title="Xem nhật ký của người này">${esc(u.username)}</button></td>
+        <td class="nowrap"><b>${esc(u.full_name)}</b></td>
+        <td>${esc(u.title) || '<span class="muted">—</span>'}</td>
+        <td>${esc(u.department) || '<span class="muted">—</span>'}</td>
+        <td>${u.must_change ? '<span class="pill warn">Chưa đổi</span>' : '<span class="pill ok">Đã đổi</span>'}</td>
+        <td class="nowrap mono">${fmt(u.last_login_at)}</td>
+        <td><button class="btn btn-danger" type="button" data-reset="${esc(u.username)}">Reset MK</button></td>
+      </tr>`).join("") : `<tr><td colspan="7" class="muted">${users.length ? "Không có kết quả." : "Chưa có tài khoản. Bấm “Đồng bộ user từ dữ liệu Excel”."}</td></tr>`;
+    }
+
+    async function loadLogs() {
+      const u = $("logUser").value.trim().toLowerCase();
+      try {
+        const { logs } = await api("GET", "/api/admin/logs" + (u ? `?user=${encodeURIComponent(u)}` : ""));
+        $("logsBody").innerHTML = logs.length ? logs.map((l) => {
+          const [label, tone] = ACTIONS[l.action] || [l.action, "info"];
+          return `<tr><td class="nowrap mono">${fmt(l.ts)}</td><td class="nowrap mono">${esc(l.username) || "—"}</td><td><span class="pill ${tone}">${esc(label)}</span></td><td>${esc(l.detail)}</td><td class="nowrap mono muted">${esc(l.ip)}</td></tr>`;
+        }).join("") : '<tr><td colspan="5" class="muted">Chưa có nhật ký.</td></tr>';
+      } catch (e) { showError(e); }
+    }
+
+    async function sync() {
+      const btn = $("syncBtn"); btn.disabled = true;
+      try {
+        const r = await api("POST", "/api/admin/users/sync");
+        const box = $("syncResult");
+        box.textContent = r.created.length
+          ? `Đã tạo ${r.created.length} tài khoản mới (mật khẩu CTG@2026): ${r.created.map((c) => `${c.fullName} → ${c.username}`).join(" · ")}`
+          : `Không có người mới. Tổng cộng ${r.total} tài khoản.`;
+        box.hidden = false;
+        await Promise.all([loadUsers(), loadLogs()]);
+      } catch (e) { showError(e); }
+      btn.disabled = false;
+    }
+
+    async function reset(username) {
+      const u = users.find((x) => x.username === username);
+      if (!u || !confirm(`Reset mật khẩu của ${u.full_name} (${u.username}) về CTG@2026?\nNgười này sẽ bị đăng xuất và phải đổi mật khẩu khi đăng nhập lại.`)) return;
+      try { await api("POST", "/api/admin/users/reset", { username }); toast(`Đã reset mật khẩu ${username}`); await Promise.all([loadUsers(), loadLogs()]); }
+      catch (e) { showError(e); }
+    }
+
+    document.addEventListener("click", (e) => {
+      const r = e.target.closest("[data-reset]");
+      if (r) { reset(r.dataset.reset); return; }
+      const l = e.target.closest("[data-logs]");
+      if (l) { $("logUser").value = l.dataset.logs; loadLogs(); $("logsPanel").scrollIntoView({ behavior: "smooth" }); }
+    });
+    $("userSearch").addEventListener("input", renderUsers);
+    $("syncBtn").onclick = sync;
+    $("logReload").onclick = loadLogs;
+    $("logUser").addEventListener("keydown", (e) => { if (e.key === "Enter") loadLogs(); });
+    $("logUser").addEventListener("search", loadLogs);
+
+    loadUsers();
+    loadLogs();
+  })();
+  </script>
+</body>
+</html>

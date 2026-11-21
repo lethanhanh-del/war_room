@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Lịch Chủ tịch – Đặt lịch họp | WAR ROOM</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>" />
   <style>
     :root {
       --bg: #f4f6f9; --surface: #fff; --surface-subtle: #f8fafc; --surface-hover: #f1f5f9;
@@ -26,6 +27,7 @@
     .brand-mark { width: 38px; height: 38px; border-radius: 9px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.24); display: flex; align-items: center; justify-content: center; font-size: 18px; }
     .brand-title { font-weight: 800; font-size: 16px; letter-spacing: .02em; }
     .brand-sub { font-size: 12px; color: rgba(255,255,255,.72); }
+    .top-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font: 600 12.5px var(--font-sans); cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); text-decoration: none; white-space: nowrap; }
     .btn:hover { background: var(--surface-hover); }
     .btn-primary { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
@@ -80,6 +82,7 @@
     .dlg label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text-secondary); }
     .dlg input { font: 14px var(--font-sans); padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 8px; }
     .dlg input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .dlg-who { font-size: 13px; color: var(--text-secondary); }
     .dlg-err { color: var(--danger); font-size: 13px; font-weight: 600; min-height: 1em; }
     .dlg-foot { display: flex; gap: 8px; flex-wrap: wrap; }
     .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy-950); color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
@@ -101,7 +104,11 @@
           <div class="brand-sub">Ca Sáng 08:00–17:30 · Ca Tối 18:00–03:30 · Mỗi lượt 30 phút</div>
         </div>
       </div>
-      <a class="btn btn-ghost-top" href="/">← Về Dashboard</a>
+      <div class="top-actions">
+        <span id="meName" class="brand-sub"></span>
+        <a class="btn btn-ghost-top" href="/">← Về Dashboard</a>
+        <a class="btn btn-ghost-top" href="/logout">Đăng xuất</a>
+      </div>
     </div>
   </header>
 
@@ -132,7 +139,7 @@
     <form id="dlgForm" class="dlg">
       <h3>Đặt lịch họp với Chủ tịch</h3>
       <div id="dlgSlot" class="dlg-slot"></div>
-      <label>Tên người đặt<input id="fName" maxlength="80" autocomplete="name" required /></label>
+      <div class="dlg-who">Người đặt: <b id="dlgWho"></b></div>
       <label>Nội dung / dòng tiền cần báo cáo<input id="fNote" maxlength="300" placeholder="VD: Dòng tiền 3 – xin chốt phương án" /></label>
       <div id="dlgErr" class="dlg-err"></div>
       <div class="dlg-foot">
@@ -153,10 +160,10 @@
     for (let m = 480; m < 1050; m += 30) DAY.push(m);         // 08:00 … 17:00
     for (let m = 1080; m < 1440 + 210; m += 30) NIGHT.push(m); // 18:00 … 03:00
     const WD = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
-    const NAME_KEY = "wr10_op"; // dùng chung với ô "Người cập nhật" của dashboard
     const $ = (id) => document.getElementById(id);
 
     let bookings = {};
+    let me = null; // người đang đăng nhập, server trả kèm danh sách lịch
     let selected = null;
     let dlgSlotKey = null;
 
@@ -174,8 +181,7 @@
     const currentShiftDate = () => { const n = nowVN(); return hm(n) < "03:30" ? addDays(n.slice(0, 10), -1) : n.slice(0, 10); };
     const shiftOf = (date) => ({ day: DAY.map((m) => slotKey(date, m)), night: NIGHT.map((m) => slotKey(date, m)) });
     const dayLabel = (d) => (d === nowVN().slice(0, 10) ? "Hôm nay" : d === addDays(nowVN().slice(0, 10), 1) ? "Ngày mai" : `${wd(d)} ${dm(d)}`);
-    const getName = () => { try { return localStorage.getItem(NAME_KEY) || ""; } catch (_) { return ""; } };
-    const setName = (v) => { try { localStorage.setItem(NAME_KEY, v); } catch (_) {} };
+    const canCancel = (b) => me && (me.role === "admin" || b.username === me.username);
 
     function toast(msg) {
       const t = $("toast"); t.textContent = msg; t.style.display = "block";
@@ -188,6 +194,7 @@
       });
       if (res.status === 401) { location.reload(); throw new Error("Phiên đăng nhập đã hết hạn."); }
       const data = await res.json().catch(() => ({}));
+      if (res.status === 403 && data.mustChange) { location.href = "/doi-mat-khau"; throw new Error(data.error); }
       if (!res.ok) { const e = new Error(data.error || `Lỗi ${res.status}`); e.status = res.status; throw e; }
       return data;
     }
@@ -197,6 +204,8 @@
       try {
         const data = await api("GET", `?from=${addDays(base, -1)}T00:00&to=${addDays(base, 8)}T00:00`);
         bookings = Object.fromEntries(data.bookings.map((b) => [b.slot, b]));
+        me = data.me;
+        $("meName").textContent = `👤 ${me.fullName}`;
         $("errBanner").hidden = true;
       } catch (e) {
         $("errBanner").textContent = "Không tải được lịch: " + e.message; $("errBanner").hidden = false;
@@ -232,10 +241,10 @@
         if (!past) act = `<button class="btn" type="button" data-book="${s}">Đặt</button>`;
       } else if (b.kind === "block") {
         body = `⛔ <span class="who">Chủ tịch bận</span>${b.note ? ` · <span class="note">${esc(b.note)}</span>` : ""} <span class="note">(${esc(b.name)})</span>`;
-        if (!past) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Bỏ chặn</button>`;
+        if (!past && canCancel(b)) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Bỏ chặn</button>`;
       } else {
         body = `<span class="who">${esc(b.name)}</span>${b.note ? ` · <span class="note">${esc(b.note)}</span>` : ""}`;
-        if (!past) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Hủy</button>`;
+        if (!past && canCancel(b)) act = `<button class="btn btn-danger" type="button" data-cancel="${s}">Hủy</button>`;
       }
       return `<div class="${cls.trim()}"${!b && !past ? ` data-book="${s}"` : ""}><div class="slot-time mono">${hm(s)}–${hm(addMin(s, 30))}</div><div class="slot-body">${body}</div><div>${act}</div></div>`;
     }
@@ -271,20 +280,17 @@
       const date = dates7().find((d) => shiftOf(d).day.includes(s) || shiftOf(d).night.includes(s));
       const shift = shiftOf(date).day.includes(s) ? "Ca Sáng" : "Ca Tối";
       $("dlgSlot").textContent = `${dayLabel(date)} (${wd(s.slice(0, 10))} ${dm(s.slice(0, 10))}) · ${hm(s)}–${hm(addMin(s, 30))} · ${shift}`;
-      $("fName").value = getName();
+      $("dlgWho").textContent = me ? `${me.fullName} (${me.username})` : "";
       $("fNote").value = "";
       $("dlgErr").textContent = "";
       $("dlg").showModal();
-      ($("fName").value ? $("fNote") : $("fName")).focus();
+      $("fNote").focus();
     }
     const dates7 = () => Array.from({ length: 7 }, (_, i) => addDays(currentShiftDate(), i));
 
     async function book(kind) {
-      const name = $("fName").value.trim();
-      if (!name) { $("dlgErr").textContent = "Vui lòng nhập tên."; $("fName").focus(); return; }
-      setName(name);
       try {
-        await api("POST", "", { slot: dlgSlotKey, kind, name, note: $("fNote").value.trim() });
+        await api("POST", "", { slot: dlgSlotKey, kind, note: $("fNote").value.trim() });
         $("dlg").close();
         toast(kind === "block" ? "Đã chặn khung giờ" : `Đã đặt lịch ${hm(dlgSlotKey)}`);
       } catch (e) {

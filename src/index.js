@@ -1,114 +1,142 @@
-// Cổng mật khẩu cho dashboard War Room.
-// Mật khẩu ACCESS_PASSWORD đặt trên Cloudflare (không lưu trong repo), ở một trong hai chỗ:
-//   - Settings > Variables and Secrets (runtime): ưu tiên dùng nếu có;
-//   - Settings > Build > Variables and secrets: được băm lúc build (scripts/build-password.mjs),
-//     đổi giá trị thì phải build lại (Retry build hoặc push).
-// Đăng nhập đúng -> cookie phiên ký HMAC, hiệu lực 30 ngày.
-// Đổi ACCESS_PASSWORD -> mọi phiên cũ tự mất hiệu lực.
-// Dashboard nằm ở public/index.html.
+// Worker WAR ROOM: đăng nhập theo từng người (D1), phục vụ dashboard tĩnh (public/),
+// API đặt lịch Chủ tịch và trang quản trị.
+//
+// Đăng nhập:
+//   - Người dùng: tên kiểu vdhhoang (Võ Đào Huy Hoàng), mật khẩu mặc định CTG@2026,
+//     bắt buộc đổi ở lần đăng nhập đầu. Tài khoản tạo từ trang Quản trị (đồng bộ từ dữ liệu dashboard).
+//   - Quản trị: tên "admin", mật khẩu ACCESS_PASSWORD đặt trên Cloudflare, ở một trong hai chỗ:
+//       Settings > Variables and Secrets (runtime): ưu tiên dùng nếu có;
+//       Settings > Build > Variables and secrets: được băm lúc build (scripts/build-password.mjs),
+//       đổi giá trị thì phải build lại (Retry build hoặc push).
+// Mọi thao tác (đăng nhập, đổi/reset mật khẩu, đặt/hủy lịch, xem trang) ghi vào bảng audit_log.
 
 import { BUILD_PASSWORD_HASH } from "../generated/password.js";
+import { ensureSchema, log } from "./db.js";
+import {
+  DEFAULT_PASSWORD,
+  adminVersion,
+  clearCookie,
+  hashPassword,
+  isLocked,
+  readSession,
+  safeEqual,
+  sessionCookie,
+  sha256Hex,
+  verifyPassword,
+} from "./auth.js";
 import { handleBookings } from "./bookings.js";
+import { handleAdmin } from "./admin.js";
+import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
+import { json, redirect, text } from "./http.js";
 
-// Nút nổi trên dashboard dẫn sang trang đặt lịch (/lich = public/lich.html).
-// Chèn lúc phục vụ để không mất khi ai đó ghi đè public/index.html bằng bản thiết kế mới.
-const CHAIRMAN_LINK = `<a href="/lich" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:999px;background:#17365d;color:#fff;font:600 13px 'Segoe UI',system-ui,sans-serif;text-decoration:none;box-shadow:0 6px 20px rgba(12,31,58,.3)">📅 Đặt lịch Chủ tịch</a>`;
-
-const COOKIE = "wr_session";
-const SESSION_SECONDS = 30 * 24 * 60 * 60;
+const VIEW_PAGES = new Set(["/", "/lich", "/admin"]);
 
 export default {
-  async fetch(request, env) {
-    const pwHash = env.ACCESS_PASSWORD ? await sha256Hex(env.ACCESS_PASSWORD) : BUILD_PASSWORD_HASH;
-    if (!pwHash) return new Response("ACCESS_PASSWORD chưa được cấu hình.", { status: 500 });
+  async fetch(request, env, ctx) {
+    const adminHash = env.ACCESS_PASSWORD ? await sha256Hex(env.ACCESS_PASSWORD) : BUILD_PASSWORD_HASH;
+    if (!adminHash) return text("ACCESS_PASSWORD chưa được cấu hình.", 500);
+    if (!env.DB) return text("Chưa cấu hình database D1 (binding DB).", 500);
+    await ensureSchema(env);
 
     const url = new URL(request.url);
+    const path = url.pathname;
+    if (path === "/login" && request.method === "POST") return login(request, env, adminHash);
 
-    if (url.pathname === "/login" && request.method === "POST") {
-      const form = await request.formData();
-      if (await safeEqual(await sha256Hex(String(form.get("password") || "")), pwHash)) {
-        const exp = String(Math.floor(Date.now() / 1000) + SESSION_SECONDS);
-        return new Response(null, {
-          status: 303,
-          headers: {
-            Location: "/",
-            "Set-Cookie": `${COOKIE}=${exp}.${await sign(pwHash, exp)}; Max-Age=${SESSION_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax`,
-          },
-        });
-      }
-      return loginPage("Sai mật khẩu.");
+    const user = await readSession(env, request, adminHash);
+    if (!user) return loginPage();
+    if (path === "/login") return redirect("/");
+    if (path === "/logout") {
+      await log(env, request, user.username, "logout");
+      return redirect("/", clearCookie());
+    }
+    if (path === "/doi-mat-khau") return changePassword(request, env, user);
+    if (user.mustChange) {
+      return path.startsWith("/api/") ? json({ error: "Bạn cần đổi mật khẩu trước.", mustChange: true }, 403) : redirect("/doi-mat-khau");
     }
 
-    if (!(await hasValidSession(request, pwHash))) return loginPage("");
-
-    if (url.pathname === "/api/bookings") return handleBookings(request, env, url);
+    if (path === "/api/bookings") return handleBookings(request, env, url, user);
+    if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
+      if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
+      if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
+    }
 
     const res = await env.ASSETS.fetch(request);
     const out = new Response(res.body, res);
     out.headers.set("Cache-Control", "private, no-cache");
-    if (url.pathname === "/" && res.ok) {
-      return new HTMLRewriter().on("body", { element: (el) => el.append(CHAIRMAN_LINK, { html: true }) }).transform(out);
+    if (res.ok && request.method === "GET" && VIEW_PAGES.has(path)) ctx.waitUntil(log(env, request, user.username, "view", path));
+    if (path === "/" && res.ok) {
+      return new HTMLRewriter()
+        .on("body", {
+          element: (el) => {
+            el.append(CHAIRMAN_LINK, { html: true });
+            el.append(userChip(user), { html: true });
+          },
+        })
+        .transform(out);
     }
     return out;
   },
 };
 
-async function hasValidSession(request, key) {
-  const m = (request.headers.get("Cookie") || "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=(\\d+)\\.([0-9a-f]+)`));
-  if (!m || Number(m[1]) < Date.now() / 1000) return false;
-  return safeEqual(m[2], await sign(key, m[1]));
+async function login(request, env, adminHash) {
+  const form = await request.formData();
+  const username = String(form.get("username") || "").trim().toLowerCase();
+  const password = String(form.get("password") || "");
+
+  if (await isLocked(env, username)) {
+    await log(env, request, username, "login_locked");
+    return loginPage("Tài khoản tạm khóa 15 phút vì nhập sai quá nhiều lần.", username);
+  }
+
+  let pwVersion = null;
+  let mustChange = false;
+  if (username === "admin") {
+    if (await safeEqual(await sha256Hex(password), adminHash)) pwVersion = adminVersion(adminHash);
+  } else {
+    const u = await env.DB.prepare("SELECT password_hash, pw_version, must_change FROM users WHERE username = ?").bind(username).first();
+    if (u && (await verifyPassword(password, u.password_hash))) {
+      pwVersion = u.pw_version;
+      mustChange = !!u.must_change;
+    }
+  }
+  if (pwVersion === null) {
+    await log(env, request, username, "login_failed");
+    return loginPage("Sai tên đăng nhập hoặc mật khẩu.", username);
+  }
+
+  if (username !== "admin") {
+    await env.DB.prepare("UPDATE users SET last_login_at = ? WHERE username = ?").bind(new Date().toISOString(), username).run();
+  }
+  await log(env, request, username, "login");
+  return redirect(mustChange ? "/doi-mat-khau" : "/", await sessionCookie(env, username, pwVersion));
 }
 
-async function sha256Hex(value) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+async function changePassword(request, env, user) {
+  if (user.role === "admin") {
+    return changePasswordPage(user, { info: "Mật khẩu admin là ACCESS_PASSWORD, đổi trên Cloudflare (Worker > Settings > Variables and secrets)." });
+  }
+  if (request.method !== "POST") return changePasswordPage(user, { forced: user.mustChange });
 
-async function sign(secret, value) {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(value));
-  return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+  const form = await request.formData();
+  const current = String(form.get("current") || "");
+  const next = String(form.get("next") || "");
+  const confirm = String(form.get("confirm") || "");
+  const u = await env.DB.prepare("SELECT password_hash, pw_version FROM users WHERE username = ?").bind(user.username).first();
 
-// So sánh không lộ thời gian: băm cả hai về cùng độ dài rồi so.
-async function safeEqual(a, b) {
-  const enc = new TextEncoder();
-  const [ha, hb] = await Promise.all([a, b].map((s) => crypto.subtle.digest("SHA-256", enc.encode(s))));
-  return crypto.subtle.timingSafeEqual(ha, hb);
-}
+  let error = "";
+  if (!(await verifyPassword(current, u.password_hash))) error = "Mật khẩu hiện tại không đúng.";
+  else if (next.length < 8) error = "Mật khẩu mới phải có ít nhất 8 ký tự.";
+  else if (next === DEFAULT_PASSWORD || next === current) error = "Mật khẩu mới phải khác mật khẩu mặc định và mật khẩu hiện tại.";
+  else if (next !== confirm) error = "Nhập lại mật khẩu mới không khớp.";
+  if (error) {
+    await log(env, request, user.username, "password_change_failed", error);
+    return changePasswordPage(user, { error, forced: user.mustChange });
+  }
 
-function loginPage(error) {
-  const html = `<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>WAR ROOM – Đăng nhập</title>
-<style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f6f9; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #0f172a; }
-  form { width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; box-shadow: 0 4px 24px rgba(12, 31, 58, .08); }
-  h1 { margin: 0 0 4px; font-size: 18px; color: #17365d; }
-  p { margin: 0 0 20px; font-size: 13px; color: #64748b; }
-  input { box-sizing: border-box; width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 8px; }
-  input:focus { outline: 2px solid #1d4ed8; outline-offset: 1px; }
-  button { margin-top: 14px; width: 100%; padding: 10px; font-size: 15px; font-weight: 600; color: #fff; background: #17365d; border: 0; border-radius: 8px; cursor: pointer; }
-  button:hover { background: #1e477a; }
-  .err { margin: 12px 0 0; color: #dc2626; font-size: 13px; }
-</style>
-</head>
-<body>
-<form method="POST" action="/login">
-  <h1>WAR ROOM – 10 DÒNG TIỀN</h1>
-  <p>Nhập mật khẩu để truy cập dashboard.</p>
-  <input type="password" name="password" placeholder="Mật khẩu" autocomplete="current-password" autofocus required />
-  <button type="submit">Đăng nhập</button>
-  ${error ? `<div class="err">${error}</div>` : ""}
-</form>
-</body>
-</html>`;
-  return new Response(html, {
-    status: 401,
-    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
-  });
+  const pwVersion = u.pw_version + 1;
+  await env.DB.prepare("UPDATE users SET password_hash = ?, must_change = 0, pw_version = ? WHERE username = ?")
+    .bind(await hashPassword(next), pwVersion, user.username)
+    .run();
+  await log(env, request, user.username, "password_changed");
+  return redirect("/", await sessionCookie(env, user.username, pwVersion));
 }
