@@ -17,15 +17,16 @@ KPI ngày D hết hạn lúc **05:00 ngày D+1** (giờ VN, **không ân hạn**
 
 ## Cách chốt
 
-- Mỗi lượt đồng bộ (cron 1 phút), hệ thống ghi lại: **"lúc này Sheet đang ở phiên bản số mấy"**. Google Sheet đánh số mọi lần sửa.
-- Lượt đầu tiên sau 05:00 sẽ chốt ngày hôm trước. Hệ thống lấy nội dung Sheet ở **phiên bản cuối cùng trước 05:00**; nếu cần thì đọc lại đúng phiên bản đó qua link xuất CSV công khai (`…/export?format=csv&gid=…&revision=N`).
+- Mỗi lượt đồng bộ (cron 1 phút), Worker đã đọc toàn bộ Sheet. Hệ thống lưu lại **trạng thái tick của mọi ô kèm giờ đọc**.
+- Lượt đầu tiên sau 05:00 sẽ chốt ngày hôm trước, bằng cách so **lượt đọc trước 05:00** với lượt hiện tại. **Không gọi Google thêm lần nào.**
+- Độ chính xác ±1 lượt đọc (~1 phút), vì Google không cho biết giờ tick.
 - **Căn cứ** của mỗi bản chốt:
 
   | Căn cứ | Ý nghĩa | Kết luận |
   |---|---|---|
-  | `exact` | Phiên bản không đổi qua mốc 05:00 | Biết chính xác |
-  | `window` | Lượt cuối trước hạn cách 05:00 ≤ 2 phút | Tick trong phút cuối có thể tính là chưa tick (sai số ±1 phút) |
-  | `gap` | Server ngừng chạy quanh 05:00 | Đọc phiên bản cuối trước hạn. Ô chỉ tick ở lượt sau → **không xác định**, tính là đã tick, có ghi nhật ký |
+  | `exact` | Trạng thái tick không đổi giữa lượt đọc trước và sau 05:00 | Biết chính xác |
+  | `window` | Có ô đổi giữa 2 lượt, lượt trước cách 05:00 ≤ 2 phút | Tính theo lượt trước: tick trong phút cuối có thể tính là chưa tick (sai số ±1 phút) |
+  | `gap` | Server ngừng chạy quanh 05:00 | Tính theo lượt đọc cuối trước hạn. Ô chỉ tick ở lượt sau → **không xác định**, tính là đã tick, có ghi nhật ký |
   | `none` | Mới bật, chưa có quan sát nào trước hạn | Ô đã tick → tính là đã tick. Riêng ô có giờ tick (do `ticks.js` ghi trước đó) **sau hạn** → tính chưa tick, nên vẫn là **Hoàn thành trễ hạn** như trước khi có chốt sổ |
 
 ## Xác nhận lại (lỡ bỏ tick trước hạn)
@@ -42,7 +43,7 @@ Trang **Quản trị** (`/admin`, chỉ admin) có khung **"Chốt sổ KPI"**: 
 
 | Tab | Nội dung |
 |---|---|
-| Chốt sổ | Đầu file: ngày KPI, hạn, giờ chốt, căn cứ, phiên bản Sheet, link Sheet, lần đọc Sheet gần nhất, người xuất. Sau đó từng task: Dòng tiền, Nhóm, Người thực hiện, KPI, **Lúc chốt sổ** (đã tick / chưa tick / không xác định / chưa có), **Hiện tại trên Sheet**, **Kết quả** (Hoàn thành / Hoàn thành trễ hạn / Tồn đọng), giờ tick (nếu trễ hạn), lịch sử tick / bỏ tick, ghi chú (thêm sau khi chốt, bỏ tick sau hạn, admin xác nhận) |
+| Chốt sổ | Đầu file: ngày KPI, hạn, giờ chốt, căn cứ, giờ lượt đọc trước / sau hạn, link Sheet, lần đọc Sheet gần nhất, người xuất. Sau đó từng task: Dòng tiền, Nhóm, Người thực hiện, KPI, **Lúc chốt sổ** (đã tick / chưa tick / không xác định / chưa có), **Hiện tại trên Sheet**, **Kết quả** (Hoàn thành / Hoàn thành trễ hạn / Tồn đọng), giờ tick (nếu trễ hạn), lịch sử tick / bỏ tick, ghi chú (thêm sau khi chốt, bỏ tick sau hạn, admin xác nhận) |
 | Tổng hợp | Đếm theo dòng tiền: tổng, Hoàn thành, Trễ hạn, Tồn đọng, Không còn trên Sheet |
 | Nhật ký | Nhật ký chốt sổ / lỗi / xác nhận của ngày đó |
 
@@ -53,14 +54,16 @@ Trang **Quản trị** (`/admin`, chỉ admin) có khung **"Chốt sổ KPI"**: 
 
 ## Lưu ở đâu
 
+Cột `rev_a` / `rev_b` của `kpi_close` lưu giờ (ms) lượt đọc trước / sau hạn.
+
 Cơ sở dữ liệu **D1** hiện có (`ctgwarroom`). Bảng tự tạo, không đụng bảng cũ:
 
 | Bảng | Nội dung |
 |---|---|
-| `kpi_close_obs` | Các lần quan sát: phiên bản Sheet kèm thời gian |
+| `kpi_close_obs` | Lượt đọc gần nhất: trạng thái tick mọi ô kèm giờ đọc |
 | `kpi_close` | Bản chốt từng ngày, theo Sheet. **Ghi một lần, không sửa** |
 | `kpi_audit_log` | Nhật ký: chốt sổ, lỗi, xác nhận. Chỉ thêm |
-| `kpi_cell_log` | Lịch sử từng ô: mỗi lần tick hoặc bỏ tick, kèm giờ và phiên bản Sheet |
+| `kpi_cell_log` | Lịch sử từng ô: mỗi lần tick hoặc bỏ tick, kèm giờ |
 | `kpi_confirm` | Các lần admin xác nhận đúng hạn: ai, lúc nào, lý do, hủy lúc nào |
 
 Trên máy ảo, các bảng này nằm trong D1 cục bộ (`.wrangler/state/`).
@@ -92,7 +95,7 @@ Xem lại bằng **`GET /api/kpi/audit`** (phải đăng nhập, chỉ đọc): 
 
 ## Kiểm thử
 
-- `npm test`: **99/99** sau khi kéo `main` mới nhất (646dc73): 90 test cũ + 9 test chốt sổ (xác nhận, tải Excel, dòng trùng, lần đầu bật).
+- `npm test`: **100/100**: 90 test cũ + 10 test chốt sổ (căn cứ, xác nhận, tải Excel, dòng trùng, lần đầu bật, không gọi Google).
 - Chạy thật trên máy ảo, **chỉ dùng Sheet test** `1tHc30…`. Kết quả ở mục "Kết quả test thật" bên dưới.
 
 ## Kết quả test thật (22/11/2026, Sheet test `1tHc30…`, tab "Dòng tiền bán 4 dự án", ngày 21/11)
@@ -126,3 +129,23 @@ Xem lại bằng **`GET /api/kpi/audit`** (phải đăng nhập, chỉ đọc): 
 - **Không** đặt `KPI_DUE_SHIFT_MIN` trên Cloudflare.
 - Bảng D1 tự tạo ở lượt đồng bộ đầu tiên, không cần migration.
 - Lượt đầu tiên chốt luôn các ngày cũ đã qua hạn với căn cứ `none` (xem bảng trên). Từ ngày kế tiếp trở đi là `exact`.
+
+## Đổi phương pháp (22/11/2026, sau lần deploy đầu)
+
+**Lý do:** bản đầu dò số phiên bản Google (`…/export?…&revision=N`) mỗi lượt. Trên production, Sheet tổng có khoảng 1.500 phiên bản, lần dò đầu cần khoảng 30 lần gọi, cộng phần đồng bộ vượt giới hạn **50 lần gọi ra ngoài / lượt** của gói Free → lỗi "Too many subrequests" mỗi phút, chưa chốt được ngày nào. Lịch sử phiên bản cũng không cho thêm thông tin, vì nội dung phiên bản cuối trước hạn trùng với lượt Worker đã đọc.
+
+**Bây giờ:** chốt bằng lượt đọc trước / sau hạn đã có sẵn. Không gọi Google thêm, không phụ thuộc tham số `revision` không chính thức. Quy tắc, kết quả, xác nhận lại, tải Excel giữ nguyên.
+
+**Mất:** không còn số phiên bản Google trong bản chốt (đối chiếu bằng Nhật ký phiên bản của Google theo giờ), và không thấy tick rồi bỏ tick trong cùng một phút (không ảnh hưởng kết luận chốt).
+
+**Test thật trên máy ảo** (Sheet test, ngày 22/11, giờ chốt thử 05:44):
+
+| Thao tác | Kết quả |
+|---|---|
+| Tick G24 lúc 05:39 | **Hoàn thành** |
+| Tick G26 lúc 05:39, bỏ tick 05:40 | **Tồn đọng**, vào **"KPI cần xác nhận"** (lịch sử tick / bỏ tick) |
+| Chốt 05:44:35, lượt đọc trước 05:43:54 | căn cứ `exact`: 2 đã tick, 32 chưa tick (34 task, 4 dòng trùng tách riêng) |
+| Tick G25 lúc 05:44:56 (sau hạn) | **Hoàn thành trễ hạn** |
+| Tải Excel | Khớp: 2 Hoàn thành, 1 trễ hạn, 31 Tồn đọng |
+
+Sau test: bỏ `KPI_DUE_SHIFT_MIN`, xoá bản chốt thử ngày 22/11 trong D1 cục bộ.

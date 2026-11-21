@@ -10,16 +10,16 @@
 
 import { log } from '../db.js';
 import { json } from '../http.js';
-import { activeConfirms, cellKey, ensureTables, findTask, tasksOfDay } from './close.js';
+import { activeConfirms, cellKey, ensureTables, findTask, obsMaps, readTime, tasksOfDay } from './close.js';
 import { writeXlsx } from './xlsx-write.js';
 
 const AT_CLOSE = { D: 'Đã tick', K: 'Chưa tick', U: 'Không xác định (tính đã tick)' };
 const RESULT = { D: 'Hoàn thành', L: 'Hoàn thành trễ hạn', K: 'Tồn đọng' };
 const BASIS = {
-  exact: 'exact — phiên bản Sheet không đổi qua giờ chốt (chính xác)',
-  window: 'window — lượt đọc cuối trước hạn cách giờ chốt ≤ 2 phút (sai số ±1 phút)',
-  gap: 'gap — server ngừng chạy quanh giờ chốt; ô chỉ tick ở lượt sau ghi là không xác định',
-  none: 'none — chưa có lượt đọc nào trước hạn (mới bật); ô đã tick tính là đã tick',
+  exact: 'exact — trạng thái tick không đổi giữa lượt đọc trước và sau hạn (chính xác)',
+  window: 'window — có ô đổi giữa 2 lượt đọc, lượt trước cách hạn ≤ 2 phút: tính theo lượt trước (sai số ±1 phút)',
+  gap: 'gap — server ngừng chạy quanh giờ chốt; ô chỉ tick ở lượt sau ghi là không xác định (tính đã tick)',
+  none: 'none — chưa có lượt đọc nào trước hạn (mới bật); ô đã tick tính là đã tick, trừ ô có giờ tick ghi sau hạn',
 };
 
 /** ISO -> "dd/mm/yyyy hh:mm:ss" giờ VN. */
@@ -39,7 +39,7 @@ const resultOf = (closed, ticked) => (ticked ? (closed === 'K' ? 'L' : 'D') : 'K
  * @param close    { day, data: [[s,g,p,k,v,label?]] }
  * @param streams  dữ liệu Sheet đã lưu (kpi_sheet, chưa gắn người)
  * @param cellLog  [{ cell, at, change }] của ngày đó
- * @param labels   obs.labels (tên hiển thị) — dùng cho bản chốt cũ chưa lưu tên
+ * @param labels   obsMaps(lượt đọc).labels (tên hiển thị) — dùng cho bản chốt cũ chưa lưu tên
  * @param confirms Map "day|cell" -> xác nhận đang hiệu lực
  */
 export function reconcileRows(close, streams, cellLog, labels, confirms) {
@@ -91,7 +91,7 @@ export function closeWorkbook({ close, rows, logs, sheetUrl, checkedAt, by, now 
     ['Hạn chốt', vn(close.deadline)],
     ['Chốt lúc', vn(close.closed_at)],
     ['Căn cứ', BASIS[close.basis] || close.basis],
-    ['Phiên bản Sheet', close.rev_a === close.rev_b || close.rev_b == null ? String(close.rev_a ?? '—') : `${close.rev_a ?? '—'} (trước hạn) / ${close.rev_b} (sau hạn)`],
+    ['Lượt đọc Sheet', typeof readTime(close.rev_b) === 'number' ? `phiên bản ${close.rev_a ?? '—'} / ${close.rev_b}` : `trước hạn: ${vn(readTime(close.rev_a)) || 'không có (mới bật)'} · sau hạn: ${vn(readTime(close.rev_b))}`],
     ['Google Sheet', sheetUrl],
     ['Sheet đọc lần cuối', vn(checkedAt)],
     ['Xuất lúc', `${vn(new Date(now).toISOString())} — ${by}`],
@@ -141,7 +141,7 @@ export async function handleKpiCloseExport(request, env, url, user) {
       days: results.map((c) => {
         const count = { D: 0, K: 0, U: 0 };
         try { for (const x of JSON.parse(c.data)) count[x[4]]++; } catch { /* bỏ qua */ }
-        return { day: c.day, closedAt: c.closed_at, deadline: c.deadline, basis: c.basis, revA: c.rev_a, revB: c.rev_b, count };
+        return { day: c.day, closedAt: c.closed_at, deadline: c.deadline, basis: c.basis, readBefore: readTime(c.rev_a), readAfter: readTime(c.rev_b), count };
       }),
     });
   }
@@ -156,7 +156,7 @@ export async function handleKpiCloseExport(request, env, url, user) {
     activeConfirms(env, id),
   ]);
   const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
-  const rows = reconcileRows({ day, data: parse(close.data, []) }, parse(sheet?.data, []), cellLog.results, parse(obs?.data, {})?.labels, confirms);
+  const rows = reconcileRows({ day, data: parse(close.data, []) }, parse(sheet?.data, []), cellLog.results, obsMaps(parse(obs?.data, {})).labels, confirms);
   const book = closeWorkbook({
     close, rows, logs: logs.results, sheetUrl: `https://docs.google.com/spreadsheets/d/${id}/edit`,
     checkedAt: sheet?.checked_at || '', by: user.username, now: Date.now(),

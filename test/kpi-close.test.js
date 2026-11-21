@@ -1,7 +1,7 @@
 // KPI-CLOSE: chốt sổ lúc 05:00 (src/kpi/close.js) + trạng thái hiển thị (public/kpi-model.js › statusOf).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { closeDeadline, closeVerdict, evidenceFor } from '../src/kpi/close.js';
+import { closeDay, closeDeadline, closeVerdict } from '../src/kpi/close.js';
 import { statusOf } from '../public/kpi-model.js';
 import { DatabaseSync, fakeD1 } from './fixtures/d1.js';
 
@@ -13,23 +13,28 @@ test('closeDeadline: KPI ngày 21/11 hết hạn lúc 05:00 ngày 22/11 (giờ V
   assert.equal(closeDeadline('2026-11-21', 30), vn(22, 4, 30)); // chỉ để thử: dời sớm 30 phút
 });
 
-test('evidenceFor + closeVerdict: căn cứ lúc hết hạn và kết luận từng task', () => {
+test('closeDay + closeVerdict: căn cứ từ lượt đọc trước / sau hạn và kết luận từng task', () => {
   const D = closeDeadline('2026-11-21');
-  // Phiên bản 3 được thấy từ 04:00 tới 05:00:30 -> biết chính xác lúc 05:00.
-  assert.deepEqual(evidenceFor(D, [{ rev: 3, from: vn(22, 4), to: vn(22, 5, 0, 30) }]), { A: 3, B: 3, basis: 'exact' });
-  // Thấy bản 3 lần cuối 04:59:30, bản 4 lúc 05:00:30 -> sát hạn.
-  assert.equal(evidenceFor(D, [{ rev: 3, from: vn(22, 4), to: vn(22, 4, 59, 30) }, { rev: 4, from: vn(22, 5, 0, 30), to: vn(22, 5, 0, 30) }]).basis, 'window');
-  // Worker ngừng từ 03:00 tới 06:00 -> khoảng mù.
-  assert.deepEqual(evidenceFor(D, [{ rev: 3, from: vn(22, 2), to: vn(22, 3) }, { rev: 9, from: vn(22, 6), to: vn(22, 6) }]), { A: 3, B: 9, basis: 'gap' });
-  // Chưa có quan sát nào sau hạn: chưa chốt.
-  assert.equal(evidenceFor(D, [{ rev: 3, from: vn(22, 2), to: vn(22, 4) }]), null);
+  const t = (k, done, at = '') => ({ s: 'dt', g: 'nhom', p: 'an', k, done, at });
+  const verdicts = (r) => r.data.map((x) => x[4]).join('');
+  // Lượt 04:59:30 và 05:00:30 giống nhau -> biết chính xác.
+  let r = closeDay(D, [t('a', true), t('b', false)], vn(22, 4, 59, 30), [t('a', true), t('b', false)]);
+  assert.deepEqual([r.basis, verdicts(r)], ['exact', 'DK']);
+  // b đổi giữa 2 lượt, lượt trước sát hạn -> tính theo lượt trước (chưa tick).
+  r = closeDay(D, [t('a', true), t('b', false)], vn(22, 4, 59, 30), [t('a', true), t('b', true)]);
+  assert.deepEqual([r.basis, verdicts(r)], ['window', 'DK']);
+  // Worker ngừng 03:00 -> 06:00: b tick ở lượt sau -> không xác định (tính đã tick).
+  r = closeDay(D, [t('a', true), t('b', false)], vn(22, 3), [t('a', true), t('b', true)]);
+  assert.deepEqual([r.basis, verdicts(r), r.tally], ['gap', 'DU', { D: 1, K: 0, U: 1 }]);
+  // Mới bật: tick sẵn không rõ giờ -> U; giờ tick đã ghi sau hạn -> K.
+  r = closeDay(D, null, undefined, [t('a', true), t('b', true, new Date(vn(22, 6)).toISOString()), t('c', false)]);
+  assert.deepEqual([r.basis, verdicts(r), r.lateAt], ['none', 'UKK', 1]);
 
-  assert.equal(closeVerdict(true, null, 'exact'), 'D'); // lúc hết hạn đã tick
-  assert.equal(closeVerdict(false, null, 'exact'), 'K'); // lúc hết hạn chưa tick
-  assert.equal(closeVerdict(false, null, 'window'), 'K'); // tick sát giờ sau lượt cuối trước hạn: tính chưa tick (sai số ±1 phút)
-  assert.equal(closeVerdict(false, true, 'gap'), 'U'); // khoảng mù: không biết tick trước hay sau hạn -> tính đã tick
-  assert.equal(closeVerdict(false, false, 'gap'), 'K'); // sau khoảng mù vẫn chưa tick -> chắc chắn chưa tick lúc hết hạn
-  assert.equal(closeVerdict(null, true, 'none'), 'U'); // mới bật hệ thống, ô đã tick sẵn -> tính đã tick
+  assert.equal(closeVerdict(true, null, 'exact'), 'D');
+  assert.equal(closeVerdict(false, true, 'window'), 'K');
+  assert.equal(closeVerdict(false, true, 'gap'), 'U');
+  assert.equal(closeVerdict(false, false, 'gap'), 'K');
+  assert.equal(closeVerdict(null, true, 'none'), 'U');
 });
 
 test('statusOf: ngày đã chốt — lúc 05:00 đã tick = Hoàn thành; chưa tick = Tồn đọng; tick sau đó = Hoàn thành trễ hạn', () => {
@@ -124,7 +129,7 @@ test('chốt sổ đầu-cuối: An chưa tick lúc 05:00 rồi 09:00 mới tick
   }
 });
 
-test('chốt sổ khi Worker lỡ nhịp lúc 05:00: đọc lại phiên bản cuối trước hạn từ lịch sử Google', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
+test('chốt sổ khi Worker lỡ nhịp lúc 05:00: dùng lượt đọc cuối trước hạn, ô tick ở lượt sau = không xác định', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
   const { ensureSchema } = await import('../src/db.js');
   const { kpiData, syncKpi } = await import('../src/kpi/index.js');
   const { auditReport } = await import('../src/kpi/close.js');
@@ -137,7 +142,7 @@ test('chốt sổ khi Worker lỡ nhịp lúc 05:00: đọc lại phiên bản c
     revs.push(csv({ an: 'TRUE' })); // An tick lúc nào đó trong khi Worker ngừng chạy
     await syncKpi(env, { force: true, now: vn(22, 6) }); // Worker chạy lại lúc 06:00
     const c = (await auditReport(env, ID)).closes[0];
-    assert.deepEqual([c.basis, c.revA, c.revB, c.count], ['gap', 1, 2, { D: 1, K: 0, U: 1 }]);
+    assert.deepEqual([c.basis, c.readBefore, c.readAfter, c.count], ['gap', new Date(vn(22, 4)).toISOString(), new Date(vn(22, 6)).toISOString(), { D: 1, K: 0, U: 1 }]);
     const data = await kpiData(env, vn(22, 6));
     assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 6)), 'D'); // không xác định -> không tính trễ oan
   } finally {
@@ -281,6 +286,33 @@ test('lần đầu bật chốt sổ (căn cứ none): ô đã ghi giờ tick sa
     const data = await kpiData(env, vn(22, 6));
     assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 6)), 'L');
     assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(22, 6)), 'D');
+  } finally {
+    restore();
+  }
+});
+
+test('chốt sổ không gọi Google thêm lần nào (gói Free: tối đa 50 lần gọi ra ngoài / lượt)', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
+  const { ensureSchema } = await import('../src/db.js');
+  const { syncKpi } = await import('../src/kpi/index.js');
+  const { auditReport, closeKpi } = await import('../src/kpi/close.js');
+  const env = await freshEnv();
+  await ensureSchema(env);
+  const revs = [csv()];
+  const restore = fakeGoogle(() => revs);
+  try {
+    await syncKpi(env, { force: true, now: vn(22, 4, 59) });
+    const real = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error('không được gọi ra ngoài'); };
+    try {
+      await closeKpi(env, ID, JSON.parse((await env.DB.prepare('SELECT data FROM kpi_sheet WHERE id = 1').first()).data), vn(22, 5, 0, 30));
+    } finally {
+      globalThis.fetch = real;
+    }
+    assert.equal(calls, 0);
+    const rep = await auditReport(env, ID);
+    assert.deepEqual(rep.closes.map((c) => [c.day, c.basis, c.count]), [['2026-11-21', 'exact', { D: 1, K: 1, U: 0 }]]);
+    assert.ok(!rep.log.some((l) => l.kind === 'error'));
   } finally {
     restore();
   }

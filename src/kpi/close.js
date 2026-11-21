@@ -7,13 +7,11 @@
 //   lúc 05:00 chưa tick, hiện đã tick       -> Hoàn thành trễ hạn
 // Sửa sheet sau 05:00 (tick, bỏ tick, xoá dòng, Worker ngừng chạy một lúc) không đổi được kết luận đã chốt.
 //
-// Căn cứ: Google Sheet lưu lịch sử từng lần sửa (phiên bản 1, 2, 3…). Mỗi lượt cron (1 phút), Worker ghi lại "lúc này sheet
-// đang ở phiên bản số mấy" (bảng kpi_close_obs). Khi chốt ngày D, Worker lấy nội dung sheet ở PHIÊN BẢN CUỐI TRƯỚC 05:00
-// (đọc lại đúng phiên bản đó qua link xuất CSV công khai …/export?format=csv&gid=…&revision=N), nên kể cả lỡ nhịp lúc 05:00
-// vẫn biết chính xác lúc hết hạn ô đã tick chưa. Tham số `revision` không có trong tài liệu chính thức của Google (đã kiểm tra
-// chạy được 22/11/2026); không đọc được thì chốt theo bản đã đọc gần nhất trước hạn, kèm ghi chú trong nhật ký.
+// Căn cứ: mỗi lượt đồng bộ (cron 1 phút) Worker đã đọc toàn bộ sheet; ở đây chỉ lưu lại trạng thái tick của mọi ô kèm giờ đọc
+// (bảng kpi_close_obs). Lượt đầu tiên sau hạn so LƯỢT ĐỌC TRƯỚC (trước hạn) với lượt hiện tại để chốt — không gọi thêm Google
+// lần nào (gói Free: tối đa 50 lần gọi ra ngoài / lượt). Google không cho biết giờ tick nên độ chính xác là ±1 lượt đọc (~1 phút).
 //
-// Bảng D1 (tự tạo): kpi_close_obs (quan sát), kpi_close (bản chốt từng ngày), kpi_audit_log (nhật ký, chỉ thêm),
+// Bảng D1 (tự tạo): kpi_close_obs (lượt đọc gần nhất), kpi_close (bản chốt từng ngày), kpi_audit_log (nhật ký, chỉ thêm),
 // kpi_cell_log (lịch sử tick / bỏ tick từng ô), kpi_confirm (admin xác nhận đúng hạn).
 // API: GET /api/kpi/audit (chỉ đọc); GET/POST/DELETE /api/admin/kpi-review (chỉ admin); GET /api/admin/kpi-close (tải Excel, close-export.js).
 //
@@ -21,17 +19,12 @@
 // danh sách "cần xác nhận" ở trang Quản trị. Admin xem lịch sử ô và bấm "Xác nhận đúng hạn" (kèm lý do) -> ô tính như lúc 05:00
 // đã tick. Không tự động (tránh lách: tick sớm rồi bỏ tick khi chưa làm). Mọi lần xác nhận / huỷ đều ghi nhật ký.
 
-import { csvSheet, parseCsv, parseSheetList } from '../excel/gsheet.js';
 import { log } from '../db.js';
 import { json } from '../http.js';
 import { normKey } from '../worksuite/model.js';
-import { parseKpiBook } from './sheet.js';
 
 const DUE_HOUR = 5;
-const TAU_MS = 2 * 60 * 1000; // quan sát cách hạn ≤ 2 phút coi là "sát hạn"
-const TABS_EVERY_MS = 10 * 60 * 1000;
-const MAX_INTERVALS = 3000;
-const FETCH_TIMEOUT_MS = 15000;
+const TAU_MS = 2 * 60 * 1000; // lượt đọc trước cách hạn ≤ 2 phút coi là "sát hạn"
 
 /** Hạn (ms) của KPI ngày `date` = 05:00 ngày hôm sau giờ VN. shiftMin: CHỈ để thử trên máy (KPI_DUE_SHIFT_MIN). */
 export const closeDeadline = (date, shiftMin = 0) => Date.parse(`${date}T00:00:00Z`) + (24 + DUE_HOUR - 7) * 3600000 - shiftMin * 60000;
@@ -44,6 +37,7 @@ export async function ensureTables(env) {
   if (ready.has(env.DB)) return;
   await env.DB.batch([
     env.DB.prepare('CREATE TABLE IF NOT EXISTS kpi_close_obs (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)'),
+    // rev_a / rev_b: giờ (ms) của lượt đọc trước / sau hạn dùng để chốt.
     env.DB.prepare(`CREATE TABLE IF NOT EXISTS kpi_close (
       sheet TEXT NOT NULL, day TEXT NOT NULL, closed_at TEXT NOT NULL, deadline TEXT NOT NULL, basis TEXT NOT NULL,
       rev_a INTEGER, rev_b INTEGER, data TEXT NOT NULL, PRIMARY KEY (sheet, day))`),
@@ -60,75 +54,11 @@ export async function ensureTables(env) {
   ready.add(env.DB);
 }
 
-// ---------- đọc Google Sheet theo phiên bản ----------
-
-const base = (id) => `https://docs.google.com/spreadsheets/d/${id}`;
-const get = (url) => fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-
-async function hasRevision(id, gid, rev) {
-  const res = await get(`${base(id)}/export?format=csv&gid=${gid}&revision=${rev}`);
-  await res.body?.cancel();
-  if (res.status === 200 && /text\/csv/.test(res.headers.get('Content-Type') || '')) return true;
-  if (res.status === 400 || res.status === 404) return false;
-  throw new Error(`Google Sheet trả về lỗi HTTP ${res.status} khi đọc phiên bản ${rev}.`);
-}
-
-/** Phiên bản mới nhất. Biết head lần trước thì thường 1 lần gọi; chưa biết thì tăng gấp đôi rồi chia đôi. */
-export async function findHead(id, gid, from = 0) {
-  let lo = from;
-  if (!lo) {
-    for (let r = 1; r <= 2 ** 24; r *= 2) {
-      if (await hasRevision(id, gid, r)) { lo = r; break; }
-    }
-    if (!lo) return 0;
-  }
-  let step = 1;
-  let hi = lo + step;
-  while (await hasRevision(id, gid, hi)) {
-    lo = hi; step *= 2; hi = lo + step;
-    if (hi > 2 ** 30) throw new Error('Không xác định được phiên bản mới nhất của Google Sheet.');
-  }
-  while (hi - lo > 1) {
-    const mid = Math.floor((lo + hi) / 2);
-    if (await hasRevision(id, gid, mid)) lo = mid;
-    else hi = mid;
-  }
-  return lo;
-}
-
-/** Các tab của sheet ở phiên bản `rev` (cùng dạng fetchSheetTabs). Tab chưa có ở phiên bản đó -> bỏ qua. */
-async function tabsAt(id, tabs, rev) {
-  const out = await Promise.all(tabs.map(async ({ name, gid }) => {
-    const res = await get(`${base(id)}/export?format=csv&gid=${gid}&revision=${rev}`);
-    if (res.status !== 200) { await res.body?.cancel(); return null; }
-    return csvSheet(name, parseCsv(await res.text()));
-  }));
-  return out.filter(Boolean);
-}
-
 // ---------- quy tắc chốt sổ (hàm thuần) ----------
 
 /**
- * Chọn căn cứ quanh hạn. intervals = [{ rev, from, to }] (ms, theo from tăng dần): khoảng thời gian thấy phiên bản rev là
- * bản mới nhất. Trả về null nếu chưa có quan sát nào sau hạn (chưa chốt được).
- *   exact  : phiên bản A được thấy cả trước lẫn sau hạn -> biết chính xác lúc hết hạn
- *   window : thấy A lần cuối trong vòng 2 phút trước hạn
- *   gap    : quan sát trước hạn đã cũ (Worker ngừng chạy một lúc)
- *   none   : không có quan sát nào trước hạn (mới bật / mới thêm sheet)
- */
-export function evidenceFor(deadline, intervals) {
-  let a = null;
-  for (const iv of intervals) if (iv.from <= deadline) a = iv;
-  if (a && a.to >= deadline) return { A: a.rev, B: a.rev, basis: 'exact' };
-  const b = intervals.find((iv) => iv.from > deadline);
-  if (!b) return null;
-  if (!a) return { A: null, B: b.rev, basis: 'none' };
-  return { A: a.rev, B: b.rev, basis: deadline - a.to <= TAU_MS ? 'window' : 'gap' };
-}
-
-/**
  * Kết luận 1 task lúc hết hạn: 'D' = đã tick, 'K' = chưa tick, 'U' = không xác định được (tính như đã tick, ghi nhật ký).
- * atA / atB: true = đã tick ở phiên bản A / B, false = chưa (hoặc chưa có task), null = không có phiên bản đó.
+ * atA / atB: đã tick ở lượt đọc trước / sau hạn (true/false; false cả khi chưa có task), null = không có lượt đọc đó.
  */
 export function closeVerdict(atA, atB, basis) {
   if (atA === true) return 'D';
@@ -136,9 +66,8 @@ export function closeVerdict(atA, atB, basis) {
   return atB === true ? 'U' : 'K';
 }
 
-/**
- * Task của 1 ngày: [{ s, g, p, k, done, at, label, cell }] — s/g/p/k = dòng tiền / nhóm / người / nội dung KPI (đã chuẩn hoá),
- * cell = ô gốc trong `streams`. Nhiều dòng trùng hệt nhau (cùng người, cùng nội dung KPI) được đánh số theo thứ tự: k, k#2, k#3…
+/** Task của 1 ngày từ dữ liệu sheet: [{ s, g, p, k, done, at, label, cell }] — s/g/p/k = dòng tiền / nhóm / người / nội dung KPI
+ * (đã chuẩn hoá), cell = ô gốc trong `streams`. Nhiều dòng trùng hệt nhau (cùng người, cùng KPI) đánh số theo thứ tự: k, k#2…
  */
 export function tasksOfDay(streams, day) {
   const out = [];
@@ -152,7 +81,7 @@ export function tasksOfDay(streams, day) {
         const t = { s: sk, g: normKey(g.name), p: normKey(r.person), k: normKey(c.kpi) };
         const n = (seen.get(cellKey(t)) || 0) + 1;
         seen.set(cellKey(t), n);
-        if (n > 1) t.k += `#${n}`; // KPI-CLOSE: dòng trùng
+        if (n > 1) t.k += `#${n}`; // dòng trùng
         out.push({ ...t, done: c.res === 'D', at: c.at || '', label: [s.name, g.name, r.person || '', c.kpi || ''], cell: c });
       }
     }
@@ -171,107 +100,105 @@ export function findTask(list, t) {
   return same.length === 1 ? same[0] : null;
 }
 
-// ---------- quan sát + chốt sổ (gọi trong mỗi lượt đồng bộ, src/kpi/index.js › syncKpi) ----------
+/** Lượt đọc gọn để lưu: { day: [[s, g, p, k, 0/1, label]] }. */
+const snapshot = (streams, days) => Object.fromEntries(days.map((day) => [day, tasksOfDay(streams, day).map((t) => [t.s, t.g, t.p, t.k, t.done ? 1 : 0, t.label])]));
+const unpack = (rows) => (rows || []).map(([s, g, p, k, d, label]) => ({ s, g, p, k, done: d === 1, label }));
+
+/** Lượt đọc đã lưu -> { cells: {"day|ô": 0/1}, labels: {"day|ô": [dòng tiền, nhóm, người, KPI]} } (danh sách xác nhận, Excel). */
+export function obsMaps(obs) {
+  const cells = {};
+  const labels = {};
+  for (const [day, rows] of Object.entries(obs?.days || {})) {
+    for (const t of unpack(rows)) {
+      cells[`${day}|${cellKey(t)}`] = t.done ? 1 : 0;
+      labels[`${day}|${cellKey(t)}`] = t.label;
+    }
+  }
+  return { cells, labels };
+}
 
 /**
- * Ghi quan sát (phiên bản hiện tại) rồi chốt các ngày đã qua hạn mà chưa chốt.
- * @param streams  kết quả parseKpiBook().streams của lượt đọc này (nội dung sheet hiện tại)
+ * Chốt 1 ngày (hàm thuần).
+ * @param prev  task của ngày ở lượt đọc trước, null = không có lượt đọc nào trước hạn
+ * @param prevAt giờ (ms) lượt đọc trước
+ * @param cur   task của ngày ở lượt đọc hiện tại (có `at` = giờ tick ticks.js đã ghi)
+ * basis: exact = trạng thái không đổi giữa 2 lượt; window = có đổi, lượt trước cách hạn ≤ 2 phút (tính theo lượt trước);
+ *        gap = lượt trước đã cũ (Worker ngừng chạy); none = chưa có lượt nào trước hạn (mới bật).
+ */
+export function closeDay(deadline, prev, prevAt, cur) {
+  let basis = 'none';
+  if (prev) {
+    const same = prev.length === cur.length && cur.every((t) => findTask(prev, t)?.done === t.done);
+    basis = same ? 'exact' : deadline - prevAt <= TAU_MS ? 'window' : 'gap';
+  }
+  const data = [];
+  const tally = { D: 0, K: 0, U: 0 };
+  let lateAt = 0;
+  const seen = new Set();
+  for (const t of [...(prev || []), ...cur]) {
+    const key = cellKey(t);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const atA = prev ? Boolean(findTask(prev, t)?.done) : null;
+    const now = findTask(cur, t);
+    let v = closeVerdict(atA, Boolean(now?.done), basis);
+    // Mới bật: ô có giờ tick (ticks.js) sau hạn -> chưa tick lúc hết hạn (giữ "Hoàn thành trễ hạn" như trước khi có chốt sổ).
+    if (v === 'U' && basis === 'none' && Date.parse(now?.at || '') > deadline) { v = 'K'; lateAt++; }
+    tally[v]++;
+    data.push([t.s, t.g, t.p, t.k, v, t.label]); // label: tên hiển thị lúc chốt (cho file Excel đối soát)
+  }
+  return { basis, data, tally, lateAt };
+}
+
+// ---------- lưu lượt đọc + chốt sổ (gọi trong mỗi lượt đồng bộ, src/kpi/index.js › syncKpi) ----------
+
+/**
+ * Lưu lượt đọc hiện tại, ghi lịch sử ô vừa đổi, rồi chốt các ngày đã qua hạn mà chưa chốt. Không gọi Google.
+ * @param streams  kết quả parseKpiBook().streams của lượt đọc này (đã có `at` của ticks.js)
  * Lỗi ở đây không làm hỏng lượt đồng bộ: ghi vào nhật ký rồi bỏ qua (lượt sau thử lại).
  */
-export async function closeKpi(env, id, streams, now = Date.now(), year) {
+export async function closeKpi(env, id, streams, now = Date.now()) {
   await ensureTables(env);
   const at = new Date(now).toISOString();
   const logs = [];
   try {
     const row = await env.DB.prepare('SELECT data FROM kpi_close_obs WHERE id = 1').first();
-    let obs = null;
-    try { obs = row ? JSON.parse(row.data) : null; } catch { obs = null; }
-    if (!obs || obs.sheet !== id) obs = { sheet: id, head: 0, tabs: [], tabsAt: 0, intervals: [] };
-    if (!obs.tabs.length || now - obs.tabsAt > TABS_EVERY_MS) {
-      const res = await get(`${base(id)}/htmlview`);
-      obs.tabs = parseSheetList(await res.text());
-      obs.tabsAt = now;
-    }
-    if (!obs.tabs.length) throw new Error('Không đọc được danh sách tab của Google Sheet.');
-    // Google còn hỗ trợ đọc theo phiên bản (tham số không có trong tài liệu chính thức): phiên bản rất lớn phải bị từ chối.
-    if (!obs.revOk) {
-      if (await hasRevision(id, obs.tabs[0].gid, 2 ** 31 - 1)) throw new Error('Google không còn hỗ trợ đọc Sheet theo phiên bản: chưa chốt sổ được, cần kiểm tra lại.');
-      obs.revOk = true;
-    }
-    const head = await findHead(id, obs.tabs[0].gid, obs.head);
-    const last = obs.intervals[obs.intervals.length - 1];
-    if (last && last.rev === head) last.to = now;
-    else obs.intervals.push({ rev: head, from: now, to: now });
-    obs.head = head;
-    if (obs.intervals.length > MAX_INTERVALS) obs.intervals = obs.intervals.slice(-MAX_INTERVALS);
-    // Lịch sử từng ô: ghi các ô vừa đổi trạng thái so với lượt trước (lượt đầu chỉ ghi mốc, không ghi thay đổi).
-    const current = {};
-    const labels = {};
-    for (const day of new Set((streams || []).flatMap((s) => (s.days || []).map((d) => d.date)))) {
-      for (const t of tasksOfDay(streams, day)) {
-        const key = `${day}|${cellKey(t)}`;
-        current[key] = t.done ? 1 : 0;
-        labels[key] = t.label;
-      }
-    }
-    const changes = [];
-    if (obs.cells) {
-      for (const [key, done] of Object.entries(current)) {
-        const before = obs.cells[key];
-        if (before === done || (before === undefined && !done)) continue;
-        changes.push([key.slice(0, 10), key.slice(11), done ? 'tick' : 'untick']);
-      }
-    }
-    obs.cells = current;
-    obs.labels = labels;
-    await env.DB.prepare('INSERT INTO kpi_close_obs (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = ?1').bind(JSON.stringify(obs)).run();
-    if (changes.length) {
-      await env.DB.batch(changes.slice(0, 500).map(([day, cell, change]) => env.DB.prepare('INSERT INTO kpi_cell_log (sheet, day, cell, at, change, rev) VALUES (?, ?, ?, ?, ?, ?)').bind(id, day, cell, at, change, head)));
-    }
+    let prev = null;
+    try { prev = row ? JSON.parse(row.data) : null; } catch { prev = null; }
+    if (!prev || prev.sheet !== id || !prev.days || !(prev.at <= now)) prev = null; // chưa có / sheet khác / bản cũ
+    const days = [...new Set((streams || []).flatMap((s) => (s.days || []).map((d) => d.date)))].sort();
+    const obs = { sheet: id, at: now, days: snapshot(streams, days) };
 
     // Chốt các ngày đã qua hạn mà chưa có bản chốt.
-    const days = [...new Set((streams || []).flatMap((s) => (s.days || []).map((d) => d.date)))].sort();
     const { results } = await env.DB.prepare('SELECT day FROM kpi_close WHERE sheet = ?').bind(id).all();
     const closed = new Set(results.map((r) => r.day));
-    const cache = new Map([[head, streams]]); // nội dung theo phiên bản (bản hiện tại = head)
-    const contentAt = async (rev) => {
-      if (rev === null) return null;
-      if (!cache.has(rev)) cache.set(rev, parseKpiBook(await tabsAt(id, obs.tabs, rev), { year }).streams);
-      return cache.get(rev);
-    };
     for (const day of days) {
       const deadline = closeDeadline(day, shiftOf(env));
       if (now < deadline || closed.has(day)) continue;
-      const ev = evidenceFor(deadline, obs.intervals);
-      if (!ev) continue;
-      const A = ev.A === null ? null : tasksOfDay(await contentAt(ev.A), day);
-      const B = ev.basis === 'exact' || ev.basis === 'window' ? null : tasksOfDay(await contentAt(ev.B), day);
-      const all = [...(A || []), ...(B || [])];
-      // Căn cứ none (mới bật, chưa có quan sát trước hạn): dùng giờ tick ticks.js đã ghi trước đó — tick sau hạn thì
-      // tính lúc hết hạn chưa tick (giữ "Hoàn thành trễ hạn" như trước khi có chốt sổ). Căn cứ gap không dùng: giờ ghi
-      // lúc Worker ngừng chạy không đáng tin.
-      const cur = ev.basis === 'none' ? tasksOfDay(streams, day) : null;
-      const seen = new Set();
-      const data = [];
-      const tally = { D: 0, K: 0, U: 0 };
-      let lateAt = 0;
-      for (const t of all) {
-        const key = cellKey(t);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const atA = A ? Boolean(findTask(A, t)?.done) : null;
-        const atB = B ? Boolean(findTask(B, t)?.done) : null;
-        let v = closeVerdict(atA, atB, ev.basis);
-        const seenAt = v === 'U' && cur ? Date.parse(findTask(cur, t)?.at || '') : 0;
-        if (seenAt > deadline) { v = 'K'; lateAt++; }
-        tally[v]++;
-        data.push([t.s, t.g, t.p, t.k, v, t.label]); // label: tên hiển thị lúc chốt (cho file Excel đối soát)
-      }
+      const before = prev && prev.at <= deadline ? unpack(prev.days[day]) : null;
+      const r = closeDay(deadline, before, prev?.at, tasksOfDay(streams, day));
       // Ghi 1 lần: đã có bản chốt thì giữ nguyên (INSERT OR IGNORE).
       await env.DB.prepare('INSERT OR IGNORE INTO kpi_close (sheet, day, closed_at, deadline, basis, rev_a, rev_b, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, day, at, new Date(deadline).toISOString(), ev.basis, ev.A, ev.B, JSON.stringify(data)).run();
-      logs.push([day, 'close', `Chốt sổ ${day} (căn cứ ${ev.basis}, phiên bản ${ev.A ?? '—'}${ev.B !== ev.A ? `/${ev.B}` : ''}): ${tally.D} đã tick, ${tally.K} chưa tick, ${tally.U} không xác định (tính đã tick)${lateAt ? `; ${lateAt} ô tính chưa tick vì giờ tick đã ghi sau hạn` : ''}`]);
+        .bind(id, day, at, new Date(deadline).toISOString(), r.basis, before ? prev.at : null, now, JSON.stringify(r.data)).run();
+      const read = before ? `đọc ${new Date(prev.at).toISOString()} / ${at}` : `đọc ${at}`;
+      logs.push([day, 'close', `Chốt sổ ${day} (căn cứ ${r.basis}, ${read}): ${r.tally.D} đã tick, ${r.tally.K} chưa tick, ${r.tally.U} không xác định (tính đã tick)${r.lateAt ? `; ${r.lateAt} ô tính chưa tick vì giờ tick đã ghi sau hạn` : ''}`]);
     }
+
+    // Lịch sử từng ô: các ô đổi trạng thái so với lượt trước (lượt đầu chỉ ghi mốc).
+    const changes = [];
+    if (prev) {
+      const before = obsMaps(prev).cells;
+      for (const [key, done] of Object.entries(obsMaps(obs).cells)) {
+        const b = before[key];
+        if (b === done || (b === undefined && !done)) continue;
+        changes.push([key.slice(0, 10), key.slice(11), done ? 'tick' : 'untick']);
+      }
+    }
+    if (changes.length) {
+      await env.DB.batch(changes.slice(0, 500).map(([day, cell, change]) => env.DB.prepare('INSERT INTO kpi_cell_log (sheet, day, cell, at, change, rev) VALUES (?, ?, ?, ?, ?, NULL)').bind(id, day, cell, at, change)));
+    }
+    // Lưu lượt đọc sau cùng: chốt lỗi giữa chừng thì lượt sau vẫn còn lượt đọc trước hạn để chốt lại.
+    await env.DB.prepare('INSERT INTO kpi_close_obs (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = ?1').bind(JSON.stringify(obs)).run();
   } catch (e) {
     logs.push(['', 'error', String(e?.message || e).slice(0, 300)]);
   }
@@ -305,6 +232,9 @@ export async function applyCloses(env, id, streams) {
   return streams;
 }
 
+/** rev_a / rev_b -> giờ đọc (ISO). Bản chốt cũ (trước 22/11/2026) lưu số phiên bản Google -> trả nguyên số. */
+export const readTime = (v) => (v == null ? null : v > 1e12 ? new Date(v).toISOString() : v);
+
 /** GET /api/kpi/audit: các bản chốt sổ + nhật ký (chỉ đọc). */
 export async function auditReport(env, id) {
   await ensureTables(env);
@@ -317,14 +247,13 @@ export async function auditReport(env, id) {
   try { o = obs ? JSON.parse(obs.data) : null; } catch { o = null; }
   return {
     sheet: id,
-    head: o?.head ?? null,
-    observations: (o?.intervals || []).slice(-30).map((iv) => ({ rev: iv.rev, from: new Date(iv.from).toISOString(), to: new Date(iv.to).toISOString() })),
+    lastRead: o?.at ? new Date(o.at).toISOString() : null,
     closes: closes.results.map((c) => {
       let data = [];
       try { data = JSON.parse(c.data); } catch { /* bỏ qua */ }
       const count = { D: 0, K: 0, U: 0 };
       for (const x of data) count[x[4]]++;
-      return { day: c.day, closedAt: c.closed_at, deadline: c.deadline, basis: c.basis, revA: c.rev_a, revB: c.rev_b, count, tasks: data.map(([s, g, p, k, v]) => ({ stream: s, group: g, person: p, kpi: k, atDeadline: v })) };
+      return { day: c.day, closedAt: c.closed_at, deadline: c.deadline, basis: c.basis, readBefore: readTime(c.rev_a), readAfter: readTime(c.rev_b), count, tasks: data.map(([s, g, p, k, v]) => ({ stream: s, group: g, person: p, kpi: k, atDeadline: v })) };
     }),
     log: logs.results,
   };
@@ -342,7 +271,7 @@ export async function activeConfirms(env, id) {
  * và xác nhận (nếu có). Hàm thuần, để test.
  * @param closes   [{ day, deadline, data: [[s,g,p,k,v]] }]
  * @param cellLog  [{ day, cell, at, change }]
- * @param obs      { cells: {"day|cell": 0/1}, labels: {"day|cell": [dòng tiền, nhóm, người, KPI]} }
+ * @param obs      obsMaps(lượt đọc gần nhất): { cells: {"day|cell": 0/1}, labels: {"day|cell": [dòng tiền, nhóm, người, KPI]} }
  * @param confirms Map "day|cell" -> xác nhận
  */
 export function reviewList(closes, cellLog, obs, confirms) {
@@ -377,7 +306,7 @@ export async function handleKpiReview(request, env, url, user) {
     let o = null;
     try { o = obs ? JSON.parse(obs.data) : null; } catch { o = null; }
     const list = closes.results.map((c) => { try { return { ...c, data: JSON.parse(c.data) }; } catch { return { ...c, data: [] }; } });
-    return json({ items: reviewList(list, cellLog.results, o, await activeConfirms(env, id)) });
+    return json({ items: reviewList(list, cellLog.results, obsMaps(o), await activeConfirms(env, id)) });
   }
   const body = await request.json().catch(() => ({}));
   const day = String(body.day || '');
