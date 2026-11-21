@@ -4,10 +4,18 @@ const days = DATES.map((d) => ({ date: d, label: `${d.slice(8)}/${d.slice(5, 7)}
 const key = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 let rowNo = 4;
-/** list: 5 phần tử [KPI, 'D' | 'K' | 'C' | 'S'] hoặc null (ngày không có KPI). */
+/**
+ * list: 5 phần tử [KPI, mã] hoặc null (ngày không có KPI). Mã: 'D' đã tick đúng hạn · 'L' tick trễ (09:15 sáng hôm sau) ·
+ * 'K' ghi Không đạt · 'C' / 'S' chưa tick (hôm nay -> Đang làm, ngày đã qua -> Không đạt, ngày chưa tới -> Sắp tới).
+ */
 function row(person, list, note = '') {
   const cells = {};
-  list.forEach((x, i) => { if (x) cells[DATES[i]] = { kpi: x[0], res: x[1] === 'D' || x[1] === 'K' ? x[1] : '' }; });
+  list.forEach((x, i) => {
+    if (!x) return;
+    const [kpi, code] = x;
+    if (code === 'L') cells[DATES[i]] = { kpi, res: 'D', at: new Date(Date.parse(`${DATES[i]}T02:15:00Z`) + 86400000).toISOString() };
+    else cells[DATES[i]] = { kpi, res: code === 'D' || code === 'K' ? code : '' };
+  });
   rowNo += 1;
   return { row: rowNo, stt: '', person, note, folder: '', folderText: '', cells };
 }
@@ -31,7 +39,7 @@ const streams = [
       row('Nguyễn Thị Kim Cúc', [null, ['Đào tạo sản phẩm cho 3 đại lý', 'D'], ['Ký 2 hợp đồng đại lý F1', 'K'], null, ['Báo cáo doanh số đại lý', 'S']], '1/2 đại lý xin lùi lịch ký sang 24/11'),
     ]),
     group('Data', 'Lê Thị Mai Tâm', 'Trợ lý Chủ tịch', [
-      row('Nguyễn Trần Hải Nam', [['Làm sạch 500 data khách cũ', 'K'], null, null, ['Cập nhật CRM sau cuộc gọi', 'S'], null], 'Chờ IT xuất file khách hàng từ CRM'),
+      row('Nguyễn Trần Hải Nam', [['Làm sạch 500 data khách cũ', 'L'], null, null, ['Cập nhật CRM sau cuộc gọi', 'S'], null], 'Chờ IT xuất file khách hàng từ CRM'),
       row('Trần Thị Xuân Thi', [null, ['Phân loại 300 data nóng', 'D'], ['Bàn giao 200 data cho Sales', 'C'], null, null]),
       row('Lê Thị Mai Tâm', [null, null, null, null, ['Báo cáo tỷ lệ chuyển đổi', 'S']]),
     ]),
@@ -39,7 +47,7 @@ const streams = [
       row('Võ Đào Huy Hoàng', [['Chọn app gửi tin hàng loạt', 'D'], ['Gửi thử 1.000 tin', 'D'], ['Gửi 5.000 tin chiến dịch', 'D'], ['Đo tỷ lệ phản hồi', 'S'], ['Tối ưu nội dung lần 2', 'S']]),
     ]),
     group('Hồ sơ, giấy tờ khác', 'Trần Ngọc Vy', '', [
-      row('Trần Ngọc Vy', [['Rà soát hồ sơ 20 căn', 'K'], ['Bổ sung 12 bộ hồ sơ thiếu', 'D'], ['Hoàn thiện hồ sơ ký HĐMB', 'D'], ['Bàn giao hồ sơ cho Pháp lý', 'S'], ['Lưu trữ hồ sơ điện tử', 'S']], 'Còn thiếu 3 bộ hồ sơ gốc'),
+      row('Trần Ngọc Vy', [['Rà soát hồ sơ 20 căn', 'L'], ['Bổ sung 12 bộ hồ sơ thiếu', 'D'], ['Hoàn thiện hồ sơ ký HĐMB', 'D'], ['Bàn giao hồ sơ cho Pháp lý', 'S'], ['Lưu trữ hồ sơ điện tử', 'S']], 'Còn thiếu 3 bộ hồ sơ gốc'),
     ]),
     group('Xử lý pháp lý Liên Chiểu, Bồng Sơn, I-Home sổ hồng', 'Ngô Thị Thu Thủy', '', [
       row('Ngô Thị Thu Thủy', [['Nộp hồ sơ sổ hồng I-Home đợt 1', 'D'], ['Làm việc Sở TN&MT về Bồng Sơn', 'K'], ['Nhận kết quả thẩm định Liên Chiểu', 'C'], ['Nhận sổ hồng I-Home đợt 1', 'S'], ['Báo cáo tiến độ pháp lý', 'S']], 'Sở TN&MT hẹn trả lời ngày 24/11'),
@@ -53,7 +61,7 @@ const streams = [
       row('Lê Công Sum', [['Xin phán quyết vụ Delta', 'K'], ['Lên lịch làm việc với THA', 'D'], ['Chốt lịch làm việc chung với Delta', 'C'], ['Họp với Delta', 'S'], ['Báo cáo phương án', 'S']]),
     ]),
     group('Hồ sơ tín dụng', 'Nguyễn Thị Mai Thu', 'Giám đốc Ban Kế toán 1', [
-      row('Huỳnh Ngọc Nhật Tài', [['Soát xét hồ sơ SS1 và N20', 'K'], ['Bổ sung báo cáo tài chính', 'K'], ['Hoàn thiện hồ sơ trình HDBank', 'D'], ['Gửi hồ sơ bổ sung', 'S'], ['Nhận phản hồi ngân hàng', 'S']]),
+      row('Huỳnh Ngọc Nhật Tài', [['Soát xét hồ sơ SS1 và N20', 'L'], ['Bổ sung báo cáo tài chính', 'K'], ['Hoàn thiện hồ sơ trình HDBank', 'D'], ['Gửi hồ sơ bổ sung', 'S'], ['Nhận phản hồi ngân hàng', 'S']]),
     ]),
   ]),
   stream('Nợ khó đòi', 'DT03', 'Mạc Thị Thúy Hiền', [
@@ -81,7 +89,7 @@ const streams = [
       row('Trương Thị Thanh Hiền', [['Gửi thông báo nợ 25 khách', 'D'], ['Thu 600 triệu nợ quá hạn', 'K'], ['Thu 1,2 tỷ nợ quá hạn', 'K'], ['Gặp 5 khách nợ lớn', 'S'], ['Báo cáo nợ còn lại', 'S']], 'Khách hẹn chuyển khoản ngày 25/11'),
     ]),
     group('Đối soát công nợ', 'Hoàng Thị Hà Thu', 'Trưởng nhóm thu hồi', [
-      row('Nguyễn Thị Lan', [['Đối soát 50 hợp đồng', 'K'], ['Đối soát 40 hợp đồng', 'K'], ['Đối soát 30 hợp đồng', 'D'], ['Chốt danh sách nợ', 'S'], ['Gửi xác nhận công nợ', 'S']]),
+      row('Nguyễn Thị Lan', [['Đối soát 50 hợp đồng', 'L'], ['Đối soát 40 hợp đồng', 'K'], ['Đối soát 30 hợp đồng', 'D'], ['Chốt danh sách nợ', 'S'], ['Gửi xác nhận công nợ', 'S']]),
     ]),
   ]),
 ];

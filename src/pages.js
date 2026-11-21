@@ -78,22 +78,39 @@ export function changePasswordPage(user, { error = "", info = "", forced = false
   );
 }
 
-// Chèn vào dashboard lúc phục vụ (HTMLRewriter) để không mất khi ai đó ghi đè public/index.html.
-// Màn hình hẹp (điện thoại): nút lịch chỉ còn 📅, ô người dùng ẩn tên, để hai nút không đè nhau.
-const STYLE = `<style>
-.wr-pill{position:fixed;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#f3f6fa;font:500 13px 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;text-decoration:none;white-space:nowrap}
-.wr-pill a,a.wr-pill{color:#f3f6fa;text-decoration:none;font-weight:600}
-.wr-pill a:hover,a.wr-pill:hover{color:#c8ff4d}
-a.wr-pill:hover{border-color:#c8ff4d}
-.wr-pill .wr-dim{color:#8994a6;font-weight:500}
-.wr-cal{right:16px}
-.wr-user{left:16px}
-@media (max-width:600px){.wr-pill{padding:9px 12px;gap:6px}.wr-cal .wr-txt,.wr-user .wr-name{display:none}}
+// Thanh điều hướng chung của 4 trang chính (và trang Quản trị), chèn vào đầu <body> lúc phục vụ (HTMLRewriter, src/index.js)
+// để không phải sửa từng trang và không mất khi ai đó ghi đè file HTML. Style Night Ops (docs/STYLE_GUIDE.md), màu ghi
+// thẳng vì mỗi trang đặt tên biến màu khác nhau. Màn hình TV (/kpi ?tv=1, /lich-truc chế độ TV) ẩn thanh này.
+export const NAV_PAGES = [
+  ["/", "Dòng tiền"], // màn hình War Room của Thành Anh (app React FE/)
+  ["/kpi", "KPI & kết quả"],
+  ["/lich-truc", "Lịch trực 24/7"],
+  ["/lich", "Hẹn lịch BOD"],
+];
+
+const NAV_STYLE = `<style>
+.wr-nav{position:relative;z-index:9000;display:flex;align-items:stretch;gap:2px;height:44px;margin:0;padding:0 16px;box-sizing:border-box;background:#0e1218;border-bottom:1px solid #1c232e;color:#b6c0ce;font:500 13px/1.2 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;letter-spacing:0;text-transform:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-font-smoothing:antialiased}
+.wr-nav::-webkit-scrollbar{display:none}
+.wr-nav a{text-decoration:none}
+.wr-brand{display:flex;align-items:center;gap:8px;margin-right:12px;color:#f3f6fa;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.wr-brand i{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:#c8ff4d;color:#0a0d12;font-size:10.5px;font-style:normal;font-weight:800;letter-spacing:0}
+.wr-link{display:flex;align-items:center;padding:0 12px;border-bottom:2px solid transparent;color:#b6c0ce;white-space:nowrap}
+.wr-link:hover{color:#f3f6fa}
+.wr-link[aria-current=page]{border-bottom-color:#c8ff4d;color:#f3f6fa;font-weight:600}
+.wr-sp{flex:1 0 12px}
+.wr-user{display:flex;align-items:center;gap:12px;color:#8994a6;font-size:12.5px;white-space:nowrap}
+.wr-user b{color:#f3f6fa;font-weight:600}
+.wr-user a{color:#b6c0ce}
+.wr-user a:hover,.wr-user a[aria-current=page]{color:#c8ff4d}
+.wr-nav~#root{height:calc(100% - 44px)}.wr-nav~#root .wall{height:calc(100vh - 44px)}
+:root[data-tv] .wr-nav,:root[data-theme=tv] .wr-nav{display:none}
+@media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name{display:none}}
 </style>`;
 
-export const CHAIRMAN_LINK = `${STYLE}<a href="/lich" class="wr-pill wr-cal" title="Hẹn lịch BOD">📅<span class="wr-txt"> Hẹn lịch BOD</span></a>`;
-
-export function userChip(user) {
-  const links = user.role === "admin" ? `<a href="/admin">Quản trị</a>` : `<a href="/doi-mat-khau" class="wr-dim">Đổi mật khẩu</a>`;
-  return `<div class="wr-pill wr-user">👤<span class="wr-name"> ${esc(user.fullName)}</span> · ${links} · <a href="/logout" class="wr-dim">Đăng xuất</a></div>`;
+/** Thanh điều hướng cho trang `path` (đánh dấu trang đang mở), kèm tên người dùng, Quản trị / Đổi mật khẩu, Đăng xuất. */
+export function navBar(user, path) {
+  const cur = (href) => (href === path ? ' aria-current="page"' : "");
+  const links = NAV_PAGES.map(([href, label]) => `<a class="wr-link" href="${href}"${cur(href)}>${label}</a>`).join("");
+  const account = user.role === "admin" ? `<a href="/admin"${cur("/admin")}>Quản trị</a>` : `<a href="/doi-mat-khau">Đổi mật khẩu</a>`;
+  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>`;
 }

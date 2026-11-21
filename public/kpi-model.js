@@ -1,27 +1,43 @@
 // Mô hình dữ liệu trang "KPI & kết quả" (/kpi). Không đụng tới DOM: dùng chung cho trình duyệt và test Node.
 //
-// Mỗi ô (1 người, 1 ngày) có KPI và kết quả trên sheet: res 'D' = Đạt, 'K' = Không đạt, '' = chưa nhập, '?' = chữ khác.
-// Trạng thái hiển thị:
-//   D Đạt · K Không đạt · C Chưa cập nhật (ô kết quả trống, ngày đã qua hoặc hôm nay) · S Sắp tới (ngày chưa tới).
-// Tồn đọng = Không đạt + Chưa cập nhật tính đến ngày đang xem.
+// Mỗi ô (1 người, 1 ngày) có KPI và kết quả trên sheet: res 'D' = Đạt (đã tick), 'K' = ghi Không đạt, '' = chưa tick /
+// chưa nhập, '?' = chữ khác. Ô Đạt có thể kèm `at` = lúc Worker thấy ô được tick (src/kpi/ticks.js).
+// Hạn của 1 KPI là hết ngày của nó (giờ Việt Nam). Trạng thái hiển thị:
+//   D Đạt                  đã tick trong ngày của KPI (hoặc không biết giờ tick)
+//   L Hoàn thành trễ hạn   đã tick, nhưng sau khi hết ngày của KPI
+//   K Không đạt            ghi Không đạt, hoặc đã qua ngày mà chưa tick (tick sau đó -> Hoàn thành trễ hạn)
+//   N Đang làm             KPI của hôm nay, chưa tick
+//   S Sắp tới              ngày chưa tới
+// Đã hoàn thành = Đạt + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
 
-export const STATUS_LABEL = { D: 'Đạt', K: 'Không đạt', C: 'Chưa cập nhật', S: 'Sắp tới' };
+export const STATUS_LABEL = { D: 'Đạt', L: 'Hoàn thành trễ hạn', K: 'Không đạt', N: 'Đang làm', S: 'Sắp tới' };
+export const STATUSES = ['D', 'L', 'K', 'N', 'S'];
+/** Tick trong vòng 10 phút sau nửa đêm vẫn tính đúng hạn (Worker đọc sheet mỗi phút, có thể thấy tick trễ một chút). */
+export const LATE_GRACE_MS = 10 * 60 * 1000;
 const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
 /** "2026-11-23" -> "T2". */
 export const weekday = (date) => WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()] || '';
 
+/** Ô được tick lúc `at` (ISO) có trễ hạn không: sau khi hết ngày `date` của KPI, theo giờ Việt Nam. */
+export function isLateTick(date, at) {
+  const t = Date.parse(at || '');
+  if (!t) return false;
+  return new Date(t - LATE_GRACE_MS + 7 * 3600 * 1000).toISOString().slice(0, 10) > date;
+}
+
 /** Trạng thái 1 ô KPI; null = ngày đó không có KPI. */
 export function statusOf(cell, date, today) {
   if (!cell || (!cell.kpi && !cell.res)) return null;
-  if (cell.res === 'D') return 'D';
+  if (cell.res === 'D') return isLateTick(date, cell.at) ? 'L' : 'D';
   if (cell.res === 'K') return 'K';
-  return date > today ? 'S' : 'C';
+  return date > today ? 'S' : date === today ? 'N' : 'K';
 }
 
 /**
  * Dữ liệu /api/kpi -> { today, days, streams, items }.
- * Mỗi item là 1 KPI của 1 người trong 1 ngày: { id, date, label, kpi, person, status, note, folder, rowKey, group, groupKey, stream, streamKey }.
+ * Mỗi item là 1 KPI của 1 người trong 1 ngày:
+ * { id, date, label, kpi, person, status, doneAt, note, folder, rowKey, group, groupKey, stream, streamKey }.
  */
 export function buildModel(data) {
   const today = data.today;
@@ -44,6 +60,7 @@ export function buildModel(data) {
             kpi: cell.kpi || 'Chưa ghi nội dung KPI',
             person: r.person || g.pic?.name || '',
             status,
+            doneAt: cell.res === 'D' ? cell.at || '' : '',
             unknown: cell.res === '?',
             note: r.note || '',
             folder: r.folder || '',
@@ -66,17 +83,21 @@ export function buildModel(data) {
 
 /** Đếm theo trạng thái. */
 export function count(items) {
-  const c = { D: 0, K: 0, C: 0, S: 0, total: 0 };
+  const c = { D: 0, L: 0, K: 0, N: 0, S: 0, total: 0 };
   for (const it of items) { c[it.status]++; c.total++; }
   return c;
 }
+
+/** Số KPI đã hoàn thành của 1 kết quả count(): Đạt + Hoàn thành trễ hạn. */
+export const doneOf = (c) => c.D + c.L;
+export const isDone = (it) => it.status === 'D' || it.status === 'L';
 
 /** Phần trăm làm tròn; null khi mẫu số 0. */
 export const pct = (n, d) => (d ? Math.round((n / d) * 100) : null);
 
 export const onDate = (items, date) => items.filter((it) => it.date === date);
 export const upTo = (items, date) => items.filter((it) => it.date <= date);
-export const isOutstanding = (it) => it.status === 'K' || it.status === 'C';
+export const isOutstanding = (it) => it.status === 'K';
 
 /** Mỗi dòng (1 người) chỉ hiện ghi chú / vướng mắc ở KPI tồn đọng gần nhất tính đến ngày date. */
 export function noteTargets(items, date) {
@@ -96,4 +117,36 @@ export const defaultDay = (model) => (model.days.some((d) => d.date === model.to
 export function refDate(model) {
   const last = model.days[model.days.length - 1]?.date;
   return last && model.today > last ? last : model.today;
+}
+
+/**
+ * Thành viên của 1 nhóm và số KPI của từng người tính đến ngày `cut` (YYYY-MM-DD):
+ * [{ name, isPic, total, done, late, backlog, doing }] — PIC nhóm đứng đầu, rồi theo thứ tự trên sheet.
+ *   total = số KPI đến ngày cut · done = đã hoàn thành (gồm cả trễ hạn) · late = hoàn thành trễ hạn ·
+ *   backlog = còn tồn đọng (đã qua ngày, chưa hoàn thành) · doing = KPI hôm nay chưa tick.
+ * Người có tên trong nhóm (dòng trên sheet, PIC, thành viên) mà chưa có KPI vẫn được liệt kê với total = 0.
+ */
+export function memberStats(group, cut) {
+  const map = new Map();
+  const get = (name) => {
+    const n = String(name || '').trim();
+    if (!n) return null;
+    const k = n.toLocaleLowerCase('vi');
+    if (!map.has(k)) map.set(k, { name: n, isPic: false, total: 0, done: 0, late: 0, backlog: 0, doing: 0 });
+    return map.get(k);
+  };
+  const pic = get(group.pic?.name);
+  if (pic) pic.isPic = true;
+  for (const r of group.rows || []) get(r.person);
+  for (const n of group.members || []) get(n);
+  for (const it of group.items || []) {
+    if (it.date > cut) continue;
+    const m = get(it.person) || get('Chưa ghi người thực hiện');
+    m.total++;
+    if (isDone(it)) m.done++;
+    if (it.status === 'L') m.late++;
+    if (it.status === 'K') m.backlog++;
+    if (it.status === 'N') m.doing++;
+  }
+  return [...map.values()];
 }

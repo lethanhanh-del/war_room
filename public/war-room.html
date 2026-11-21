@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WAR ROOM – 10 DÒNG TIỀN | Real-Time Dashboard (Standalone)</title>
+  <title>Lịch trực 24/7 · War Room</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c8ff4d'/%3E%3Ctext x='16' y='21' font-family='Segoe UI,Arial,sans-serif' font-size='12' font-weight='800' fill='%230a0d12' text-anchor='middle'%3EWR%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -299,12 +299,10 @@
       </article>
     </section>
 
-    <!-- Cùng một hàng với thanh trang của dashboard dòng tiền (public/index.html) -->
-    <nav class="tabs-bar">
-      <a class="tab-btn" href="/">Dòng tiền</a>
-      <a class="tab-btn" href="/kpi">KPI & kết quả</a>
+    <!-- Trang /lich-truc chỉ còn tab Lịch trực; chuyển trang bằng thanh điều hướng chung (Worker chèn vào đầu trang).
+         Giữ nút tab (ẩn) cho script: số đếm #tcShifts, chuyển tab theo #hash. -->
+    <nav class="tabs-bar hidden">
       <button class="tab-btn active" data-tab="shifts">Lịch trực 24/7 (2 Ca) <span id="tcShifts" class="tab-cnt">0</span></button>
-      <a class="tab-btn" href="/lich">Hẹn lịch BOD</a>
     </nav>
 
     <!-- Tổng quan, Tiến độ từng nhân sự, 20 Vị trí chủ chốt, Tài liệu Drive: đã bỏ khỏi thanh tab, giữ phần tử (luôn ẩn)

@@ -2,7 +2,7 @@
   "name": "ctg-warroom",
   "version": "1.0.0",
   "private": true,
-  "description": "Dashboard War Room – Tiến độ dòng tiền (CT Worksuite) trên Cloudflare Workers",
+  "description": "War Room CT Homes trên Cloudflare Workers: Dòng tiền, KPI & kết quả, Lịch trực, Hẹn lịch BOD",
   "type": "module",
   "engines": {
     "node": ">=22.9"
@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "wrangler dev --compatibility-date=2026-11-11",
     "deploy": "wrangler deploy",
+    "build:fe": "FORCE_FE_BUILD=1 node scripts/build-fe.mjs",
     "test": "node --test test/*.test.js",
     "setup-sheet": "node --env-file-if-exists=.env scripts/setup-sheet.js"
   },
