@@ -83,7 +83,7 @@ async function login(request, env, adminHash) {
   const username = String(form.get("username") || "").trim().toLowerCase();
   const password = String(form.get("password") || "");
 
-  if (await isLocked(env, username)) {
+  if (await isLocked(env, request, username)) {
     await log(env, request, username, "login_locked");
     return loginPage("Tài khoản tạm khóa 15 phút vì nhập sai quá nhiều lần.", username);
   }

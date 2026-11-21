@@ -54,10 +54,15 @@ export function adminVersion(adminHash) {
   return adminHash.slice(0, 16);
 }
 
-export async function isLocked(env, username) {
+// Khóa theo cặp (tên đăng nhập, IP): người cố tình nhập sai chỉ tự khóa máy mình,
+// không khóa được chủ tài khoản (kể cả admin) đang đăng nhập từ nơi khác.
+export async function isLocked(env, request, username) {
   const since = new Date(Date.now() - LOCK_MINUTES * 60e3).toISOString();
-  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE username = ? AND action = 'login_failed' AND ts > ?")
-    .bind(username, since)
+  const ip = request.headers.get("CF-Connecting-IP") || "";
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM audit_log WHERE username = ? AND ip = ? AND action = 'login_failed' AND ts > ?"
+  )
+    .bind(username, ip, since)
     .first();
   return row.n >= LOCK_FAILS;
 }
