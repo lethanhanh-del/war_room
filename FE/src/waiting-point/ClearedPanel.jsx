@@ -1,5 +1,6 @@
 import { formatClock, shortStreamName, WP_CONFIG } from './sheetService.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
+import { IconCheckCircle, IconChevronLeft, IconChevronRight, IconHistory, IconX } from './Icons.jsx';
 
 export default function ClearedPanel({ items, page, onPageChange, onClose }) {
   const pageSize = WP_CONFIG.CLEARED_PAGE_SIZE;
@@ -11,47 +12,53 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
 
   return (
     <section className="panel detail wp-cleared-panel">
-      <header className="dt-head">
+      <header className="dt-head wp-cl-head">
         <div className="dt-title">
-          <span className="dt-kicker">Lịch sử hôm nay</span>
+          <span className="dt-kicker">Lịch sử xử lý hôm nay</span>
           <h2>
             Vừa hoàn thành
-            <span className="dt-scope"> · {items.length} vấn đề đã xử lý</span>
+            <span className="dt-scope"> · {items.length} yêu cầu đã đóng</span>
           </h2>
         </div>
 
         {totalPages > 1 && (
-          <div className="wp-pager">
+          <div className="wp-pager" aria-label="Phân trang lịch sử">
             <button
               type="button"
-              className="chip"
+              className="wp-ctrl-btn"
               disabled={safePage <= 0}
               onClick={() => onPageChange(Math.max(0, safePage - 1))}
             >
-              ‹ Trước
+              <IconChevronLeft className="wp-ico-sm" />
+              <span>Trước</span>
             </button>
             <span className="wp-pager-num">
-              {safePage + 1} / {totalPages}
+              Trang {safePage + 1} / {totalPages}
             </span>
             <button
               type="button"
-              className="chip"
+              className="wp-ctrl-btn"
               disabled={safePage >= totalPages - 1}
               onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
             >
-              Sau ›
+              <span>Sau</span>
+              <IconChevronRight className="wp-ico-sm" />
             </button>
           </div>
         )}
 
-        <button type="button" className="btn-close" onClick={onClose}>
-          ✕ Về bảng chờ
+        <button type="button" className="wp-ctrl-btn wp-close-btn" onClick={onClose}>
+          <IconX className="wp-ico-sm" />
+          <span>Về bảng chờ</span>
         </button>
       </header>
 
       <div className="dt-body" ref={scrollRef}>
         {!items.length ? (
-          <p className="fl-empty">Chưa có vấn đề nào hoàn thành trong hôm nay</p>
+          <div className="wp-cl-empty">
+            <IconHistory className="wp-cl-empty-ico" />
+            <p>Chưa có yêu cầu nào được xử lý hoàn tất trong hôm nay</p>
+          </div>
         ) : (
           <table className="grid dgrid wp-cleared-grid">
             <thead>
@@ -88,8 +95,8 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
                     {rec.issue}
                   </td>
                   <td className="wp-c-spent">
-                    <span className="tag st-done">
-                      <i>✔</i>
+                    <span className="wp-spent-tag st-done">
+                      <IconCheckCircle className="wp-ico-xs" />
                       {formatClock(rec.spentSec || 5)}
                     </span>
                   </td>

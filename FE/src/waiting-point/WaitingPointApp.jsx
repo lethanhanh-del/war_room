@@ -13,6 +13,16 @@ import {
   resolveDeadlineFromSpec,
 } from './sheetService.js';
 import { isAudioUnlocked, playBell, unlockAudio } from './sound.js';
+import {
+  IconAlertTriangle,
+  IconBell,
+  IconBellOff,
+  IconCheckCircle,
+  IconClock,
+  IconHistory,
+  IconUsers,
+  IconWifiOff,
+} from './Icons.jsx';
 import PersonPanel from './PersonPanel.jsx';
 import ClearedPanel from './ClearedPanel.jsx';
 import './waitingPoint.css';
@@ -66,25 +76,6 @@ function saveDailyHistory(list) {
   } catch {
     // ignore
   }
-}
-
-function BellIcon({ enabled }) {
-  if (enabled) {
-    return (
-      <svg className="wp-bell-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-        <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="wp-bell-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5" />
-      <path d="M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7" />
-      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-      <path d="m2 2 20 20" />
-    </svg>
-  );
 }
 
 export default function WaitingPointApp() {
@@ -294,7 +285,6 @@ export default function WaitingPointApp() {
       firstFetchDoneRef.current = true;
       setLiveItems([...nextMap.values()]);
 
-      // Xử lý đơn vừa được xóa/hoàn thành trên Sheet
       let clearedPayload = [];
       let latestHistory = recentClearedRef.current;
 
@@ -319,7 +309,7 @@ export default function WaitingPointApp() {
           };
           clearedPayload.push(record);
           const byWho = item.supporter ? ` · ${item.supporter}` : '';
-          pushToast(`ĐÃ XONG (${formatClock(spentSec)})`, `${item.group}${byWho} — ${item.issue}`, 'clear');
+          pushToast(`ĐÃ HOÀN THÀNH (${formatClock(spentSec)})`, `${item.group}${byWho} — ${item.issue}`, 'clear');
         }
 
         latestHistory = [...clearedPayload, ...recentClearedRef.current].slice(0, 100);
@@ -336,20 +326,19 @@ export default function WaitingPointApp() {
         triggerBell('clear');
       }
 
-      // Rung chuông + thông báo khi có task mới hoặc gán người hỗ trợ
       if (newEntries.length > 0) {
         triggerBell('new');
         const first = newEntries[0];
         const who = first.supporter || 'Chưa phân công';
         pushToast(
-          newEntries.length === 1 ? `TASK MỚI · ${who}` : `${newEntries.length} TASK MỚI LÊN SHEET`,
+          newEntries.length === 1 ? `YÊU CẦU MỚI · ${who}` : `${newEntries.length} YÊU CẦU MỚI`,
           `${first.group} — ${first.issue}`,
           'new',
         );
       } else if (newlyAssigned.length > 0) {
         triggerBell('assigned');
         const first = newlyAssigned[0];
-        pushToast(`ĐÃ GÁN HỖ TRỢ · ${first.supporter}`, `${first.group} — ${first.issue}`, 'assigned');
+        pushToast(`ĐÃ PHÂN CÔNG · ${first.supporter}`, `${first.group} — ${first.issue}`, 'assigned');
       }
 
       if (hasTimerDelta || newEntries.length > 0 || removedEntries.length > 0 || Object.keys(sharedTimers).length === 0) {
@@ -367,7 +356,6 @@ export default function WaitingPointApp() {
     }
   }, [applySharedState, fetchSharedState, pushSharedDelta, pushToast, triggerBell]);
 
-  // Kết nối BroadcastChannel + poll Sheet mỗi 3 giây + nhịp đồng hồ mỗi 1 giây
   useEffect(() => {
     if (typeof BroadcastChannel !== 'undefined') {
       try {
@@ -405,7 +393,6 @@ export default function WaitingPointApp() {
     };
   }, [applySharedState, syncFromSheet]);
 
-  // Tính toán danh sách gom theo từng Người hỗ trợ (gấp nhất xếp đầu)
   const { people, activeCount, burnCount } = useMemo(() => {
     const visible = [];
     const liveIds = new Set();
@@ -430,7 +417,6 @@ export default function WaitingPointApp() {
     return { people: grouped, activeCount: active.length, burnCount: burning };
   }, [liveItems, clearingItems, nowMs]);
 
-  // Rung chuông báo động khi task mới chạm mốc quá hạn (+ nhắc lại mỗi 60s)
   useEffect(() => {
     if (!liveItems.length) return;
     let newlyBurned = null;
@@ -451,7 +437,7 @@ export default function WaitingPointApp() {
       lastBurnReminderRef.current = nowMs;
       triggerBell('burn');
       const who = newlyBurned.supporter || 'Chưa phân công';
-      pushToast(`QUÁ HẠN · ${who}`, `${newlyBurned.group} — ${newlyBurned.issue}`, 'burn');
+      pushToast(`QUÁ HẠN XỬ LÝ · ${who}`, `${newlyBurned.group} — ${newlyBurned.issue}`, 'burn');
     } else if (anyBurning && nowMs - lastBurnReminderRef.current >= WP_CONFIG.BURN_REMINDER_MS) {
       lastBurnReminderRef.current = nowMs;
       triggerBell('burn');
@@ -488,18 +474,19 @@ export default function WaitingPointApp() {
   const gridScrollRef = useAutoScroll([people.length, rowsCls]);
 
   const bellLabel = !soundEnabled ? 'Chuông: Tắt' : !audioReady ? 'Bấm bật chuông' : 'Chuông: Bật';
-  const bellChipCls = !soundEnabled
-    ? 'chip ghost wp-bell-btn'
+  const bellBtnCls = !soundEnabled
+    ? 'wp-ctrl-btn is-muted'
     : bellRinging
-      ? 'chip wp-bell-btn is-ringing'
+      ? 'wp-ctrl-btn is-ringing'
       : !audioReady
-        ? 'chip today wp-bell-btn'
-        : 'chip wp-bell-btn';
+        ? 'wp-ctrl-btn is-attention'
+        : 'wp-ctrl-btn';
 
   return (
     <main className="wall wp-wall">
       <header className="panel wp-head">
         <div className="wp-brand">
+          <span className="wp-brand-accent" aria-hidden="true" />
           <h1>
             WAR ROOM <span>WAITING POINT</span>
           </h1>
@@ -507,46 +494,49 @@ export default function WaitingPointApp() {
 
         <div className="wp-head-right">
           {!isOnline && (
-            <span className="tag st-late">
-              <i>⚠</i>Mất kết nối Sheet
+            <span className="wp-alert-pill st-late">
+              <IconWifiOff className="wp-ico-sm" />
+              <span>Mất kết nối Sheet</span>
             </span>
           )}
 
           {burnCount > 0 && (
-            <div className="wp-stat st-late" title="Số vấn đề đang quá thời gian xử lý">
+            <div className="wp-alert-pill st-late" title="Số yêu cầu đang quá thời gian xử lý">
+              <IconAlertTriangle className="wp-ico-sm" />
               <span>Quá hạn</span>
               <b>{burnCount}</b>
             </div>
           )}
 
-          <div className={`wp-stat st-in_progress ${activeCount === 0 ? 'zero' : ''}`}>
-            <span>Đang chờ</span>
-            <b>
-              {people.length} người · {activeCount} việc
-            </b>
+          <div className={`wp-summary-pill ${activeCount === 0 ? 'is-zero' : ''}`}>
+            <IconUsers className="wp-ico-sm" />
+            <span className="wp-summary-num">
+              <b>{people.length}</b> người · <b>{activeCount}</b> việc
+            </span>
           </div>
 
-          <button type="button" className={bellChipCls} onClick={handleToggleSound} title="Bật / Tắt tiếng chuông báo">
-            <BellIcon enabled={soundEnabled} />
+          <button type="button" className={bellBtnCls} onClick={handleToggleSound} title="Bật / Tắt tiếng chuông báo">
+            {soundEnabled ? <IconBell className="wp-ico-sm wp-bell-svg" /> : <IconBellOff className="wp-ico-sm" />}
             <span>{bellLabel}</span>
           </button>
 
           <button
             type="button"
-            className={`chip ${showCleared ? 'on' : ''}`}
+            className={`wp-ctrl-btn ${showCleared ? 'is-active' : ''}`}
             onClick={() => {
               setShowCleared((v) => !v);
               setClearedPage(0);
             }}
-            title="Xem danh sách vấn đề vừa hoàn thành trong ngày"
+            title="Xem danh sách yêu cầu vừa hoàn thành trong ngày"
           >
-            <i className={`dot ${recentCleared.length > 0 ? 'st-done' : 'st-none'}`} />
+            <IconHistory className="wp-ico-sm" />
             <span>Đã xong</span>
-            <b className={`wp-chip-num ${recentCleared.length === 0 ? 'zero' : ''}`}>{recentCleared.length}</b>
+            <b className={`wp-btn-badge ${recentCleared.length === 0 ? 'zero' : ''}`}>{recentCleared.length}</b>
           </button>
 
-          <div className="wp-clock" aria-label="Giờ hiện tại">
-            {fmtTime(new Date(nowMs))}
+          <div className="wp-clock-box" aria-label="Giờ hiện tại">
+            <IconClock className="wp-ico-sm wp-clock-ico" />
+            <span>{fmtTime(new Date(nowMs))}</span>
           </div>
         </div>
       </header>
@@ -561,17 +551,37 @@ export default function WaitingPointApp() {
           />
         ) : people.length === 0 ? (
           <section className="panel wp-empty-panel">
-            <div className="wp-empty-badge st-done" aria-hidden="true">
-              ✔
+            <div className="wp-empty-ring st-done" aria-hidden="true">
+              <IconCheckCircle className="wp-empty-ico" />
             </div>
-            <h2>Bếp War Room đang trống sạch!</h2>
+            <h2>Hiện không có điểm chờ cần hỗ trợ</h2>
+            <div className="wp-empty-bar">
+              <div className="wp-empty-live">
+                <span className={`wp-live-dot ${isOnline ? 'st-done' : 'st-late'}`} aria-hidden="true" />
+                <span>{isOnline ? 'Đang đồng bộ trực tiếp với bảng điều phối' : 'Đang thử kết nối lại nguồn dữ liệu…'}</span>
+              </div>
+              {recentCleared.length > 0 && (
+                <button
+                  type="button"
+                  className="wp-empty-history-btn"
+                  onClick={() => {
+                    setShowCleared(true);
+                    setClearedPage(0);
+                  }}
+                >
+                  <IconHistory className="wp-ico-xs" />
+                  <span>
+                    Đã hoàn thành hôm nay: <b>{recentCleared.length}</b>
+                  </span>
+                </button>
+              )}
+            </div>
           </section>
         ) : (
           <div className={`wp-people-grid ${gridCls} ${rowsCls}`} ref={gridScrollRef}>
-            {people.map((person, i) => (
+            {people.map((person) => (
               <PersonPanel
                 key={person.key}
-                index={i + 1}
                 person={person}
                 nowMs={nowMs}
                 taskLimit={taskLimit}
@@ -596,10 +606,19 @@ export default function WaitingPointApp() {
                   : t.kind === 'assigned'
                     ? 'st-in_progress'
                     : 'st-done';
-            const icon = t.kind === 'burn' ? '⚠' : t.kind === 'new' ? '!' : t.kind === 'assigned' ? '✓' : '★';
             return (
               <div key={t.id} className={`wp-toast ${stCls}`}>
-                <span className="wp-toast-ico">{icon}</span>
+                <span className="wp-toast-ico">
+                  {t.kind === 'burn' ? (
+                    <IconAlertTriangle className="wp-ico-sm" />
+                  ) : t.kind === 'new' ? (
+                    <IconBell className="wp-ico-sm" />
+                  ) : t.kind === 'assigned' ? (
+                    <IconUsers className="wp-ico-sm" />
+                  ) : (
+                    <IconCheckCircle className="wp-ico-sm" />
+                  )}
+                </span>
                 <div className="wp-toast-body">
                   <b>{t.title}</b>
                   <span>{t.body}</span>
