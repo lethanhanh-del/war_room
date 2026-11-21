@@ -45,6 +45,8 @@ test('isKpiTab / streamNameOf / personName / resultCode', () => {
   assert.equal(resultCode(''), '');
   assert.equal(resultCode('   '), '');
   assert.equal(resultCode('50%'), '?');
+  assert.equal(resultCode('TRUE'), 'D'); // ô tick đã tick
+  assert.equal(resultCode('FALSE'), ''); // ô tick chưa tick
 });
 
 test('parseKpiTab: ngày từ dòng tiêu đề, mỗi dòng 1 người, gộp theo Nhóm, dòng mục La Mã, PIC dòng tiền phía trên bảng', () => {

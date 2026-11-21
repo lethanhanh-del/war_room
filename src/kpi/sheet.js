@@ -41,10 +41,12 @@ export function personName(s) {
 /**
  * Ô Kết quả -> 'D' (Đạt) | 'K' (Không đạt) | '' (trống) | '?' (chữ khác).
  * Mẫu chỉ ghi Đạt / Không đạt; nhận thêm cách ghi quen tay: Hoàn thành, Xong, OK = Đạt; Chưa / Không hoàn thành = Không đạt.
+ * Ô tick (checkbox) trên Google Sheet: TRUE = Đạt, FALSE = chưa nhập.
  */
 export function resultCode(value) {
   const k = normKey(value).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!k) return '';
+  if (!k || k === 'false') return ''; // ô tick (checkbox) chưa tick: coi như chưa nhập
+  if (k === 'true') return 'D'; // ô tick đã tick
   if (/^(khong|chua)\b/.test(k) || /^(fail|failed|kd)$/.test(k)) return 'K';
   if (/^(dat|da dat|hoan thanh|da hoan thanh|xong|da xong|ok|done|co)\b/.test(k)) return 'D';
   return '?';
