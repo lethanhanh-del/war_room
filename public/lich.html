@@ -47,6 +47,12 @@
     .now-text { font-size: 17px; font-weight: 600; }
     .err-banner { background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); border-radius: 10px; padding: 10px 14px; font-weight: 600; }
 
+    /* Thanh trang chung với / và /war-room */
+    .page-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+    .page-tabs a { padding: 10px 15px; border-bottom: 2.5px solid transparent; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); text-decoration: none; white-space: nowrap; }
+    .page-tabs a:hover { color: var(--text-primary); }
+    .page-tabs a[aria-current="page"] { color: var(--navy-800); border-bottom-color: var(--navy-800); }
+
     .days { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
     .day-chip { flex: none; min-width: 92px; text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; cursor: pointer; font-family: inherit; color: var(--text-primary); }
     .day-chip:hover { border-color: var(--border-strong); }
@@ -133,13 +139,23 @@
       </div>
       <div class="top-actions">
         <span id="meName" class="brand-sub"></span>
-        <a class="btn btn-ghost-top" href="/">← Về Dashboard</a>
         <a class="btn btn-ghost-top" href="/logout">Đăng xuất</a>
       </div>
     </div>
   </header>
 
   <main>
+    <nav class="page-tabs" aria-label="Trang">
+      <a href="/">Dòng tiền</a>
+      <a href="/war-room#overview">Tổng quan &amp; 10 Dòng tiền</a>
+      <a href="/war-room#tasks">Tiến độ từng nhân sự</a>
+      <a href="/war-room#shifts">Lịch trực 24/7 (2 Ca)</a>
+      <a href="/war-room#roles">20 Vị trí chủ chốt</a>
+      <a href="/war-room#directives">Tài liệu Drive &amp; Chỉ đạo Chủ tịch</a>
+      <a href="/lich" aria-current="page">Hẹn lịch BOD</a>
+    </nav>
+    <!-- Điện thoại: thanh cuộn ngang, "Hẹn lịch BOD" ở cuối nên kéo về cuối (cả khi thanh đổi bề ngang) -->
+    <script>{ const n = document.querySelector(".page-tabs"); new ResizeObserver(() => { n.scrollLeft = n.scrollWidth; }).observe(n); }</script>
     <div id="errBanner" class="err-banner" hidden></div>
     <section class="now-card">
       <div id="nowDot" class="now-dot"></div>

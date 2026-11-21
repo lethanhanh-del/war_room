@@ -125,7 +125,7 @@
     /* TABS */
     /* Thanh tab dính ngay dưới topbar; --topbar-h do JS đo (0 khi topbar không dính trên điện thoại) */
     .tabs-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; position: sticky; top: var(--topbar-h, 0px); z-index: 30; background: var(--bg); }
-    .tab-btn { background: transparent; border: none; border-bottom: 2.5px solid transparent; padding: 10px 15px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .tab-btn { text-decoration: none; background: transparent; border: none; border-bottom: 2.5px solid transparent; padding: 10px 15px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
     .tab-btn.active { color: var(--navy-800); border-bottom-color: var(--navy-800); }
     [data-theme="tv"] .tab-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
     .tab-cnt { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface-hover); color: var(--text-secondary); }
@@ -272,7 +272,6 @@
         <label class="btn btn-top" for="uploadInp" style="cursor:pointer;">↑ Nạp Excel (.xlsx)<input id="uploadInp" type="file" accept=".xlsx" class="hidden" /></label>
         <button id="csvBtn" class="btn btn-top" type="button">↓ Xuất CSV</button>
         <button id="tvBtn" class="btn btn-top" type="button">Màn hình TV</button>
-        <a class="btn btn-top" href="/" style="text-decoration:none">← Tiến độ dòng tiền</a>
       </div>
     </div>
   </header>
@@ -321,12 +320,15 @@
       </article>
     </section>
 
+    <!-- Cùng một hàng với thanh trang của dashboard dòng tiền (public/index.html) -->
     <nav class="tabs-bar">
+      <a class="tab-btn" href="/">Dòng tiền</a>
       <button class="tab-btn active" data-tab="overview">Tổng quan &amp; 10 Dòng tiền <span id="tcStreams" class="tab-cnt">0</span></button>
       <button class="tab-btn" data-tab="tasks">Tiến độ từng nhân sự <span id="tcTasks" class="tab-cnt">0</span></button>
       <button class="tab-btn" data-tab="shifts">Lịch trực 24/7 (2 Ca) <span id="tcShifts" class="tab-cnt">0</span></button>
       <button class="tab-btn" data-tab="roles">20 Vị trí chủ chốt <span id="tcRoles" class="tab-cnt">20</span></button>
       <button class="tab-btn" data-tab="directives">Tài liệu Drive &amp; Chỉ đạo Chủ tịch <span id="tcFiles" class="tab-cnt">4</span></button>
+      <a class="tab-btn" href="/lich">Hẹn lịch BOD</a>
     </nav>
 
     <section id="tab-overview" class="tab-panel">
@@ -1027,7 +1029,10 @@
     }
 
     function switchTab(name) {
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+      if (!$(`tab-${name}`)) name = "overview";
+      // Ghi tab vào URL (#tasks...) để tải lại / gửi link vẫn đúng tab; thanh trang ở "/" cũng mở thẳng tab qua hash này.
+      if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
+      document.querySelectorAll(".tab-btn[data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
       document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${name}`));
       // Đang cuộn quá thanh tab thì đưa đầu tab mới về ngay dưới thanh tab, không giữ vị trí cuộn của tab cũ.
       const bar = document.querySelector(".tabs-bar"), gap = $(`tab-${name}`).getBoundingClientRect().top - bar.getBoundingClientRect().bottom - 16;
@@ -1050,7 +1055,8 @@
       $("shiftLive").textContent = vnH >= 7.5 && vnH < 19.5 ? "CA NGÀY (07:30–19:30)" : "CA ĐÊM (19:30–07:30)";
     }
 
-    document.querySelectorAll(".tab-btn").forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
+    document.querySelectorAll(".tab-btn[data-tab]").forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
+    window.addEventListener("hashchange", () => switchTab(location.hash.slice(1)));
     $("watchBtn").onclick = toggleWatch;
     $("uploadInp").onchange = (e) => { const f = e.target.files?.[0]; if (f) ingest(f, "upload"); e.target.value = ""; };
     // Tài khoản thường: kéo thả file không hiện gì, không báo lỗi (chỉ chặn trình duyệt mở file).
@@ -1089,6 +1095,7 @@
 
     updateClock(); setInterval(updateClock, 1000); renderAll();
     syncTopbarH(); new ResizeObserver(syncTopbarH).observe(document.querySelector(".topbar")); window.addEventListener("resize", syncTopbarH);
+    if (location.hash) switchTab(location.hash.slice(1));
 
     // Realtime: thử kết nối máy chủ; WebSocket báo thay đổi tức thì, kéo định kỳ chỉ để dự phòng.
     if (location.protocol.startsWith("http")) pull();
