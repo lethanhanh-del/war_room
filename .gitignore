@@ -1,10 +1,12 @@
 .wrangler/
 .dev.vars
 node_modules/
+dist/
+.vercel/
 generated/
 .playwright-mcp/
 
-# Bí mật & dữ liệu chạy máy — KHÔNG commit (chứa mật khẩu Worksuite, khoá Google)
+# Bí mật & dữ liệu chạy máy — KHÔNG commit (mật khẩu, khoá Google, service account)
 .env
 .env.*
 !.env.example
@@ -13,3 +15,14 @@ secrets/*
 data/*
 !data/.gitkeep
 !data/README.md
+*service-account*.json
+sa*.json
+*-key.json
+credentials*.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

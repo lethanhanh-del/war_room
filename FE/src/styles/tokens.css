@@ -1,0 +1,59 @@
+/* =====================================================================
+   WAR ROOM · v5 "Night Ops" — DESIGN TOKENS
+   Nguồn duy nhất cho màu, chữ, khoảng cách, bo góc. Xem docs/STYLE_GUIDE.md.
+   ===================================================================== */
+
+/* 1. Thang đo: 1rem co giãn theo khung hình -> giao diện luôn vừa đúng 1 màn hình.
+      Màn 1920×960 (2:1) => 1rem ≈ 15.4px ; 3840×1920 => ≈ 30.7px. */
+html {
+  font-size: min(0.84vw, 1.6vh);
+}
+
+:root {
+  color-scheme: dark;
+
+  /* 2. Bề mặt (tối -> sáng) */
+  --bg: #07090d;            /* nền màn hình */
+  --panel: #0e1218;         /* nền ô (panel) */
+  --panel-2: #151a23;       /* nền nổi: chip, tile, input */
+  --inset: #0a0d12;         /* nền chìm */
+  --line: #1c232e;          /* đường kẻ mảnh, viền panel */
+  --line-strong: #2a3442;   /* viền nhấn, track thanh tiến độ */
+
+  /* 3. Chữ */
+  --text: #f3f6fa;          /* chữ chính */
+  --muted: #8994a6;         /* chữ phụ, nhãn */
+  --dim: #6e7a8c;           /* chữ mờ, giá trị 0 */
+
+  /* 4. Nhấn thương hiệu */
+  --accent: #c8ff4d;        /* lime: đang chọn, hôm nay, số thứ tự ô */
+  --on-accent: #0a0d12;     /* chữ trên nền lime */
+
+  /* 5. Trạng thái task (ngữ nghĩa cố định — KHÔNG dùng cho mục đích khác) */
+  --done: #2ee6a6;          /* Đạt (đã tick) */
+  --late: #ff4d6d;          /* Không đạt (quá ngày chưa tick) */
+  --in_progress: #3da9fc;   /* Đang làm (hôm nay, chưa tick) */
+  --upcoming: #8a94a8;      /* Chưa đến hạn */
+  --none: #2a3442;          /* Không có task */
+  --warn: #ffb020;          /* Cảnh báo mức trung bình (% đạt 70–99%) */
+  --blocker: #ff8a3d;       /* Vướng mắc (ghi chú) */
+
+  /* 6. Chữ */
+  --font: 'Be Vietnam Pro', 'Segoe UI', Roboto, system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  /* 7. Khoảng cách & bo góc (theo rem để co giãn cùng màn hình) */
+  --gap-wall: 0.7rem;       /* khoảng cách giữa các ô */
+  --pad-panel: 0.8rem 0.9rem;
+  --r-panel: 0.8rem;
+  --r-ctrl: 0.5rem;
+  --r-cell: 0.35rem;
+  --r-pill: 999px;
+}
+
+/* Gán màu trạng thái qua biến --c để mọi component dùng chung: class="st-late" -> var(--c) */
+.st-done { --c: var(--done); }
+.st-late { --c: var(--late); }
+.st-in_progress { --c: var(--in_progress); }
+.st-upcoming { --c: var(--upcoming); }
+.st-none { --c: var(--none); }
