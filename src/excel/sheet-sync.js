@@ -9,12 +9,13 @@
 //   GET  /api/excel/sync    trạng thái đồng bộ
 //   POST /api/excel/sync    đồng bộ ngay
 //
-// Biến cấu hình (tuỳ chọn): EXCEL_SHEET_URL = link hoặc ID Google Sheet (mặc định: WR - MASTER TASK); "off" để tắt.
+// Biến cấu hình (tuỳ chọn): EXCEL_SHEET_URL = 1 hoặc nhiều link / ID Google Sheet, cách nhau bởi dấu phẩy hoặc xuống dòng
+// (mặc định: WR - MASTER TASK + sheet thứ 2, xem gsheet.js › DEFAULT_SHEETS); "off" để tắt. Nhiều sheet được gộp lại (readSheets).
 
 import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
-import { SHEET_FILE_NAME, readSheet, sheetId } from './gsheet.js';
+import { SHEET_FILE_NAME, readSheets, sheetIds } from './gsheet.js';
 import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport, sheetOnlyBase } from './index.js';
 
 export const SYNC_EVERY_MS = 20000;
@@ -24,18 +25,53 @@ const SYNC_USER = { username: 'google-sheet', fullName: 'Google Sheet (tự đ�
 let ready = false;
 async function ensureTable(env) {
   if (ready) return;
-  await env.DB.prepare(
-    `CREATE TABLE IF NOT EXISTS excel_sync (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      checked_at TEXT NOT NULL DEFAULT '',
-      changed_at TEXT NOT NULL DEFAULT '',
-      error TEXT NOT NULL DEFAULT '',
-      warnings TEXT NOT NULL DEFAULT '[]',
-      total INTEGER NOT NULL DEFAULT 0,
-      sheets INTEGER NOT NULL DEFAULT 0
-    )`
-  ).run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS excel_sync (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        checked_at TEXT NOT NULL DEFAULT '',
+        changed_at TEXT NOT NULL DEFAULT '',
+        error TEXT NOT NULL DEFAULT '',
+        warnings TEXT NOT NULL DEFAULT '[]',
+        total INTEGER NOT NULL DEFAULT 0,
+        sheets INTEGER NOT NULL DEFAULT 0
+      )`
+    ),
+    // Bản đọc được gần nhất của từng Google Sheet (JSON {sections, warnings}): khi đồng bộ nhiều sheet mà 1 sheet đọc lỗi,
+    // dùng tạm bản này để task của sheet đó không biến mất trong lúc các sheet khác vẫn cập nhật (readSheets › previous).
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS excel_sheet_cache (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        read_at TEXT NOT NULL
+      )`
+    ),
+  ]);
   ready = true;
+}
+
+/** id Google Sheet -> { json, book } của lần đọc được gần nhất. */
+async function cachedBooks(env) {
+  const { results } = await env.DB.prepare('SELECT id, data FROM excel_sheet_cache').all();
+  const out = new Map();
+  for (const r of results) {
+    try {
+      out.set(r.id, { json: r.data, book: JSON.parse(r.data) });
+    } catch { /* bản lưu hỏng: coi như chưa có */ }
+  }
+  return out;
+}
+
+/** Lưu bản vừa đọc được của các sheet có nội dung khác bản đang lưu. */
+async function saveCache(env, fresh, cache, now) {
+  const at = new Date(now).toISOString();
+  const rows = [...fresh]
+    .map(([id, b]) => [id, JSON.stringify({ sections: b.sections, warnings: b.warnings })])
+    .filter(([id, data]) => cache.get(id)?.json !== data);
+  if (!rows.length) return;
+  await env.DB.batch(rows.map(([id, data]) => env.DB.prepare(
+    'INSERT INTO excel_sheet_cache (id, data, read_at) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET data = ?2, read_at = ?3'
+  ).bind(id, data, at)));
 }
 
 /** Giành lượt đồng bộ: chỉ 1 lượt trong mỗi khoảng minGapMs, kể cả khi cron và nhiều người xem gọi cùng lúc. */
@@ -71,13 +107,14 @@ const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet không 
  * @returns {Promise<{off?: true, skipped?: true, error?: string, changed?: boolean, total?: number}>}
  */
 export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
-  const id = sheetId(env);
-  if (!id) return { off: true };
+  const ids = sheetIds(env); // WR - MASTER TASK + sheet thứ 2 (EXCEL_SHEET_URL)
+  if (!ids.length) return { off: true };
   await ensureTable(env);
   await ensureImportsTable(env); // database mới (cron chạy trước khi ai mở trang): diff() đọc excel_imports
   if (!(await claim(env, force ? FORCE_EVERY_MS : SYNC_EVERY_MS, now))) return { skipped: true };
   try {
-    const book = await readSheet(id, { now });
+    const cache = await cachedBooks(env);
+    const book = await readSheets(ids, { now, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
     const planned = await planImport(env, book, async () => sheetOnlyBase()); // không kết nối Worksuite
     if (planned.error) throw new Error(planned.error);
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
@@ -89,6 +126,7 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
       await log(env, new Request('https://sync.invalid/'), SYNC_USER.username, 'excel_sync', importSummary(SHEET_FILE_NAME, saved));
       await notifyLive(env, { scope: 'streams' });
     }
+    await saveCache(env, book.fresh, cache, now);
     const warnings = JSON.stringify([...planned.warnings].slice(0, 20).map((w) => String(w).slice(0, 300)));
     await env.DB.prepare(`UPDATE excel_sync SET error = '', warnings = ?, total = ?, sheets = ?${changed ? ', changed_at = ?' : ''} WHERE id = 1`)
       .bind(warnings, total, book.sections.length, ...(changed ? [new Date(now).toISOString()] : []))
@@ -103,9 +141,10 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
 
 /** Trạng thái cho dashboard (trường sheetSync của /api/streams); null = đồng bộ đang tắt. */
 export async function sheetSyncStatus(env) {
-  const id = sheetId(env);
-  if (!id) return null;
-  const status = { sheetUrl: `https://docs.google.com/spreadsheets/d/${id}/edit`, checkedAt: '', changedAt: '', error: '', warnings: [], total: 0, sheets: 0 };
+  const ids = sheetIds(env);
+  if (!ids.length) return null;
+  const urls = ids.map((id) => `https://docs.google.com/spreadsheets/d/${id}/edit`);
+  const status = { sheetUrl: urls[0], sheetUrls: urls, checkedAt: '', changedAt: '', error: '', warnings: [], total: 0, sheets: 0 };
   try {
     await ensureTable(env);
     const r = await env.DB.prepare('SELECT checked_at, changed_at, error, warnings, total, sheets FROM excel_sync WHERE id = 1').first();

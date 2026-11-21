@@ -13,20 +13,32 @@ import { extractWorkbook, parseStreamTitle, unreadableWarning } from './tasks.js
 import { readXlsx } from './xlsx.js';
 
 const DEFAULT_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK
+const SECOND_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY'; // sheet thứ 2 (thêm 21/11/2026)
+export const DEFAULT_SHEETS = [DEFAULT_SHEET, SECOND_SHEET];
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_SHEETS = 20;
 const MAX_BYTES = 5 * 1024 * 1024;
 export const SHEET_FILE_NAME = 'Google Sheet WR - MASTER TASK';
 export const NOT_PUBLIC = 'Không đọc được Google Sheet: hãy chia sẻ “Bất kỳ ai có đường liên kết” với quyền Người xem.';
 
-/** ID Google Sheet cần đồng bộ; '' = tắt. EXCEL_SHEET_URL nhận link đầy đủ hoặc ID; trống = WR - MASTER TASK. */
-export function sheetId(env = {}) {
+/**
+ * Các Google Sheet cần đồng bộ ([] = tắt). EXCEL_SHEET_URL: 1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy, chấm phẩy,
+ * khoảng trắng hoặc xuống dòng; "off" để tắt; trống = DEFAULT_SHEETS (WR - MASTER TASK + sheet thứ 2).
+ */
+export function sheetIds(env = {}) {
   const raw = String(env.EXCEL_SHEET_URL ?? '').trim();
-  if (!raw) return DEFAULT_SHEET;
-  if (/^(off|false|0|none)$/i.test(raw)) return '';
-  const m = /\/spreadsheets\/d\/([\w-]{20,})/.exec(raw) || /^([\w-]{20,})$/.exec(raw);
-  return m ? m[1] : '';
+  if (!raw) return [...DEFAULT_SHEETS];
+  if (/^(off|false|0|none)$/i.test(raw)) return [];
+  const ids = [];
+  for (const part of raw.split(/[\s,;]+/)) {
+    const m = /\/spreadsheets\/d\/([\w-]{20,})/.exec(part) || /^([\w-]{20,})$/.exec(part);
+    if (m && !ids.includes(m[1])) ids.push(m[1]);
+  }
+  return ids;
 }
+
+/** Sheet đầu tiên cần đồng bộ ('' = tắt) — giữ cho code cũ. */
+export const sheetId = (env = {}) => sheetIds(env)[0] || '';
 
 const unescapeJs = (s) =>
   s.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|[\s\S])/g, (_, e) =>
@@ -154,4 +166,64 @@ export async function readSheet(id, { now = Date.now() } = {}) {
     sheets = (await readXlsx(bytes)).sheets;
   }
   return streamSections(sheets, { now });
+}
+
+/**
+ * Đọc nhiều Google Sheet và gộp lại. Mỗi sheet "Dòng tiền …" là 1 phần; cùng dòng tiền có ở nhiều file -> gộp task
+ * (task file sau xếp sau). 1 file đọc lỗi (mạng, chưa / bị bỏ chia sẻ công khai) trong khi file khác đọc được:
+ *   - có bản đọc được lần trước (previous) -> dùng tạm bản đó, kèm cảnh báo, để task của file này không biến mất;
+ *   - chưa từng đọc được -> bỏ qua file đó, kèm cảnh báo (riêng file đầu tiên: dừng cả lượt, giữ dữ liệu đang hiện).
+ * Chỉ 1 file, hoặc không đọc được file nào -> báo lỗi như trước.
+ * @param {string[]} ids
+ * @param {{ now?: number, previous?: Map<string, {sections: object[], warnings: string[]}> }} [opts]
+ * @returns {Promise<{ format: 'master', sections: object[], warnings: string[], fresh: Map<string, object> }>}
+ *   fresh = kết quả đọc mới của từng file (để lưu làm bản dự phòng)
+ */
+export async function readSheets(ids, { now = Date.now(), previous = new Map() } = {}) {
+  const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
+  const sections = [];
+  const byStream = new Map();
+  const warnings = [];
+  const errors = [];
+  const fresh = new Map();
+  for (const [i, id] of ids.entries()) {
+    const label = `Google Sheet ${i + 1} (…${id.slice(-6)})`;
+    let book;
+    try {
+      book = await readSheet(id, { now });
+      fresh.set(id, book);
+    } catch (e) {
+      if (ids.length === 1) throw e;
+      const error = `${label}: ${e?.name === 'TimeoutError' ? 'không phản hồi (quá 15 giây).' : e?.message || e}`;
+      errors.push(error);
+      book = previous.get(id);
+      if (!book && i === 0) throw new Error(error);
+      warnings.push(book ? `${error} Đang giữ dữ liệu lần đọc trước.` : error);
+      if (!book) continue;
+    }
+    warnings.push(...(i ? book.warnings.map((w) => `${label}: ${w}`) : book.warnings));
+    for (const sec of book.sections) {
+      // Dòng của file sau đánh số tiếp sau file trước, để thứ tự task và mã task không trùng.
+      const tasks = i ? sec.tasks.map((t) => ({ ...t, row: t.row + i * 100000 })) : sec.tasks;
+      const key = loose(sec.name);
+      const prev = byStream.get(key);
+      if (!prev) {
+        const copy = { ...sec, tasks: [...tasks] };
+        byStream.set(key, copy);
+        sections.push(copy);
+        continue;
+      }
+      // Mã task (cột STT) là một phần id task trên dashboard: trùng với file trước thì thêm hậu tố số thứ tự file.
+      const codes = new Set(prev.tasks.map((t) => t.code).filter(Boolean));
+      for (const t of tasks) {
+        const code = t.code && codes.has(t.code) ? `${t.code}·S${i + 1}` : t.code;
+        if (code) codes.add(code);
+        prev.tasks.push(code === t.code ? t : { ...t, code });
+      }
+      if (!prev.pic && sec.pic) prev.pic = sec.pic;
+      if (!prev.streamNo && sec.streamNo) Object.assign(prev, { streamNo: sec.streamNo, code: sec.code, title: sec.title });
+    }
+  }
+  if (!fresh.size) throw new Error(errors.join(' · '));
+  return { format: 'master', sections, warnings, fresh };
 }
