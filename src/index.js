@@ -44,6 +44,11 @@ export default {
 
     const url = new URL(request.url);
     const path = url.pathname;
+    // Chống CSRF: cookie SameSite=Lax vẫn được gửi khi một subdomain khác của ctgrouphitech.com POST tới đây,
+    // nên mọi request ghi dữ liệu phải đến từ chính trang này (trình duyệt luôn gửi Origin khi POST/DELETE).
+    if (request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Origin") !== url.origin) {
+      return text("Yêu cầu không hợp lệ.", 403);
+    }
     if (path === "/login" && request.method === "POST") return login(request, env, adminHash);
 
     const user = await readSession(env, request, adminHash);
