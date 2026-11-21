@@ -4,16 +4,9 @@
 # Mật khẩu tài khoản "admin" của dashboard
 ACCESS_PASSWORD=
 
-# Tài khoản CT Worksuite chỉ có quyền xem (không bật OTP), hoặc API key/secret nếu có
-WORKSUITE_USERNAME=
-WORKSUITE_PASSWORD=
-# WORKSUITE_API_KEY=
-# WORKSUITE_API_SECRET=
+# Dashboard không kết nối CT Worksuite nữa (từ 21/11/2026): không cần biến WORKSUITE_*.
 
 # Tuỳ chọn (đã có mặc định)
-# WORKSUITE_URL=https://cterp.ctgrouphitech.com/worksuite
-# WORKSUITE_PROJECT=PROJ-0536
-# WORKSUITE_CACHE_SECONDS=60
 # Thời hạn War Room, để đánh dấu task Excel có hạn vượt thời hạn (mặc định 2026-11-21 → 2026-11-25)
 # WARROOM_START=2026-11-21
 # WARROOM_END=2026-11-25

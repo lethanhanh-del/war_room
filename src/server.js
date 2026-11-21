@@ -7,7 +7,6 @@ import { config } from './config.js';
 import { DemoStore } from './store/demo.js';
 import { SheetStore } from './store/sheets.js';
 import { WarRoomService, HttpError } from './service.js';
-import { getStreams } from './worksuite/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 fs.mkdirSync(config.dataDir, { recursive: true });
@@ -84,10 +83,9 @@ app.get('/healthz', (req, res) => {
   });
 });
 
-// Tiến độ dòng tiền từ CT Worksuite (src/worksuite/). ?demo=1: dữ liệu mẫu.
-app.get('/api/streams', async (req, res) => {
-  const data = await getStreams(process.env, { demo: req.query.demo === '1' });
-  res.set('Cache-Control', 'no-store').status(data.error && !data.streams.length ? 502 : 200).json(data);
+// Tiến độ dòng tiền: không kết nối CT Worksuite nữa; dashboard chạy trên Worker (Google Sheet WR - MASTER TASK).
+app.get('/api/streams', (req, res) => {
+  res.set('Cache-Control', 'no-store').status(410).json({ error: 'Không còn kết nối CT Worksuite. Dashboard "Tiến độ dòng tiền" chạy trên Worker, đọc Google Sheet WR - MASTER TASK.', streams: [] });
 });
 
 app.get('/api/dashboard', (req, res) => {

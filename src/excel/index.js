@@ -30,6 +30,15 @@ export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_JSON_BYTES = 1500000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Nền dữ liệu của dashboard "Tiến độ dòng tiền": KHÔNG kết nối CT Worksuite nữa (từ 21/11/2026), mọi thẻ dòng tiền
+ * và task đến từ Google Sheet WR - MASTER TASK (sheet-sync.js) và file Excel / file phân chia nạp tay.
+ * Cùng dạng với kết quả cũ của getStreams() khi chưa cấu hình Worksuite, nên giao diện không phải đổi.
+ */
+export function sheetOnlyBase(now = Date.now()) {
+  return { mode: 'unconfigured', refreshSeconds: 60, syncedAt: null, now, warnings: [], project: null, summary: null, streams: [], otherGroups: [] };
+}
+
 export function warRoomPeriod(env = {}) {
   const start = String(env.WARROOM_START || '').trim();
   const end = String(env.WARROOM_END || '').trim();
@@ -142,7 +151,7 @@ function cleanFileName(raw) {
 }
 
 /**
- * @param getWorksuite  (env) => Promise<kết quả getStreams()> — chỉ dữ liệu Worksuite, chưa gắn Excel
+ * @param getWorksuite  (env) => Promise<nền dữ liệu> — giờ luôn là sheetOnlyBase() (không còn kết nối Worksuite)
  */
 export async function handleExcel(request, env, url, user, getWorksuite) {
   await ensureTable(env);

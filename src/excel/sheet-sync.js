@@ -14,9 +14,8 @@
 import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
-import { getStreams } from '../worksuite/index.js';
 import { SHEET_FILE_NAME, readSheet, sheetId } from './gsheet.js';
-import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport } from './index.js';
+import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport, sheetOnlyBase } from './index.js';
 
 export const SYNC_EVERY_MS = 20000;
 const FORCE_EVERY_MS = 5000;
@@ -79,7 +78,7 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
   if (!(await claim(env, force ? FORCE_EVERY_MS : SYNC_EVERY_MS, now))) return { skipped: true };
   try {
     const book = await readSheet(id, { now });
-    const planned = await planImport(env, book, (e) => getStreams(e));
+    const planned = await planImport(env, book, async () => sheetOnlyBase()); // không kết nối Worksuite
     if (planned.error) throw new Error(planned.error);
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
     const { changed, orphans } = await diff(env, planned.plan);

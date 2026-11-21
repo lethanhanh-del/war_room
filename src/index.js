@@ -29,8 +29,7 @@ import { handleAdmin } from "./admin.js";
 import { handleLive, LiveRoom } from "./live.js";
 import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
 import { json, redirect, text } from "./http.js";
-import { getStreams } from "./worksuite/index.js";
-import { handleExcel, withExcel } from "./excel/index.js";
+import { handleExcel, sheetOnlyBase, withExcel } from "./excel/index.js";
 import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
@@ -75,7 +74,8 @@ export default {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
       // Có người đang xem: đọc lại Google Sheet nếu lần trước đã quá 20 giây (chạy nền, không làm chậm trang).
       ctx.waitUntil(syncSheet(env).catch(() => {}));
-      const data = await withExcel(env, await getStreams(env));
+      // Không kết nối CT Worksuite nữa: chỉ task từ Google Sheet + file Excel / phân chia nhóm đã nạp.
+      const data = await withExcel(env, sheetOnlyBase());
       data.sheetSync = await sheetSyncStatus(env);
       return json(data, data.error && !data.streams.length ? 502 : 200);
     }
@@ -83,7 +83,7 @@ export default {
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
-    if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, (e) => getStreams(e));
+    if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, async () => sheetOnlyBase());
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
