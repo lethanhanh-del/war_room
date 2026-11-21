@@ -865,6 +865,7 @@ if (typeof document !== 'undefined') {
     tv: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
     download: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
     scroll: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>',
+    trash: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>',
   };
 
   // ---------- Giao diện tối / sáng / TV dùng chung wr-theme & wr-tv với /kpi ----------
@@ -977,19 +978,27 @@ if (typeof document !== 'undefined') {
   function saveTimerStore(store) {
     try { localStorage.setItem(STORAGE_TIMERS, JSON.stringify(store)); } catch {}
   }
-  function loadHistoryByDate() {
+  function loadHistoryStore() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || 'null');
-      if (saved && saved.historyByDate && typeof saved.historyByDate === 'object') return saved.historyByDate;
+      if (saved && saved.historyByDate && typeof saved.historyByDate === 'object') {
+        return {
+          historyByDate: saved.historyByDate,
+          historyResetAt: Number.isFinite(Number(saved.historyResetAt)) ? Number(saved.historyResetAt) : 0,
+        };
+      }
       const legacy = JSON.parse(localStorage.getItem(LEGACY_HISTORY) || 'null');
       if (legacy && /^\d{4}-\d{2}-\d{2}$/.test(legacy.date || '') && Array.isArray(legacy.recentCleared)) {
-        return { [legacy.date]: legacy.recentCleared.slice(0, 200) };
+        return { historyByDate: { [legacy.date]: legacy.recentCleared.slice(0, 200) }, historyResetAt: 0 };
       }
     } catch {}
-    return {};
+    return { historyByDate: {}, historyResetAt: 0 };
   }
-  function saveHistoryByDate(h) {
-    try { localStorage.setItem(STORAGE_HISTORY, JSON.stringify({ historyByDate: h })); } catch {}
+  function saveHistoryByDate(h, resetAt = state.historyResetAt) {
+    try {
+      localStorage.setItem(STORAGE_HISTORY, JSON.stringify({ historyByDate: h, historyResetAt: Number(resetAt) || 0 }));
+      if ((Number(resetAt) || 0) > 0) localStorage.removeItem(LEGACY_HISTORY);
+    } catch {}
   }
 
   function mergeDayRecords(prevList = [], incomingList = []) {
@@ -1017,6 +1026,7 @@ if (typeof document !== 'undefined') {
   }
 
   // ---------- App State ----------
+  const initHistory = loadHistoryStore();
   const state = {
     isOnline: true,
     isFirstFetchDone: false,
@@ -1032,7 +1042,8 @@ if (typeof document !== 'undefined') {
     burnedAlerted: new Set(),
     lastBurnReminderAt: 0,
     lastBoardStructSig: '',
-    historyByDate: loadHistoryByDate(),
+    historyByDate: initHistory.historyByDate,
+    historyResetAt: initHistory.historyResetAt,
     showStats: false,
     statsAutoScroll: false,
     selectedDate: todayKeyVN(),
@@ -1123,21 +1134,41 @@ if (typeof document !== 'undefined') {
       saveTimerStore(localTimers);
     }
 
+    const incomingResetAt = Number(shared.historyResetAt) || 0;
+    let didReset = false;
+    if (incomingResetAt > (state.historyResetAt || 0)) {
+      state.historyResetAt = incomingResetAt;
+      const wiped = {};
+      for (const [dKey, list] of Object.entries(state.historyByDate || {})) {
+        const kept = Array.isArray(list) ? list.filter((rec) => (Number(rec?.clearedAt) || 0) > incomingResetAt) : [];
+        if (kept.length > 0) wiped[dKey] = kept;
+      }
+      state.historyByDate = wiped;
+      didReset = true;
+    }
+
     if (shared.historyByDate && typeof shared.historyByDate === 'object') {
       for (const [dKey, list] of Object.entries(shared.historyByDate)) {
         if (/^\d{4}-\d{2}-\d{2}$/.test(dKey) && Array.isArray(list)) {
-          state.historyByDate[dKey] = mergeDayRecords(state.historyByDate[dKey], list);
+          const valid = state.historyResetAt > 0
+            ? list.filter((rec) => (Number(rec?.clearedAt) || 0) > state.historyResetAt)
+            : list;
+          state.historyByDate[dKey] = mergeDayRecords(state.historyByDate[dKey], valid);
         }
       }
     } else if (shared.date && Array.isArray(shared.recentCleared)) {
-      state.historyByDate[shared.date] = mergeDayRecords(state.historyByDate[shared.date], shared.recentCleared);
+      const valid = state.historyResetAt > 0
+        ? shared.recentCleared.filter((rec) => (Number(rec?.clearedAt) || 0) > state.historyResetAt)
+        : shared.recentCleared;
+      state.historyByDate[shared.date] = mergeDayRecords(state.historyByDate[shared.date], valid);
     }
 
     const curToday = todayKeyVN();
     if (Array.isArray(state.historyByDate[curToday]) && state.lastSheetPresentRows.length > 0) {
       state.historyByDate[curToday] = pruneTodayHistoryBySheet(state.historyByDate[curToday], state.lastSheetPresentRows);
     }
-    saveHistoryByDate(state.historyByDate);
+    saveHistoryByDate(state.historyByDate, state.historyResetAt);
+    return didReset;
   }
 
   async function fetchSharedState() {
@@ -1162,7 +1193,12 @@ if (typeof document !== 'undefined') {
       try {
         bc.postMessage({
           type: 'state_sync',
-          payload: { date: todayKeyVN(), timers: loadTimerStore(), historyByDate: state.historyByDate },
+          payload: {
+            date: todayKeyVN(),
+            timers: loadTimerStore(),
+            historyByDate: state.historyByDate,
+            historyResetAt: state.historyResetAt,
+          },
         });
       } catch {}
     }
@@ -1187,7 +1223,7 @@ if (typeof document !== 'undefined') {
     state.isSyncing = true;
     try {
       const [result, shared] = await Promise.all([fetchWaitingPoints(), fetchSharedState()]);
-      if (shared) applySharedState(shared);
+      const historyWasReset = shared ? applySharedState(shared) : false;
 
       const now = Date.now();
       const curToday = todayKeyVN(now);
@@ -1370,7 +1406,7 @@ if (typeof document !== 'undefined') {
 
       if (state.showStats) {
         updateHeaderOnly();
-        if ((removedEntries.length > 0 || prunedBySheet) && document.activeElement?.id !== 'wp-date-picker') {
+        if ((removedEntries.length > 0 || prunedBySheet || historyWasReset) && document.activeElement?.id !== 'wp-date-picker') {
           render();
         }
       } else {
@@ -1617,6 +1653,8 @@ if (typeof document !== 'undefined') {
         </table>
       `;
 
+    const hasAnyHistory = Object.values(state.historyByDate || {}).some((arr) => Array.isArray(arr) && arr.length > 0);
+
     return `
       <section class="wp-stats-panel">
         <header class="wp-stats-head">
@@ -1629,6 +1667,7 @@ if (typeof document !== 'undefined') {
             <input type="date" class="wp-date-input" id="wp-date-picker" value="${esc(activeDate)}" max="${esc(todayKey)}" aria-label="Chọn ngày xem thống kê" />
             <button type="button" class="wp-btn ${state.statsAutoScroll ? 'is-active' : ''}" id="wp-btn-stats-scroll" aria-pressed="${state.statsAutoScroll}" ${filtered.length === 0 ? 'disabled' : ''}>${SVG.scroll}<span>${state.statsAutoScroll ? 'Đang tự cuộn' : 'Tự cuộn'}</span></button>
             <button type="button" class="wp-btn is-excel" id="wp-btn-export" ${filtered.length === 0 ? 'disabled' : ''} title="Xuất thống kê ngày ${esc(activeDate)} ra file Excel (.xlsx)">${SVG.download}<span>Xuất Excel</span></button>
+            <button type="button" class="wp-btn is-danger" id="wp-btn-clear-stats" ${!hasAnyHistory ? 'disabled' : ''} title="Xóa toàn bộ dữ liệu thống kê tất cả các ngày">${SVG.trash}<span>Xóa dữ liệu</span></button>
             <button type="button" class="wp-btn" id="wp-close-stats">${SVG.x}<span>Về bảng chờ</span></button>
           </div>
         </header>
@@ -1768,6 +1807,21 @@ if (typeof document !== 'undefined') {
 
       if (target.id === 'wp-btn-export') {
         exportCurrentStatsExcel(todayKey);
+        return;
+      }
+
+      if (target.id === 'wp-btn-clear-stats') {
+        if (!window.confirm('Xóa toàn bộ dữ liệu thống kê tất cả các ngày trên mọi màn hình?')) return;
+        const resetAt = Date.now();
+        state.historyResetAt = resetAt;
+        state.historyByDate = {};
+        state.selectedDate = todayKey;
+        state.supporterFilter = 'all';
+        state.statsPage = 0;
+        saveHistoryByDate(state.historyByDate, resetAt);
+        pushSharedDelta({ clearHistory: true, historyResetAt: resetAt });
+        showToast('ĐÃ XÓA DỮ LIỆU THỐNG KÊ', 'Toàn bộ lịch sử xử lý đã được đặt lại về 0.', 'clear');
+        render();
         return;
       }
 

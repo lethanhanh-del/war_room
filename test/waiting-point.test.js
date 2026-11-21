@@ -274,6 +274,24 @@ test('Bảng thống kê tự đối chiếu với Sheet: dòng còn trên Sheet
   const s2 = mergeWaitingPointState(s1, { activeSheetRows: sheetRows }, now + 5000);
   assert.equal(s2.recentCleared.length, 1);
   assert.equal(s2.recentCleared[0].issue, 'Hư Người');
+
+  // Xóa toàn bộ dữ liệu thống kê qua clearHistory: xóa sạch mọi ngày & chặn bản ghi cũ hơn historyResetAt quay lại
+  const cleared = mergeWaitingPointState(s2, { clearHistory: true }, now + 10_000);
+  assert.equal(cleared.recentCleared.length, 0);
+  assert.equal(cleared.historyResetAt, now + 10_000);
+
+  const staleRetry = mergeWaitingPointState(
+    cleared,
+    {
+      clearedItems: [
+        { id: 'old', group: 'Data', issue: 'Bản ghi cũ trước khi xóa', clearedAt: now + 5000 },
+        { id: 'fresh', group: 'Data', issue: 'Bản ghi mới sau khi xóa', supporter: 'Chiến', clearedAt: now + 15_000 },
+      ],
+    },
+    now + 15_000,
+  );
+  assert.equal(staleRetry.recentCleared.length, 1);
+  assert.equal(staleRetry.recentCleared[0].issue, 'Bản ghi mới sau khi xóa');
 });
 
 test('Tự động chuyển tab: đúng thời lượng 3p/3p/5p, bật tắt từng tab và render đủ trong navBar', () => {

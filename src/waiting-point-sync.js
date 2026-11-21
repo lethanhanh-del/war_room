@@ -58,6 +58,7 @@ export function emptyWaitingPointState(nowMs = Date.now()) {
     removedTimers: {},
     recentCleared: [],
     historyByDate: {},
+    historyResetAt: 0,
     updatedAt: nowMs,
   };
 }
@@ -93,7 +94,20 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
   const cur = currentInput && typeof currentInput === 'object' ? currentInput : emptyWaitingPointState(nowMs);
   const timers = { ...(cur.timers && typeof cur.timers === 'object' ? cur.timers : {}) };
   const removedTimers = { ...(cur.removedTimers && typeof cur.removedTimers === 'object' ? cur.removedTimers : {}) };
-  const historyByDate = normalizeHistoryByDate(cur, today);
+  let historyResetAt = Math.max(
+    Number.isFinite(Number(cur.historyResetAt)) ? Number(cur.historyResetAt) : 0,
+    Number.isFinite(Number(incoming.historyResetAt)) ? Number(incoming.historyResetAt) : 0,
+  );
+  let historyByDate = normalizeHistoryByDate(cur, today);
+
+  if (incoming.clearHistory === true) {
+    historyResetAt = Math.max(historyResetAt, nowMs);
+    historyByDate = {};
+  } else if (historyResetAt > 0) {
+    for (const [dKey, list] of Object.entries(historyByDate)) {
+      historyByDate[dKey] = list.filter((rec) => (Number(rec?.clearedAt) || 0) > historyResetAt);
+    }
+  }
 
   if (incoming.timers && typeof incoming.timers === 'object') {
     for (const [id, inc] of Object.entries(incoming.timers)) {
@@ -172,6 +186,7 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
     for (const item of incoming.clearedItems) {
       if (!item || !item.issue) continue;
       const clearedAt = Number.isFinite(Number(item.clearedAt)) ? Number(item.clearedAt) : nowMs;
+      if (historyResetAt > 0 && clearedAt <= historyResetAt) continue;
       const dayKey = /^\d{4}-\d{2}-\d{2}$/.test(item.date || '') ? item.date : getTodayKey(clearedAt);
       if (!historyByDate[dayKey]) historyByDate[dayKey] = [];
       const dayList = historyByDate[dayKey];
@@ -237,6 +252,7 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
     removedTimers,
     recentCleared: prunedHistory[today] || [],
     historyByDate: prunedHistory,
+    historyResetAt,
     updatedAt: nowMs,
   };
 }

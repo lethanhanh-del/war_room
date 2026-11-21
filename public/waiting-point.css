@@ -1165,6 +1165,18 @@
   color: var(--success);
 }
 
+.wp-btn.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.wp-btn.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 24%, transparent);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .wp-tbl {
   width: 100%;
   border-collapse: collapse;
