@@ -10,5 +10,7 @@
     "binding": "ASSETS",
     // Mọi request đều qua Worker trước để kiểm tra mật khẩu.
     "run_worker_first": true
-  }
+  },
+  // Lịch họp Chủ tịch (src/bookings.js). Lần deploy đầu, wrangler tự tạo database theo tên này.
+  "d1_databases": [{ "binding": "DB", "database_name": "ctgwarroom" }]
 }

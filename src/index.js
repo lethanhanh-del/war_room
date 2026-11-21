@@ -8,6 +8,11 @@
 // Dashboard nằm ở public/index.html.
 
 import { BUILD_PASSWORD_HASH } from "../generated/password.js";
+import { handleBookings } from "./bookings.js";
+
+// Nút nổi trên dashboard dẫn sang trang đặt lịch (/lich = public/lich.html).
+// Chèn lúc phục vụ để không mất khi ai đó ghi đè public/index.html bằng bản thiết kế mới.
+const CHAIRMAN_LINK = `<a href="/lich" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:999px;background:#17365d;color:#fff;font:600 13px 'Segoe UI',system-ui,sans-serif;text-decoration:none;box-shadow:0 6px 20px rgba(12,31,58,.3)">📅 Đặt lịch Chủ tịch</a>`;
 
 const COOKIE = "wr_session";
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
@@ -36,9 +41,14 @@ export default {
 
     if (!(await hasValidSession(request, pwHash))) return loginPage("");
 
+    if (url.pathname === "/api/bookings") return handleBookings(request, env, url);
+
     const res = await env.ASSETS.fetch(request);
     const out = new Response(res.body, res);
     out.headers.set("Cache-Control", "private, no-cache");
+    if (url.pathname === "/" && res.ok) {
+      return new HTMLRewriter().on("body", { element: (el) => el.append(CHAIRMAN_LINK, { html: true }) }).transform(out);
+    }
     return out;
   },
 };
