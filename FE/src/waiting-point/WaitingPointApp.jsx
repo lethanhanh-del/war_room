@@ -18,7 +18,6 @@ import {
   IconBell,
   IconBellOff,
   IconCheckCircle,
-  IconClock,
   IconHistory,
   IconUsers,
   IconWifiOff,
@@ -475,42 +474,42 @@ export default function WaitingPointApp() {
 
   const bellLabel = !soundEnabled ? 'Chuông: Tắt' : !audioReady ? 'Bấm bật chuông' : 'Chuông: Bật';
   const bellBtnCls = !soundEnabled
-    ? 'wp-ctrl-btn is-muted'
+    ? 'wp-sw-ctrl is-muted'
     : bellRinging
-      ? 'wp-ctrl-btn is-ringing'
+      ? 'wp-sw-ctrl is-ringing'
       : !audioReady
-        ? 'wp-ctrl-btn is-attention'
-        : 'wp-ctrl-btn';
+        ? 'wp-sw-ctrl is-attention'
+        : 'wp-sw-ctrl';
 
   return (
     <main className="wall wp-wall">
-      <header className="panel wp-head">
-        <div className="wp-brand">
-          <span className="wp-brand-accent" aria-hidden="true" />
-          <h1>
-            WAR ROOM <span>WAITING POINT</span>
-          </h1>
+      <header className="panel wp-sw-head">
+        <div className="wp-sw-brand">
+          <div className="wp-sw-monogram" aria-hidden="true">
+            WP
+          </div>
+          <h1>Waiting Point</h1>
         </div>
 
-        <div className="wp-head-right">
+        <div className="wp-sw-head-right">
           {!isOnline && (
-            <span className="wp-alert-pill st-late">
+            <span className="wp-sw-ctrl is-burn">
               <IconWifiOff className="wp-ico-sm" />
               <span>Mất kết nối Sheet</span>
             </span>
           )}
 
           {burnCount > 0 && (
-            <div className="wp-alert-pill st-late" title="Số yêu cầu đang quá thời gian xử lý">
+            <div className="wp-sw-ctrl is-burn" title="Số yêu cầu đang quá thời gian xử lý">
               <IconAlertTriangle className="wp-ico-sm" />
               <span>Quá hạn</span>
-              <b>{burnCount}</b>
+              <b className="wp-mono">{burnCount}</b>
             </div>
           )}
 
-          <div className={`wp-summary-pill ${activeCount === 0 ? 'is-zero' : ''}`}>
+          <div className={`wp-sw-ctrl is-stat ${activeCount === 0 ? 'is-zero' : ''}`}>
             <IconUsers className="wp-ico-sm" />
-            <span className="wp-summary-num">
+            <span className="wp-mono">
               <b>{people.length}</b> người · <b>{activeCount}</b> việc
             </span>
           </div>
@@ -522,7 +521,7 @@ export default function WaitingPointApp() {
 
           <button
             type="button"
-            className={`wp-ctrl-btn ${showCleared ? 'is-active' : ''}`}
+            className={`wp-sw-ctrl ${showCleared ? 'is-active' : ''}`}
             onClick={() => {
               setShowCleared((v) => !v);
               setClearedPage(0);
@@ -531,12 +530,11 @@ export default function WaitingPointApp() {
           >
             <IconHistory className="wp-ico-sm" />
             <span>Đã xong</span>
-            <b className={`wp-btn-badge ${recentCleared.length === 0 ? 'zero' : ''}`}>{recentCleared.length}</b>
+            <b className={`wp-sw-badge ${recentCleared.length === 0 ? 'zero' : ''}`}>{recentCleared.length}</b>
           </button>
 
-          <div className="wp-clock-box" aria-label="Giờ hiện tại">
-            <IconClock className="wp-ico-sm wp-clock-ico" />
-            <span>{fmtTime(new Date(nowMs))}</span>
+          <div className="wp-sw-clock" aria-label="Giờ hiện tại">
+            {fmtTime(new Date(nowMs))}
           </div>
         </div>
       </header>
@@ -571,7 +569,7 @@ export default function WaitingPointApp() {
                 >
                   <IconHistory className="wp-ico-xs" />
                   <span>
-                    Đã hoàn thành hôm nay: <b>{recentCleared.length}</b>
+                    Đã hoàn thành hôm nay: <b className="wp-mono">{recentCleared.length}</b>
                   </span>
                 </button>
               )}
@@ -579,9 +577,10 @@ export default function WaitingPointApp() {
           </section>
         ) : (
           <div className={`wp-people-grid ${gridCls} ${rowsCls}`} ref={gridScrollRef}>
-            {people.map((person) => (
+            {people.map((person, idx) => (
               <PersonPanel
                 key={person.key}
+                index={idx + 1}
                 person={person}
                 nowMs={nowMs}
                 taskLimit={taskLimit}
@@ -602,7 +601,7 @@ export default function WaitingPointApp() {
               t.kind === 'burn'
                 ? 'st-late'
                 : t.kind === 'new'
-                  ? 'wp-st-accent'
+                  ? 'st-done'
                   : t.kind === 'assigned'
                     ? 'st-in_progress'
                     : 'st-done';

@@ -25,7 +25,7 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
           <div className="wp-pager" aria-label="Phân trang lịch sử">
             <button
               type="button"
-              className="wp-ctrl-btn"
+              className="wp-sw-ctrl"
               disabled={safePage <= 0}
               onClick={() => onPageChange(Math.max(0, safePage - 1))}
             >
@@ -37,7 +37,7 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
             </span>
             <button
               type="button"
-              className="wp-ctrl-btn"
+              className="wp-sw-ctrl"
               disabled={safePage >= totalPages - 1}
               onClick={() => onPageChange(Math.min(totalPages - 1, safePage + 1))}
             >
@@ -47,7 +47,7 @@ export default function ClearedPanel({ items, page, onPageChange, onClose }) {
           </div>
         )}
 
-        <button type="button" className="wp-ctrl-btn wp-close-btn" onClick={onClose}>
+        <button type="button" className="wp-sw-ctrl wp-sw-close" onClick={onClose}>
           <IconX className="wp-ico-sm" />
           <span>Về bảng chờ</span>
         </button>
