@@ -109,27 +109,53 @@ details.notice summary::-webkit-details-marker { display: none; }
 .km-legend li { display: inline-flex; align-items: baseline; gap: 8px; }
 .km-legend .kd { transform: translateY(1px); }
 .km-legend b { color: var(--st); font-weight: 600; }
-.km-block { display: flex; flex-direction: column; gap: var(--s12); min-width: 0; }
-.km-stream { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: var(--s4) 0 0; font-size: var(--fs-panel); line-height: var(--lh-panel); font-weight: 700; }
-.km-stream b { letter-spacing: .02em; text-transform: uppercase; }
-.km-stream small { color: var(--muted); font-size: var(--fs-small); line-height: var(--lh-small); font-weight: 400; }
+/* Mỗi dòng tiền 1 khối: viền trái lime, tiêu đề lớn + tổng số KPI, cách khối sau 1 khoảng rõ. */
+.k-members { gap: var(--s24); }
+.km-block { display: flex; flex-direction: column; gap: var(--s16); min-width: 0; padding: var(--s20); border: 1px solid var(--border-strong); border-left: 4px solid var(--accent); border-radius: var(--r-lg); background: color-mix(in srgb, var(--bg-canvas) 55%, var(--bg-surface)); }
+.km-stream { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s16) var(--s24); padding-bottom: var(--s16); border-bottom: 1px solid var(--border-strong); }
+.kms-id { display: flex; align-items: center; gap: var(--s16); min-width: 0; }
+.kms-code { display: inline-flex; flex: none; align-items: center; justify-content: center; min-width: 64px; height: 48px; padding: 0 12px; border-radius: var(--r-md); background: var(--accent); color: var(--on-accent); font-family: var(--mono); font-size: 18px; font-weight: 800; letter-spacing: .02em; }
+.kms-code.is-none { background: var(--bg-hover); color: var(--text-2); }
+.kms-name { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kms-name h3 { margin: 0; font-size: 26px; line-height: 32px; font-weight: 800; letter-spacing: .02em; text-transform: uppercase; overflow-wrap: anywhere; }
+.kms-name p { margin: 0; color: var(--muted); font-size: var(--fs-body); line-height: var(--lh-body); }
+.kms-name p b { color: var(--text); font-weight: 600; }
+.kms-name .kms-desc { color: var(--text-2); }
+.km-block.is-empty { border-left-color: var(--border-strong); }
+.kms-stats { display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--s8); }
+.kms-stat, .kms-pct { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 96px; padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-subtle); text-align: center; }
+.kms-stat b, .kms-pct b { font-family: var(--mono); font-size: 22px; line-height: 28px; font-weight: 700; color: var(--st, var(--text)); }
+.kms-stat b i { color: var(--muted); font-size: 14px; font-style: normal; font-weight: 500; }
+.kms-stat small, .kms-pct small { color: var(--muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.kms-stat.is-zero b { color: var(--dim); }
+.kms-stat.st-L:not(.is-zero), .kms-stat.st-K:not(.is-zero) { border-color: color-mix(in srgb, var(--st) 50%, transparent); background: color-mix(in srgb, var(--st) 9%, var(--bg-subtle)); }
+.kms-pct.ok b { color: var(--pct-ok); }
+.kms-pct.mid b { color: var(--pct-mid); }
+.kms-pct.bad b { color: var(--pct-bad); }
 .km-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 540px), 1fr)); align-items: start; gap: var(--s12); }
 .km-group { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-subtle); }
 .km-top { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 12px 14px 10px; }
 .km-top h4 { min-width: 0; margin: 0; font-size: var(--fs-panel); line-height: var(--lh-panel); font-weight: 700; overflow-wrap: anywhere; }
 .km-sum { color: var(--muted); font-size: var(--fs-small); line-height: var(--lh-small); white-space: nowrap; }
 .km-sum b { color: var(--text); font-family: var(--mono); font-weight: 700; }
-.km-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px 104px 96px; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--border); }
-.km-head { padding-top: 6px; padding-bottom: 6px; background: var(--bg-surface); color: var(--muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
-.km-head span + span { text-align: right; }
-.km-who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Bảng thành viên: cột tên + 3 cột số bằng nhau, chữ và số căn giữa, kẻ dọc ngăn cột. */
+.km-row { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 120px); align-items: stretch; border-top: 1px solid var(--border); }
+.km-row > * { display: flex; align-items: center; min-width: 0; padding: 10px 12px; }
+.km-row > * + * { justify-content: center; border-left: 1px solid var(--border); text-align: center; }
+.km-row > :first-child { padding-left: 14px; }
+.km-head { background: var(--bg-surface); color: var(--muted); font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.km-head > * { gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+.km-head .kd { width: 8px; height: 8px; border-radius: 2px; }
+.km-who { gap: 10px; }
 .km-who .kp-name b { overflow-wrap: anywhere; }
 .km-who .kp-name small { color: var(--muted); }
-.km-num { display: flex; align-items: baseline; justify-content: flex-end; gap: 2px; font-family: var(--mono); white-space: nowrap; }
-.km-num b { color: var(--st); font-size: 18px; line-height: 24px; font-weight: 700; }
-.km-num small { color: var(--muted); font-size: var(--fs-label); line-height: 16px; }
-.km-num.is-zero b { color: var(--dim); font-weight: 500; }
-.km-idle { grid-column: 2 / -1; color: var(--dim); font-size: var(--fs-small); line-height: var(--lh-small); text-align: right; }
+.km-num { font-family: var(--mono); white-space: nowrap; }
+.km-val { display: inline-flex; align-items: baseline; gap: 2px; }
+.km-val b { color: var(--st); font-size: 20px; line-height: 24px; font-weight: 700; }
+.km-val small { color: var(--muted); font-size: var(--fs-label); line-height: 16px; }
+.km-num.is-zero .km-val b { color: var(--dim); font-weight: 500; }
+.km-num.st-L:not(.is-zero), .km-num.st-K:not(.is-zero) { background: color-mix(in srgb, var(--st) 9%, transparent); } /* số cần chú ý: nền nhạt */
+.km-row > .km-idle { grid-column: 2 / -1; color: var(--dim); font-size: var(--fs-small); line-height: var(--lh-small); }
 
 /* ---------- Màn hình TV: danh sách tồn đọng và hoàn thành trễ hạn ---------- */
 .k-fails { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
@@ -285,12 +311,33 @@ details.notice summary::-webkit-details-marker { display: none; }
 }
 @media (max-width: 860px) {
   .k-hero, .k-plan-sum, .kpl-cols { grid-template-columns: minmax(0, 1fr); }
-  .km-row { grid-template-columns: minmax(0, 1fr) 76px 60px 60px; gap: 6px; padding-left: 10px; padding-right: 10px; }
+  .km-row { grid-template-columns: minmax(0, 1fr) repeat(3, 72px); }
+  .km-block { padding: var(--s12); }
+  .kms-name h3 { font-size: 20px; line-height: 26px; }
+  .kms-code { min-width: 52px; height: 40px; font-size: 15px; }
+  .kms-stats { width: 100%; }
+  .kms-stat, .kms-pct { flex: 1; min-width: 0; padding: 6px; }
+  .km-row > * { padding: 8px 6px; }
+  .km-row > :first-child { padding-left: 10px; }
   .km-head { font-size: 10px; letter-spacing: 0; }
+  .km-head .kd { display: none; }
+  .km-val { flex-direction: column; align-items: center; gap: 0; }
   .kf-bar { position: static; }
   .kf-sep { display: none; }
   .k-today-row { flex-direction: column; align-items: flex-start; }
   .kpl-sum { align-items: flex-start; }
   .k-stack.is-mini { width: 100%; }
   .k-num-xl { font-size: 48px; line-height: 52px; }
+}
+/* Điện thoại: tên thành viên 1 dòng riêng, 3 con số xếp ngang bên dưới (thẻ nhóm chỉ còn khoảng 270px). */
+@media (max-width: 560px) {
+  .k-members .k-panel, .km-block { padding: 10px; }
+  .km-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .km-row > :first-child { grid-column: 1 / -1; padding: 8px 10px 4px; }
+  .km-row > * + * { padding-top: 4px; }
+  .km-row > :nth-child(2) { border-left: 0; }
+  .km-head > :first-child { display: none; }
+  .km-head > :nth-child(2) { border-left: 0; }
+  .km-head > * + * { padding-top: 8px; }
+  .km-row > .km-idle { grid-column: 1 / -1; padding-bottom: 8px; }
 }

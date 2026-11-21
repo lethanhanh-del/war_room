@@ -20,12 +20,24 @@ import { normKey } from '../worksuite/model.js';
 import { parseKpiBook } from './sheet.js';
 import { toDashboard } from './dashboard.js';
 import { stampTicks } from './ticks.js';
+import { applyPlan, parsePlan } from './plan.js';
 
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
+// WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
+const DEFAULT_PLAN_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY';
 export const KPI_SYNC_EVERY_MS = 20000;
 const FORCE_EVERY_MS = 5000;
 
 /** ID Google Sheet KPI; '' = tắt. */
+/** ID file phân chia nhiệm vụ có danh sách dòng tiền đánh số (plan.js); '' = không xếp theo danh sách. */
+export function planSheetId(env = {}) {
+  const value = String(env.KPI_PLAN_URL ?? '').trim();
+  if (!value) return DEFAULT_PLAN_SHEET;
+  if (/^(off|false|0|none)$/i.test(value)) return '';
+  const m = /\/spreadsheets\/d\/([\w-]{20,})/.exec(value) || /^([\w-]{20,})$/.exec(value);
+  return m ? m[1] : '';
+}
+
 export function kpiSheetId(env = {}) {
   const value = String(env.KPI_SHEET_URL ?? '').trim();
   if (!value) return DEFAULT_KPI_SHEET;
@@ -70,6 +82,19 @@ export async function syncKpi(env, { force = false, now = Date.now(), load = fet
   if (!(await claim(env, force ? FORCE_EVERY_MS : KPI_SYNC_EVERY_MS, now))) return { skipped: true };
   try {
     const book = parseKpiBook(await load(id), { year: yearOf(env) });
+    // Xếp + đánh số theo 8 dòng tiền của file phân chia nhiệm vụ; file đó đọc lỗi thì giữ thứ tự tab, kèm cảnh báo.
+    const planId = planSheetId(env);
+    if (planId) {
+      try {
+        const plan = parsePlan(await load(planId));
+        if (!plan.length) book.warnings.push('File phân chia nhiệm vụ chưa có cột “STT dòng tiền”: dòng tiền xếp theo thứ tự tab.');
+        const r = applyPlan(book.streams, plan);
+        book.streams = r.streams;
+        book.warnings.push(...r.warnings);
+      } catch (e) {
+        book.warnings.push(`Chưa đọc được file phân chia nhiệm vụ (danh sách dòng tiền đánh số): ${errText(e)}`);
+      }
+    }
     const warnings = JSON.stringify(book.warnings.slice(0, 20).map((w) => String(w).slice(0, 300)));
     const prev = await env.DB.prepare('SELECT data FROM kpi_sheet WHERE id = 1').first();
     // Ghi giờ hoàn thành cho ô vừa được tick (ticks.js) trước khi so với lần trước: ô không đổi giữ nguyên giờ cũ.
@@ -113,8 +138,8 @@ function byName(list, name, get) {
  */
 export function attachPeople(streams, teams = [], imports = []) {
   return streams.map((s, si) => {
-    const team = byName(teams, s.name, (t) => t.name);
-    const imp = byName(imports, s.name, (i) => i.name);
+    const team = byName(teams, s.name, (t) => t.name) || (s.sourceName ? byName(teams, s.sourceName, (t) => t.name) : null);
+    const imp = byName(imports, s.name, (i) => i.name) || (s.sourceName ? byName(imports, s.sourceName, (i) => i.name) : null);
     const tgroups = team?.groups || [];
     const groups = s.groups.map((g, gi) => {
       const persons = [...new Set(g.rows.map((r) => r.person).filter(Boolean))];
@@ -136,7 +161,9 @@ export function attachPeople(streams, teams = [], imports = []) {
       name: s.name,
       sheet: s.sheet,
       ...(s.kpiSheet ? { kpiSheet: s.kpiSheet } : {}),
-      code: imp?.code || '',
+      ...(s.no ? { no: s.no } : {}),
+      ...(s.desc ? { desc: s.desc } : {}),
+      code: s.no ? `DT${String(s.no).padStart(2, '0')}` : imp?.code || '',
       pic: s.pic || imp?.pic || tgroups[0]?.lead?.name || '',
       days: s.days,
       groups,

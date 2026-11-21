@@ -14,6 +14,8 @@ Gồm 4 trang. Mỗi trang có **thanh điều hướng chung** ở trên cùng 
 
 Trang "Tiến độ dòng tiền" cũ (`public/index.html`, `dong-tien.js`) đã bỏ từ 22/11/2026. Đồng bộ task từ Google Sheet và API `/api/streams`, `/api/excel` vẫn chạy: `/kpi` lấy mã dòng tiền và PIC từ đó.
 
+Nút **Tự cuộn** trên thanh điều hướng cuộn chậm trang từ đầu đến cuối, dừng 5 giây rồi về đầu trang và lặp lại (cho màn hình treo tường; nhớ theo từng trang, hoặc thêm `?tucuon=1` trên địa chỉ). Người xem tự cuộn hoặc chạm màn hình thì tạm dừng 15 giây.
+
 Mọi trang đều phải đăng nhập. Mỗi người có một tài khoản trong D1; tài khoản `admin` dùng mật khẩu `ACCESS_PASSWORD`.
 
 ## Không còn kết nối CT Worksuite
@@ -57,17 +59,18 @@ Không cần nạp tay: Worker tự đọc Google Sheet task [WR - MASTER TASK](
 Từ 22/11/2026, Worker đọc KPI trong file master [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) (chia sẻ "Bất kỳ ai có đường liên kết" – Người xem). Trước đó Worker đọc file mẫu thamkhao_kpi, và file đó vẫn đọc được. Mỗi phút (cron) và mỗi 20 giây khi có người xem, Worker đọc lại sheet, lưu vào D1 (bảng `kpi_sheet`) và báo các màn hình tải lại khi có thay đổi. Trong cùng lượt cron, đồng bộ task và KPI dùng chung 1 lần tải file (`sharedLoader`).
 
 - File master: mỗi tab task "Dòng tiền …" có ngay sau nó 1 tab KPI, tên tuỳ ý (vd "Trang tính6"). PIC dòng tiền lấy ở dòng `PIC phụ trách: …` của tab task. File kiểu thamkhao_kpi: mỗi tab KPI tên "Dòng tiền …". Tab khác ("Waiting Point", "Nhóm hỗ trợ", "KPI 21-25.11"…) bị bỏ qua.
+- **8 dòng tiền đánh số**: cả `/kpi` và `/` hiện đúng các dòng tiền có cột "STT dòng tiền" trong file phân chia nhiệm vụ WarRoom_CTHomes_Final_20.11.2026 (bản gốc ở SharePoint; Worker đọc bản Google Sheet cùng nội dung, biến `KPI_PLAN_URL`, `off` để tắt), theo đúng số và tên trong file (`src/kpi/plan.js`). Bảng KPI ghép theo số "Dòng tiền N: …" ở tab task, không có số thì theo tên. Dòng tiền chưa có tab KPI vẫn hiện (0 KPI). Tab KPI ngoài danh sách bị ẩn, kèm cảnh báo.
 - Dòng mẫu chỉ có Stt và ô tick (không Nhóm, PIC, KPI) bị bỏ qua. Ô tick chưa tick của ngày không ghi KPI không tính là KPI.
 - Dòng tiêu đề có cột Nhóm, PIC và các ô ngày (21/11 …); mỗi ngày 2 cột KPI | Kết quả. Cột Ghi chú / Vướng mắc và Thư mục dữ liệu lưu trữ (link https) được hiện kèm. Cột Tổng kết không dùng: dashboard tự tính.
 - **Mỗi người 1 dòng**: cột Nhóm giữ nguyên tên nhóm ở mọi dòng của nhóm, cột PIC ghi người thực hiện dòng đó. Dòng có Stt La Mã (I, II…) không có PIC / KPI là dòng mục. PIC của nhóm lấy theo Đội trưởng trong file phân chia nhiệm vụ (bảng `excel_teams`).
-- Trạng thái (`public/kpi-model.js`). Hạn của mỗi KPI là hết ngày của nó (giờ Việt Nam):
-  - **Đạt**: ô Kết quả đã tick (hoặc ghi Đạt / Hoàn thành / Xong) trong ngày của KPI.
-  - **Hoàn thành trễ hạn**: tick sau khi hết ngày của KPI. Sheet không lưu giờ tick, nên Worker ghi lại lúc nó thấy ô được tick lần đầu (`src/kpi/ticks.js`, trễ tối đa khoảng 1 phút). Ô đã tick từ trước lần đọc đầu tiên được tính đúng hạn.
-  - **Không đạt**: ghi Không đạt, hoặc đã qua ngày mà chưa tick. Tick sau đó thì chuyển thành Hoàn thành trễ hạn.
-  - **Đang làm**: KPI của hôm nay chưa tick. **Sắp tới**: ngày chưa tới.
-  - Đã hoàn thành = Đạt + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
+- Trạng thái (`public/kpi-model.js`). Hạn của mỗi KPI là 05:00 sáng hôm sau, giờ Việt Nam (KPI ngày 21 hết hạn lúc 05:00 ngày 22); màn hình Dòng tiền ở `/` dùng cùng mốc này:
+  - **Hoàn thành**: ô Kết quả đã tick (hoặc ghi Đạt / Hoàn thành / Xong) trước hạn.
+  - **Hoàn thành trễ hạn**: tick sau hạn. Sheet không lưu giờ tick, nên Worker ghi lại lúc nó thấy ô được tick lần đầu (`src/kpi/ticks.js`, trễ tối đa khoảng 1 phút). Ô đã tick từ trước lần đọc đầu tiên được tính đúng hạn.
+  - **Không đạt**: ghi Không đạt, hoặc quá hạn mà chưa tick. Tick sau đó thì chuyển thành Hoàn thành trễ hạn.
+  - **Đang làm**: đã tới ngày của KPI, chưa quá hạn, chưa tick. **Sắp tới**: ngày chưa tới.
+  - Đã hoàn thành = Hoàn thành (đúng hạn) + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
 - Block **Thành viên theo nhóm**: mỗi nhóm 1 bảng thành viên (PIC nhóm đứng đầu) với số KPI đã hoàn thành, hoàn thành trễ hạn và còn tồn đọng của từng người, cộng dồn đến ngày đang xem. Block lọc theo dòng tiền đang chọn; chọn "Tất cả dòng tiền" thì hiện mọi nhóm.
-- Bộ lọc nằm trên địa chỉ để gửi link: `?ngay=2026-11-23` hoặc `?ngay=all`, `&dong=<tên dòng tiền viết liền không dấu>`, `&kq=D|L|T` (Đạt, Hoàn thành trễ hạn, Tồn đọng).
+- Bộ lọc nằm trên địa chỉ để gửi link: `?ngay=2026-11-23` hoặc `?ngay=all`, `&dong=<tên dòng tiền viết liền không dấu>`, `&kq=D|L|T` (Hoàn thành, Hoàn thành trễ hạn, Tồn đọng).
 - API: `GET /api/kpi` (dữ liệu, đọc lại sheet chạy nền), `POST /api/kpi/sync` (đọc lại ngay), `GET /api/dashboard` (cùng dữ liệu cho màn hình Dòng tiền ở `/`; `?force=1` đọc lại ngay). Màn hình Dòng tiền tự tính trạng thái theo ngày: ô chưa tick của ngày đã qua là Không đạt. Đổi sheet: biến `KPI_SHEET_URL` (link hoặc ID; `off` để tắt). Mã nguồn: `src/kpi/sheet.js` (đọc sheet), `src/kpi/index.js` (đồng bộ, API), `public/kpi-model.js` (tính trạng thái), `public/kpi.js`, `public/kpi.css`, `public/kpi-demo.js` (dữ liệu minh họa).
 
 ## Cấu hình trên Cloudflare

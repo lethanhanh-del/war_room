@@ -3,7 +3,7 @@
 // (số KPI đã hoàn thành / hoàn thành trễ hạn / còn tồn đọng của từng người) → Kết quả theo dòng tiền → Kế hoạch & kết quả
 // theo nhóm (lọc 1 ngày: KPI của ngày + tồn đọng; Cả 5 ngày: Đã hoàn thành / Tồn đọng / Đang làm · sắp tới).
 // Màn hình TV (?tv=1): 1 màn, không cuộn. ?demo=1: dữ liệu minh họa.
-import { STATUSES, STATUS_LABEL, buildModel, count, defaultDay, doneOf, isDone, isOutstanding, memberStats, noteTargets, onDate, pct, refDate, upTo } from './kpi-model.js';
+import { DUE_LABEL, STATUSES, STATUS_LABEL, buildModel, count, defaultDay, doneOf, isDone, isOutstanding, memberStats, noteTargets, onDate, pct, refDate, upTo } from './kpi-model.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -243,8 +243,8 @@ function filtersHtml() {
   const f = S.filter;
   const opt = (val, label) => `<button type="button" class="kf-opt" data-day="${esc(val)}" aria-pressed="${f.day === val}">${label}</button>`;
   const days = m.days.map((d) => opt(d.date, `${d.weekday} ${esc(d.label)}${d.date === m.today ? ' · Hôm nay' : ''}`)).join('');
-  const streams = [`<option value="all">Tất cả dòng tiền</option>`, ...m.streams.map((s) => `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${esc(s.name)}</option>`)].join('');
-  const res = [['all', 'Tất cả', ''], ['D', 'Đạt', 'D'], ['L', 'Hoàn thành trễ hạn', 'L'], ['T', 'Tồn đọng', 'K']]
+  const streams = [`<option value="all">Tất cả dòng tiền</option>`, ...m.streams.map((s) => `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${s.no ? `${s.no}. ` : ''}${esc(s.name)}</option>`)].join('');
+  const res = [['all', 'Tất cả', ''], ['D', 'Hoàn thành', 'D'], ['L', 'Hoàn thành trễ hạn', 'L'], ['T', 'Tồn đọng', 'K']]
     .map(([v, l, st]) => `<button type="button" class="kf-chip" data-result="${v}" aria-pressed="${f.result === v}">${st ? `<i class="kd st-${st}"></i>` : ''}${l}</button>`).join('');
   return `<div class="kf-bar">
       <span class="kf-lead">${icon('filter')}Lọc</span>
@@ -294,7 +294,7 @@ function heroHtml(x) {
     ? `<article class="k-card k-today"><p class="k-over">${esc(title)}</p><div class="k-today-row">${donut(c)}<div class="k-today-info"><p class="k-num-m">${c.total} <span>KPI kế hoạch</span></p><p class="hint">Ngày chưa tới. Kết quả được nhập vào đúng ngày.</p></div></div></article>`
     : `<article class="k-card k-today"><p class="k-over">${esc(title)}</p>
         <div class="k-today-row">${donut(c)}<div class="k-today-info"><p class="k-num-m">${doneOf(c)}/${c.total} <span>KPI hoàn thành</span></p><ul class="k-legend">${legend}</ul></div></div>
-        ${c.N ? `<p class="k-remind info">${icon('dot')}${c.N} KPI hôm nay chưa tick kết quả. Tick sau hôm nay sẽ tính là hoàn thành trễ hạn.</p>` : ''}
+        ${c.N ? `<p class="k-remind info">${icon('dot')}${c.N} KPI chưa tick kết quả. Hạn là ${DUE_LABEL} sáng hôm sau; tick sau giờ đó tính là hoàn thành trễ hạn.</p>` : ''}
       </article>`;
 
   const due = upTo(items, ref);
@@ -318,17 +318,17 @@ function heroHtml(x) {
   const failStreams = [...new Set(upto.filter((it) => it.status === 'K').map((it) => it.stream))];
   const card3 = `<article class="k-card k-big st-K${uc.K ? '' : ' is-zero'}"><p class="k-over">Không đạt · tồn đọng ${esc(until)}</p>
       <p class="k-num-xl">${uc.K} <span>KPI</span></p>
-      <p class="hint">${failStreams.length ? `Đã qua ngày mà chưa hoàn thành, ở ${failStreams.length} dòng tiền: ${esc(failStreams.join(', '))}` : uc.total ? 'Không có KPI tồn đọng' : 'Chưa có KPI'}</p></article>`;
+      <p class="hint">${failStreams.length ? `Quá hạn (${DUE_LABEL} sáng hôm sau) mà chưa hoàn thành, ở ${failStreams.length} dòng tiền: ${esc(failStreams.join(', '))}` : uc.total ? 'Không có KPI tồn đọng' : 'Chưa có KPI'}</p></article>`;
   const card4 = `<article class="k-card k-big st-L${uc.L ? '' : ' is-zero'}"><p class="k-over">Hoàn thành trễ hạn ${esc(until)}</p>
       <p class="k-num-xl">${uc.L} <span>KPI</span></p>
-      <p class="hint">${uc.L ? 'Đã hoàn thành, nhưng tick kết quả sau khi hết ngày của KPI' : uc.total ? 'Không có KPI hoàn thành trễ hạn' : 'Chưa có KPI'}</p></article>`;
+      <p class="hint">${uc.L ? `Đã hoàn thành, nhưng tick kết quả sau ${DUE_LABEL} sáng hôm sau ngày của KPI` : uc.total ? 'Không có KPI hoàn thành trễ hạn' : 'Chưa có KPI'}</p></article>`;
   return `<section class="k-hero" aria-label="Chỉ số chính">${card1}${card2}${card3}${card4}</section>`;
 }
 
 // ----- Thành viên theo nhóm: số KPI đã hoàn thành / hoàn thành trễ hạn / còn tồn đọng của từng người -----
 function memberRow(p) {
-  const num = (n, st, extra = '') => `<span class="km-num st-${st}${n ? '' : ' is-zero'}" role="cell"><b>${n}</b>${extra}</span>`;
-  const sub = [p.isPic ? 'PIC nhóm' : '', p.doing ? `${p.doing} KPI đang làm hôm nay` : ''].filter(Boolean).join(' · ');
+  const num = (n, st, extra = '') => `<span class="km-num st-${st}${n ? '' : ' is-zero'}" role="cell"><span class="km-val"><b>${n}</b>${extra}</span></span>`;
+  const sub = [p.isPic ? 'PIC nhóm' : '', p.doing ? `${p.doing} KPI đang làm` : ''].filter(Boolean).join(' · ');
   const who = `<span class="km-who" role="rowheader"><span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span><span class="kp-name"><b>${esc(p.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
   if (!p.total) return `<div class="km-row is-idle" role="row">${who}<span class="km-idle" role="cell">Chưa có KPI</span></div>`;
   return `<div class="km-row" role="row">${who}${num(p.done, 'D', `<small>/${p.total} KPI</small>`)}${num(p.late, 'L')}${num(p.backlog, 'K')}</div>`;
@@ -342,32 +342,46 @@ function membersHtml(x) {
   const keep = (p) => f.result === 'all' || (f.result === 'D' ? p.done - p.late > 0 : f.result === 'L' ? p.late > 0 : p.backlog > 0);
   let groupCount = 0;
   const people = new Set();
-  const blocks = streams.map((s) => {
+  const blocks = streams.map((s, si) => {
+    const sum = { done: 0, late: 0, backlog: 0, total: 0, groups: 0, people: new Set() };
     const cards = s.groups.map((g) => {
       const all = memberStats(g, cut);
+      for (const p of all) {
+        sum.done += p.done; sum.late += p.late; sum.backlog += p.backlog; sum.total += p.total;
+        sum.people.add(p.name.toLocaleLowerCase('vi'));
+      }
       const list = all.filter(keep);
       if (!list.length) return '';
       groupCount++;
+      sum.groups++;
       list.forEach((p) => people.add(p.name.toLocaleLowerCase('vi')));
       const t = all.reduce((a, p) => ({ done: a.done + p.done, total: a.total + p.total }), { done: 0, total: 0 });
       return `<article class="km-group"><header class="km-top"><h4>${esc(g.name)}</h4><span class="km-sum">${t.total ? `Đã hoàn thành <b>${t.done}/${t.total}</b> KPI` : 'Chưa có KPI'}</span></header>
         <div class="km-table" role="table" aria-label="Thành viên nhóm ${esc(g.name)}">
-          <div class="km-row km-head" role="row"><span role="columnheader">Thành viên</span><span role="columnheader">Đã hoàn thành</span><span role="columnheader">Hoàn thành trễ hạn</span><span role="columnheader">Còn tồn đọng</span></div>
+          <div class="km-row km-head" role="row"><span role="columnheader">Thành viên</span><span role="columnheader"><i class="kd st-D"></i>Đã hoàn thành</span><span role="columnheader"><i class="kd st-L"></i>Hoàn thành trễ hạn</span><span role="columnheader"><i class="kd st-K"></i>Còn tồn đọng</span></div>
           ${list.map(memberRow).join('')}
         </div></article>`;
     }).join('');
-    if (!cards) return '';
-    const head = streams.length > 1 ? `<h3 class="km-stream">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b>${s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</h3>` : '';
-    return `<div class="km-block">${head}<div class="km-grid">${cards}</div></div>`;
+    if (!cards && f.result !== 'all') return '';
+    // Mỗi dòng tiền 1 khối riêng: tiêu đề lớn (mã, tên, PIC) + tổng số KPI của dòng tiền, rồi các nhóm bên dưới.
+    const stat = (n, st, label, extra = '') => `<span class="kms-stat st-${st}${n ? '' : ' is-zero'}"><b>${n}${extra}</b><small>${label}</small></span>`;
+    const p = pct(sum.done, sum.total);
+    const head = `<header class="km-stream">
+        <div class="kms-id">${s.code ? `<span class="kms-code">${esc(s.code)}</span>` : `<span class="kms-code is-none">${si + 1}</span>`}
+          <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${[s.pic ? `PIC dòng tiền <b>${esc(s.pic)}</b>` : 'Chưa ghi PIC dòng tiền', `${sum.groups} nhóm`, `${sum.people.size} người`].join(' · ')}</p></div></div>
+        <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
+      </header>`;
+    const body = cards ? `<div class="km-grid">${cards}</div>` : `<p class="k-none">Chưa có nhóm nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
+    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="Dòng tiền ${esc(s.name)}">${head}${body}</section>`;
   }).join('');
   const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
-  const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện người có KPI ${f.result === 'D' ? 'đạt đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
+  const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện người có KPI ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
   return `<section class="k-panel k-members" aria-labelledby="k-mem-t"><header class="k-phead"><div><h2 id="k-mem-t">Thành viên theo nhóm · ${esc(scope)}</h2>
       <p class="hint">${groupCount} nhóm · ${people.size} người. Số KPI của từng người tính ${esc(range)}.${filterNote}</p></div></header>
       <ul class="km-legend">
         <li class="st-D"><i class="kd st-D"></i><span><b>Đã hoàn thành</b>: đã tick ô Kết quả, tính cả tick trễ. Số sau dấu / là tổng KPI đến ngày đang xem.</span></li>
-        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick, nhưng sau khi hết ngày của KPI.</span></li>
-        <li class="st-K"><i class="kd st-K"></i><span><b>Còn tồn đọng</b>: đã qua ngày mà chưa tick.</span></li>
+        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick, nhưng sau hạn (${DUE_LABEL} sáng hôm sau ngày của KPI).</span></li>
+        <li class="st-K"><i class="kd st-K"></i><span><b>Còn tồn đọng</b>: quá hạn mà chưa tick.</span></li>
       </ul>
       ${blocks || '<p class="k-none">Không có thành viên nào khớp bộ lọc.</p>'}</section>`;
 }
@@ -428,7 +442,7 @@ function tableHtml(x, { tv = false } = {}) {
     const c = count(due);
     const p = pct(doneOf(c), c.total);
     const backlog = c.K;
-    const name = tv ? `<b title="${esc(s.name)}">${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
+    const name = tv ? `<b title="${esc(s.name)}">${s.no ? `${s.no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
         <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
@@ -450,7 +464,7 @@ function peopleHtml(g) {
 function lateNote(it) {
   if (it.status !== 'L') return '';
   const at = tickTime(it.doneAt);
-  return `<span class="kl-note">Hoàn thành trễ hạn${at ? `: tick lúc ${esc(at)}` : ''}, hạn là hết ngày ${esc(it.label)}</span>`;
+  return `<span class="kl-note">Hoàn thành trễ hạn${at ? `: tick lúc ${esc(at)}` : ''}, hạn là ${DUE_LABEL} sáng hôm sau ngày ${esc(it.label)}</span>`;
 }
 
 function lineFull(it, notes) {
@@ -513,7 +527,7 @@ function planCard(g, x) {
   const back = g.items.filter((it) => it.date <= ref && isOutstanding(it)).sort(byDate);
   const next = g.items.filter((it) => it.status === 'N' || it.status === 'S').sort(byDate);
   const cols = [
-    ['done', f.result === 'L' ? 'Hoàn thành trễ hạn' : f.result === 'D' ? 'Đạt đúng hạn' : 'Đã hoàn thành', f.result === 'L' ? 'clock' : 'check', f.result === 'L' ? 'L' : 'D', done, 'Chưa có KPI nào'],
+    ['done', f.result === 'L' ? 'Hoàn thành trễ hạn' : f.result === 'D' ? 'Hoàn thành đúng hạn' : 'Đã hoàn thành', f.result === 'L' ? 'clock' : 'check', f.result === 'L' ? 'L' : 'D', done, 'Chưa có KPI nào'],
     ['back', 'Tồn đọng', 'alert', 'K', back, 'Không có KPI tồn đọng'],
     ['next', 'Đang làm · sắp tới', 'calendar', 'S', next, 'Không còn KPI sắp tới'],
   ].filter(([k]) => f.result === 'all' || (f.result === 'T' ? k === 'back' : k === 'done'));
@@ -564,7 +578,7 @@ function groupsHtml(x) {
     const back = s.items.filter((it) => it.date < D && isOutstanding(it)).length;
     const strip = D > today
       ? `<p class="k-strip"><b>Ngày ${esc(labelOf(D))}: ${dc.total} KPI kế hoạch</b>${pill('Ngày chưa tới', 'muted')}</p>`
-      : `<p class="k-strip"><b>Ngày ${esc(labelOf(D))}: ${dc.total} KPI</b>${pill(`Đạt ${dc.D}`, 'ok')}${dc.L ? pill(`Hoàn thành trễ hạn ${dc.L}`, 'warn') : ''}${dc.K ? pill(`Không đạt ${dc.K}`, 'bad') : ''}${dc.N ? pill(`Đang làm ${dc.N}`, 'info') : ''}<span class="kf-sep" aria-hidden="true"></span>${pill(`Tồn đọng từ ngày trước ${back}`, back ? 'bad-line' : 'ok-line')}</p>`;
+      : `<p class="k-strip"><b>Ngày ${esc(labelOf(D))}: ${dc.total} KPI</b>${pill(`Hoàn thành ${dc.D}`, 'ok')}${dc.L ? pill(`Hoàn thành trễ hạn ${dc.L}`, 'warn') : ''}${dc.K ? pill(`Không đạt ${dc.K}`, 'bad') : ''}${dc.N ? pill(`Đang làm ${dc.N}`, 'info') : ''}<span class="kf-sep" aria-hidden="true"></span>${pill(`Tồn đọng từ ngày trước ${back}`, back ? 'bad-line' : 'ok-line')}</p>`;
     const cards = active.map((g) => dayCard(g, x)).join('');
     body = `${strip}<div class="k-cards">${cards || '<p class="k-none">Không có nhóm nào khớp bộ lọc.</p>'}</div>`;
   }
@@ -573,7 +587,7 @@ function groupsHtml(x) {
 }
 
 function guideHtml() {
-  return `<p class="k-guide">${icon('info')}<span>Cách đọc: tick ô Kết quả trên sheet khi hoàn thành KPI. Hạn của mỗi KPI là hết ngày của nó. Tick trong ngày là Đạt; tick sau ngày đó là Hoàn thành trễ hạn (trang ghi nhận giờ tick trong khoảng 1 phút sau khi tick; ô đã tick từ trước khi trang bắt đầu theo dõi được tính đúng hạn). Chưa tick: hôm nay là Đang làm, ngày đã qua là Không đạt, ngày chưa tới là Sắp tới. Tồn đọng = KPI Không đạt tính đến ngày đang xem. Nhóm nhiều người: mỗi người 1 dòng cùng tên Nhóm trên sheet, cột PIC của dòng là người thực hiện; PIC nhóm lấy theo Đội trưởng trong DS nhân sự War-Room. Bộ lọc Ngày áp dụng cho cả trang.</span></p>`;
+  return `<p class="k-guide">${icon('info')}<span>Cách đọc: tick ô Kết quả trên sheet khi hoàn thành KPI. Hạn của KPI là ${DUE_LABEL} sáng hôm sau ngày của KPI (KPI ngày 21 hết hạn lúc ${DUE_LABEL} ngày 22). Tick trước hạn là Hoàn thành; tick sau hạn là Hoàn thành trễ hạn (trang ghi nhận giờ tick trong khoảng 1 phút sau khi tick; ô đã tick từ trước khi trang bắt đầu theo dõi được tính đúng hạn). Chưa tick: chưa quá hạn là Đang làm, quá hạn là Không đạt, ngày chưa tới là Sắp tới. Tồn đọng = KPI Không đạt tính đến ngày đang xem. Nhóm nhiều người: mỗi người 1 dòng cùng tên Nhóm trên sheet, cột PIC của dòng là người thực hiện; PIC nhóm lấy theo Đội trưởng trong DS nhân sự War-Room. Bộ lọc Ngày áp dụng cho cả trang.</span></p>`;
 }
 
 // ----- Màn hình TV: 1 màn, hôm nay, tất cả dòng tiền -----

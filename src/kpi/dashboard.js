@@ -53,7 +53,8 @@ export function toDashboard(data) {
         });
       }
     });
-    return { key: s.key, label: flowLabel(s), sheet: s.kpiSheet || s.sheet || '', sheetTitle: s.sheet || '', days, groups, items };
+    // Dòng tiền có số thứ tự trong file phân chia nhiệm vụ (plan.js): tên đúng như file, app hiện số này ở ô vuông đầu thẻ.
+    return { key: s.key, ...(s.no ? { no: s.no } : {}), label: s.no ? s.name : flowLabel(s), sheet: s.kpiSheet || s.sheet || '', sheetTitle: s.sheet || '', days, groups, items };
   });
   return {
     spreadsheetTitle: 'Google Sheet KPI',
