@@ -210,12 +210,23 @@ export function formatClock(sec) {
   return neg ? `+${core}` : core;
 }
 
+export function isCompleteWaitingRow(row) {
+  if (!row) return false;
+  const stream = String(row.stream || '').trim();
+  const group = String(row.group || '').trim();
+  const issue = String(row.issue || '').trim();
+  const timeRaw = String(row.timeRaw || '').trim();
+  const owner = String(row.owner || '').trim();
+  const supporter = String(row.supporter || '').trim();
+  if (!stream || !group || !issue || !timeRaw || !owner || !supporter) return false;
+  return parseTimeSpec(timeRaw).kind !== 'none';
+}
+
 function buildItemsFromRows(rawRows, picName) {
-  let lastStream = '';
-  let lastGroup = '';
   let resolvedPic = picName || '';
   const dupCount = new Map();
   const activeItems = [];
+  let incompleteCount = 0;
 
   for (const r of rawRows) {
     const combinedHeader = `${r.stt} ${r.stream} ${r.group} ${r.issue}`;
@@ -227,12 +238,15 @@ function buildItemsFromRows(rawRows, picName) {
       continue;
     }
 
-    if (r.stream) lastStream = r.stream;
-    if (r.group) lastGroup = r.group;
-    if (!r.issue) continue;
+    // Chỉ đẩy lên màn hình khi đã nhập đủ 6 thông tin bắt buộc trên dòng:
+    // Dòng tiền, Nhóm công việc, Vấn đề gặp phải, Thời gian xử lý (hợp lệ), Người phụ trách, Người hỗ trợ.
+    if (!isCompleteWaitingRow(r)) {
+      if (r.issue || r.timeRaw || r.owner || r.supporter) incompleteCount += 1;
+      continue;
+    }
 
-    const stream = r.stream || lastStream || 'War Room';
-    const group = r.group || lastGroup || 'Chung';
+    const stream = r.stream;
+    const group = r.group;
 
     const baseKey = `${normalizeText(stream)}|${normalizeText(group)}|${normalizeText(r.issue)}`;
     const occ = (dupCount.get(baseKey) || 0) + 1;
@@ -246,12 +260,17 @@ function buildItemsFromRows(rawRows, picName) {
       issue: r.issue,
       timeRaw: r.timeRaw,
       timeSpec: parseTimeSpec(r.timeRaw),
-      owner: r.owner || '',
-      supporter: r.supporter || '',
+      owner: r.owner,
+      supporter: r.supporter,
     });
   }
 
-  return { picName: resolvedPic || 'Hoàng Thị Quỳnh Mai', totalSheetRows: rawRows.length, items: activeItems };
+  return {
+    picName: resolvedPic || 'Hoàng Thị Quỳnh Mai',
+    totalSheetRows: rawRows.length,
+    incompleteCount,
+    items: activeItems,
+  };
 }
 
 export function parseGvizPayload(text) {
@@ -379,7 +398,8 @@ export function parseCsvText(csv) {
 
 export async function fetchWaitingPoints() {
   const ts = Date.now();
-  const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
+  // headers=2: cố định 2 dòng tiêu đề (dòng 1 PIC, dòng 2 tên cột) để Google gviz không gộp nhầm dòng dữ liệu trống STT/Dòng tiền vào header.
+  const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&headers=2&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
   try {
     const res = await fetch(gvizUrl, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

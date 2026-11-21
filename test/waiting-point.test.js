@@ -6,6 +6,7 @@ import {
   parseTimeSpec,
   resolveDeadlineFromSpec,
   computeTiming,
+  isCompleteWaitingRow,
   parseGvizPayload,
   parseCsvText,
   groupItemsByPerson,
@@ -44,7 +45,25 @@ test('parseTimeSpec xử lý đủ 12 mốc dropdown và các định dạng gi�
   assert.equal(parseTimeSpec('').kind, 'none');
 });
 
-test('parseGvizPayload & parseCsvText đọc đủ 7 cột, carry-forward Dòng tiền và bỏ dòng header lặp', () => {
+test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột thông tin, bỏ dòng thiếu bất kỳ trường nào', () => {
+  const full = {
+    stt: '',
+    stream: 'Dòng tiền 1: Bán 4 dự án',
+    group: 'Networking',
+    issue: 'Hư wifi',
+    timeRaw: '15 phút',
+    owner: 'Thành Anh',
+    supporter: 'Chiến',
+  };
+  assert.equal(isCompleteWaitingRow(full), true);
+  assert.equal(isCompleteWaitingRow({ ...full, stream: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, group: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, issue: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: 'chưa rõ' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, owner: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, supporter: '' }), false);
+
   const gviz = `google.visualization.Query.setResponse(${JSON.stringify({
     status: 'ok',
     table: {
@@ -59,15 +78,27 @@ test('parseGvizPayload & parseCsvText đọc đủ 7 cột, carry-forward Dòng 
       ],
       rows: [
         { c: [{ v: 'STT' }, { v: 'Dòng tiền' }, { v: 'Nhóm công việc' }, { v: 'Vấn đề gặp phải' }, { v: 'Thời gian xử lý' }, { v: 'Người phụ trách' }, { v: 'Người hỗ trợ' }] },
+        // Đủ 6 cột thông tin (có STT) -> nhận
         { c: [{ v: 1 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Hư wifi' }, { v: '15 phút' }, { v: 'Thành anh' }, { v: 'Chiến' }] },
+        // Đủ 6 cột thông tin (trống STT) -> vẫn nhận
+        { c: [null, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Data' }, { v: 'Thiếu file' }, { v: '10 phút' }, { v: 'Mai' }, { v: 'Tuấn' }] },
+        // Thiếu Dòng tiền (không carry-forward) -> loại
         { c: [null, null, { v: 'Networking' }, { v: 'Hư máy lạnh' }, { v: '5 phút' }, { v: 'Phong' }, { v: 'Tuấn' }] },
+        // Thiếu Người hỗ trợ -> loại
+        { c: [{ v: 3 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Đang nhập dở' }, { v: '15 phút' }, { v: 'Phong' }, null] },
+        // Thiếu Thời gian xử lý -> loại
+        { c: [{ v: 4 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Chưa chọn giờ' }, null, { v: 'Phong' }, { v: 'Chiến' }] },
+        // Thiếu Người phụ trách -> loại
+        { c: [{ v: 5 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Chưa điền PIC' }, { v: '20 phút' }, null, { v: 'Chiến' }] },
+        // Thiếu Nhóm công việc -> loại
+        { c: [{ v: 6 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, null, { v: 'Chưa chọn nhóm' }, { v: '20 phút' }, { v: 'Phong' }, { v: 'Chiến' }] },
       ],
     },
   })});`;
 
   const parsed = parseGvizPayload(gviz);
   assert.equal(parsed.items.length, 2);
-  assert.equal(parsed.items[1].stream, 'Dòng tiền 1: Bán 4 dự án');
+  assert.equal(parsed.incompleteCount, 5);
   assert.equal(parsed.items[0].supporter, 'Chiến');
   assert.equal(parsed.items[1].supporter, 'Tuấn');
 
@@ -75,9 +106,12 @@ test('parseGvizPayload & parseCsvText đọc đủ 7 cột, carry-forward Dòng 
     'PIC phụ trách: Hoàng Thị Quỳnh Mai,,,,,,',
     'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
     '1,"Dòng tiền 1: Bán 4 dự án","Hồ sơ, giấy tờ khác","Thiếu sổ hồng",10 phút,Mai,Hùng',
+    '2,,"Networking","Thiếu dòng tiền",5 phút,TÂN,Chiến',
+    '3,"Dòng tiền 1: Bán 4 dự án","Networking","Thiếu người hỗ trợ",5 phút,TÂN,',
   ].join('\n');
   const csvParsed = parseCsvText(csv);
   assert.equal(csvParsed.items.length, 1);
+  assert.equal(csvParsed.incompleteCount, 2);
   assert.equal(csvParsed.items[0].group, 'Hồ sơ, giấy tờ khác');
   assert.equal(csvParsed.items[0].supporter, 'Hùng');
 });
