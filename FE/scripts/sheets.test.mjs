@@ -1,80 +1,95 @@
-// Kiểm thử lớp Google Sheet với một Sheets API giả lập trong bộ nhớ
-// (xác minh đúng URL, range, valueInputOption và logic tìm/xoá dòng).
+// Kiểm thử lớp đọc Google Sheet với Sheets API giả lập (xác minh URL, range, khớp tên sheet).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.MOCK_SHEETS = 'false';
 process.env.GOOGLE_SHEET_ID = 'SHEET123';
-process.env.GOOGLE_SHEET_TAB = 'Tasks';
+delete process.env.CASHFLOW_SHEETS;
 
-const { getRepo, __setClientForTest } = await import('../api/_lib/sheets.js');
-const { COLUMNS } = await import('../api/_lib/schema.js');
+const { getDashboardData, __setClientForTest } = await import('../api/_lib/sheets.js');
 
-function fakeSheets() {
-  const grid = [COLUMNS.slice()];
+const HEAD = [
+  ['BẢNG KPI (21/11/2026 - 25/11/2026)'],
+  ['ghi chú'],
+  ['Stt', 'Nhóm', 'PIC', 46347, '', 46348, '', 46349, '', 46350, '', 46351, '', 'Tổng kết', '', '', 'Ghi chú / Vướng mắc', 'Thư mục dữ liệu lưu trữ'],
+  ['', '', '', 'KPI', 'Kết quả', 'KPI', 'Kết quả', 'KPI', 'Kết quả', 'KPI', 'Kết quả', 'KPI', 'Kết quả', 'Lũy kế đạt', '% đạt KPI', 'Đánh giá'],
+];
+
+// Tên sheet giống file thật, kể cả dấu cách thừa cuối "Dòng tiền tài chính "
+const TITLES = [
+  'KPI 21-25.11',
+  'DÒNG TIỀN BÁN 4 DỰ ÁN',
+  'DÒNG TIỀN BANKING',
+  'DÒNG TIỀN NỢ KHÓ ĐÒI',
+  'Dòng tiền tài chính ',
+  'Dòng tiền thu trước hạn quá hạn',
+];
+
+test('đọc 5 sheet dòng tiền, khớp tên không phân biệt hoa thường / khoảng trắng', async () => {
   const calls = [];
-  return {
-    grid,
-    calls,
-    async request({ url, method = 'GET', data }) {
-      calls.push({ url, method });
+  __setClientForTest({
+    async request({ url }) {
+      calls.push(url);
       assert.ok(url.startsWith('https://sheets.googleapis.com/v4/spreadsheets/SHEET123'));
-      if (url.includes('?fields=sheets.properties')) {
-        return { data: { sheets: [{ properties: { sheetId: 42, title: 'Tasks' } }] } };
+      if (url.includes('?fields=')) {
+        return { data: { properties: { title: 'thamkhao_kpi' }, sheets: TITLES.map((title) => ({ properties: { title } })) } };
       }
-      if (url.endsWith(':batchUpdate')) {
-        const r = data.requests[0].deleteDimension.range;
-        assert.equal(r.sheetId, 42);
-        grid.splice(r.startIndex, r.endIndex - r.startIndex);
-        return { data: {} };
-      }
-      const decoded = decodeURIComponent(url.split('/values/')[1]);
-      const range = decoded.split(/[?]/)[0].replace(/:append$/, '');
-      assert.ok(range.startsWith("'Tasks'!"), `range sai: ${range}`);
-      const ref = range.slice("'Tasks'!".length);
-      if (decoded.includes(':append')) {
-        assert.ok(decoded.includes('valueInputOption=RAW'));
-        grid.push(...data.values);
-        return { data: {} };
-      }
-      if (method === 'PUT') {
-        assert.ok(decoded.includes('valueInputOption=RAW'));
-        const row = Number(ref.match(/^A(\d+)/)[1]);
-        grid[row - 1] = data.values[0];
-        return { data: {} };
-      }
-      // GET
-      if (ref === 'A:A') return { data: { values: grid.map((r) => [r[0]]) } };
-      if (ref === 'A2:I') return { data: { values: grid.slice(1) } };
-      const m = ref.match(/^A(\d+):I(\d+)$/);
-      if (m) return { data: { values: [grid[Number(m[1]) - 1]] } };
-      throw new Error(`range không hỗ trợ: ${ref}`);
+      assert.ok(url.includes('/values:batchGet?'));
+      assert.ok(url.includes('valueRenderOption=UNFORMATTED_VALUE'));
+      const ranges = [...new URL(url).searchParams.getAll('ranges')];
+      assert.equal(ranges.length, 5);
+      assert.ok(ranges.includes("'Dòng tiền tài chính '!A1:Z500"));
+      assert.ok(!ranges.some((r) => r.startsWith("'KPI")));
+      return {
+        data: {
+          valueRanges: ranges.map((r, i) => ({ range: r, values: [...HEAD, [1, 'Nhóm', `P${i}`, 10, 10]] })),
+        },
+      };
     },
-  };
-}
+  });
 
-test('sheetRepo: create / list / update / delete trên sheet', async () => {
-  const fake = fakeSheets();
-  __setClientForTest(fake);
-  const repo = getRepo();
+  const d = await getDashboardData({ force: true });
+  assert.equal(d.mode, 'google-sheets');
+  assert.equal(d.spreadsheetTitle, 'thamkhao_kpi');
+  assert.deepEqual(
+    d.flows.map((f) => f.sheet),
+    ['DÒNG TIỀN BÁN 4 DỰ ÁN', 'DÒNG TIỀN NỢ KHÓ ĐÒI', 'DÒNG TIỀN BANKING', 'Dòng tiền tài chính ', 'Dòng tiền thu trước hạn quá hạn']
+  );
+  for (const f of d.flows) {
+    assert.ok(!f.error);
+    assert.equal(f.items.length, 1);
+    assert.equal(f.items[0].days[0].kpi, 10);
+  }
 
-  const a = await repo.create({ title: 'A', description: '', assignee: '', status: 'Todo', priority: 'Low', due_date: '' });
-  const b = await repo.create({ title: '=HYPERLINK("x")', description: '', assignee: 'Bèm', status: 'Todo', priority: 'High', due_date: '2026-12-01' });
-  assert.equal(fake.grid.length, 3);
+  // Lần gọi thứ 2 trong thời gian cache -> không gọi API nữa
+  const n = calls.length;
+  await getDashboardData();
+  assert.equal(calls.length, n);
+});
 
-  let list = await repo.list();
-  assert.deepEqual(list.map((t) => t.title), ['A', '=HYPERLINK("x")']);
+test('thiếu sheet -> báo lỗi riêng ô đó, các ô khác vẫn chạy', async () => {
+  __setClientForTest({
+    async request({ url }) {
+      if (url.includes('?fields=')) {
+        return { data: { properties: { title: 'x' }, sheets: [{ properties: { title: 'DÒNG TIỀN BANKING' } }] } };
+      }
+      return { data: { valueRanges: [{ values: [...HEAD] }] } };
+    },
+  });
+  const d = await getDashboardData({ force: true });
+  const banking = d.flows.find((f) => f.key === 'banking');
+  assert.ok(!banking.error);
+  assert.equal(d.flows.filter((f) => f.error).length, 4);
+  assert.match(d.flows[0].error, /Không tìm thấy sheet/);
+});
 
-  const u = await repo.update(b.id, { status: 'Done' });
-  assert.equal(u.status, 'Done');
-  assert.equal(fake.grid[2][4], 'Done');
-  assert.equal(fake.grid[2][0], b.id);
-
-  await repo.remove(a.id);
-  list = await repo.list();
-  assert.equal(list.length, 1);
-  assert.equal(list[0].id, b.id);
-
-  await assert.rejects(repo.update(a.id, { status: 'Done' }), { status: 404 });
-  await assert.rejects(repo.remove('header-id-not-exist'), { status: 404 });
+test('lỗi Google API -> 502 có thông điệp rõ ràng', async () => {
+  __setClientForTest({
+    async request() {
+      const e = new Error('x');
+      e.response = { status: 403, data: { error: { message: 'The caller does not have permission' } } };
+      throw e;
+    },
+  });
+  await assert.rejects(getDashboardData({ force: true }), (e) => e.status === 502 && /403/.test(e.message));
 });

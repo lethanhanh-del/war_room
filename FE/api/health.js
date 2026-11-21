@@ -1,5 +1,5 @@
 // GET /api/health -> kiểm tra API sống và cấu hình đã đủ chưa (không lộ giá trị bí mật)
-import { isMock } from './_lib/sheets.js';
+import { isMock, flowConfig } from './_lib/sheets.js';
 import { send } from './_lib/http.js';
 
 export default function handler(req, res) {
@@ -13,6 +13,7 @@ export default function handler(req, res) {
       GOOGLE_PRIVATE_KEY: has('GOOGLE_PRIVATE_KEY'),
       APP_ACCESS_KEY: has('APP_ACCESS_KEY'),
     },
+    flows: flowConfig().map((f) => f.sheet),
     authRequired: has('APP_ACCESS_KEY'),
   });
 }

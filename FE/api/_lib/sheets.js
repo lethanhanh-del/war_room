@@ -1,19 +1,20 @@
-// Lớp truy cập dữ liệu: dùng Google Sheet làm database.
-// File trong thư mục api/_lib không bị Vercel biến thành endpoint (tiền tố "_").
-import { randomUUID } from 'node:crypto';
+// Đọc dữ liệu các sheet "Dòng tiền" từ Google Sheet (chỉ đọc) qua Service Account.
+// File trong api/_lib không bị Vercel biến thành endpoint (tiền tố "_").
 import { JWT } from 'google-auth-library';
-import { COLUMNS, rowToTask, taskToRow } from './schema.js';
+import { normalize, parseCashflowSheet } from './parse.js';
+import { buildMockSheets } from './mock.js';
 
 const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
-const LAST_COL = String.fromCharCode('A'.charCodeAt(0) + COLUMNS.length - 1); // "I"
 
-export class NotFoundError extends Error {
-  constructor(message = 'Không tìm thấy task') {
-    super(message);
-    this.name = 'NotFoundError';
-    this.status = 404;
-  }
-}
+// Thứ tự = thứ tự ô 2..6 trên dashboard. Có thể ghi đè bằng biến môi trường CASHFLOW_SHEETS
+// (danh sách tên sheet, phân cách bằng dấu |).
+export const DEFAULT_FLOWS = [
+  { key: 'ban-4-du-an', label: 'Dòng tiền bán 4 dự án', sheet: 'DÒNG TIỀN BÁN 4 DỰ ÁN' },
+  { key: 'no-kho-doi', label: 'Dòng tiền nợ khó đòi', sheet: 'DÒNG TIỀN NỢ KHÓ ĐÒI' },
+  { key: 'banking', label: 'Dòng tiền Banking', sheet: 'DÒNG TIỀN BANKING' },
+  { key: 'tai-chinh', label: 'Dòng tiền tài chính', sheet: 'Dòng tiền tài chính' },
+  { key: 'thu-truoc-han-qua-han', label: 'Dòng tiền thu trước hạn / quá hạn', sheet: 'Dòng tiền thu trước hạn quá hạn' },
+];
 
 export class ConfigError extends Error {
   constructor(message) {
@@ -28,14 +29,18 @@ function env(name, fallback) {
   return v === undefined || v === '' ? fallback : v;
 }
 
-function tabName() {
-  return env('GOOGLE_SHEET_TAB', 'Tasks');
+export function isMock() {
+  return env('MOCK_SHEETS') === 'true';
 }
 
-function a1(range) {
-  // Bọc tên tab trong nháy đơn để hỗ trợ tên có khoảng trắng / ký tự đặc biệt.
-  const tab = tabName().replace(/'/g, "''");
-  return encodeURIComponent(`'${tab}'!${range}`);
+export function flowConfig() {
+  const custom = env('CASHFLOW_SHEETS');
+  if (!custom) return DEFAULT_FLOWS;
+  return custom
+    .split('|')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((sheet, i) => ({ key: `flow-${i + 1}`, label: sheet, sheet }));
 }
 
 let jwtClient;
@@ -44,32 +49,29 @@ function getClient() {
   const email = env('GOOGLE_SERVICE_ACCOUNT_EMAIL');
   const rawKey = env('GOOGLE_PRIVATE_KEY');
   if (!email || !rawKey || !env('GOOGLE_SHEET_ID')) {
-    throw new ConfigError(
-      'Thiếu cấu hình GOOGLE_SHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY'
-    );
+    throw new ConfigError('Thiếu cấu hình GOOGLE_SHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY');
   }
-  // Trên Vercel, private key thường được lưu với "\n" dạng ký tự -> đổi về xuống dòng thật.
-  const key = rawKey.replace(/\\n/g, '\n');
   jwtClient = new JWT({
     email,
-    key,
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    key: rawKey.replace(/\\n/g, '\n'), // Vercel lưu "\n" dạng ký tự -> đổi về xuống dòng thật
+    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
   return jwtClient;
 }
 
-// Chỉ dùng trong unit test: thay client thật bằng client giả lập.
+// Chỉ dùng trong unit test
 export function __setClientForTest(client) {
   jwtClient = client;
+  cache = null;
 }
 
-async function gapi(path, { method = 'GET', data } = {}) {
-  const client = getClient();
+async function gapi(path) {
   const url = `${SHEETS_API}/${env('GOOGLE_SHEET_ID')}${path}`;
   try {
-    const res = await client.request({ url, method, data });
+    const res = await getClient().request({ url });
     return res.data;
   } catch (err) {
+    if (err instanceof ConfigError) throw err;
     const status = err?.response?.status;
     const msg = err?.response?.data?.error?.message || err.message;
     const e = new Error(`Google Sheets API lỗi${status ? ` (${status})` : ''}: ${msg}`);
@@ -78,120 +80,69 @@ async function gapi(path, { method = 'GET', data } = {}) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Google Sheet repository
-// ---------------------------------------------------------------------------
-const sheetRepo = {
-  async list() {
-    const data = await gapi(`/values/${a1(`A2:${LAST_COL}`)}`);
-    return (data.values || []).filter((r) => r[0]).map(rowToTask);
-  },
+const quote = (title) => `'${title.replace(/'/g, "''")}'`;
 
-  async create(input) {
-    const now = new Date().toISOString();
-    const task = { ...input, id: randomUUID(), created_at: now, updated_at: now };
-    await gapi(
-      `/values/${a1(`A:${LAST_COL}`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-      { method: 'POST', data: { values: [taskToRow(task)] } }
+/** Đọc thô: { spreadsheetTitle, sheets: { [title]: values[][] } } */
+async function fetchRaw(flows) {
+  const meta = await gapi('?fields=properties.title,sheets.properties.title');
+  const titles = (meta.sheets || []).map((s) => s.properties.title);
+
+  const matched = flows.map((f) => {
+    const want = normalize(f.sheet);
+    return titles.find((t) => normalize(t) === want) || null;
+  });
+  const found = matched.filter(Boolean);
+  const sheets = {};
+  if (found.length) {
+    const qs = found.map((t) => `ranges=${encodeURIComponent(`${quote(t)}!A1:Z500`)}`).join('&');
+    const data = await gapi(
+      `/values:batchGet?${qs}&valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER`
     );
-    return task;
-  },
-
-  async findRow(id) {
-    const data = await gapi(`/values/${a1('A:A')}`);
-    const ids = (data.values || []).map((r) => r[0]);
-    const idx = ids.indexOf(id);
-    if (idx < 1) throw new NotFoundError(); // idx 0 là dòng header
-    return idx + 1; // số dòng trên sheet (1-based)
-  },
-
-  async update(id, patch) {
-    const rowNum = await this.findRow(id);
-    const data = await gapi(`/values/${a1(`A${rowNum}:${LAST_COL}${rowNum}`)}`);
-    const current = rowToTask((data.values || [])[0] || []);
-    if (current.id !== id) throw new NotFoundError('Dữ liệu vừa thay đổi, vui lòng thử lại');
-    const task = { ...current, ...patch, id, updated_at: new Date().toISOString() };
-    await gapi(`/values/${a1(`A${rowNum}:${LAST_COL}${rowNum}`)}?valueInputOption=RAW`, {
-      method: 'PUT',
-      data: { values: [taskToRow(task)] },
+    (data.valueRanges || []).forEach((vr, i) => {
+      sheets[found[i]] = vr.values || [];
     });
-    return task;
-  },
-
-  async remove(id) {
-    const rowNum = await this.findRow(id);
-    const meta = await gapi('?fields=sheets.properties(sheetId,title)');
-    const sheet = (meta.sheets || []).find((s) => s.properties.title === tabName());
-    if (!sheet) throw new ConfigError(`Không tìm thấy tab "${tabName()}" trong Google Sheet`);
-    await gapi(':batchUpdate', {
-      method: 'POST',
-      data: {
-        requests: [
-          {
-            deleteDimension: {
-              range: {
-                sheetId: sheet.properties.sheetId,
-                dimension: 'ROWS',
-                startIndex: rowNum - 1,
-                endIndex: rowNum,
-              },
-            },
-          },
-        ],
-      },
-    });
-    return { id };
-  },
-};
-
-// ---------------------------------------------------------------------------
-// Mock repository (chỉ dùng khi dev local với MOCK_SHEETS=true)
-// ---------------------------------------------------------------------------
-const mockStore = new Map();
-function seedMock() {
-  if (mockStore.size) return;
-  const now = new Date().toISOString();
-  const samples = [
-    ['Chuẩn bị báo cáo tuần', 'Tổng hợp tiến độ các dự án', 'An', 'In Progress', 'High', 3],
-    ['Fix lỗi đăng nhập SSO', 'User không đăng nhập được bằng tài khoản AD', 'Bình', 'Blocked', 'Critical', 1],
-    ['Review thiết kế dashboard', '', 'Chi', 'Todo', 'Medium', 7],
-    ['Setup môi trường staging', '', 'Dũng', 'Done', 'Low', -2],
-  ];
-  for (const [title, description, assignee, status, priority, days] of samples) {
-    const due = new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
-    const id = randomUUID();
-    mockStore.set(id, { id, title, description, assignee, status, priority, due_date: due, created_at: now, updated_at: now });
   }
+  return { spreadsheetTitle: meta.properties?.title || '', matched, sheets, allTitles: titles };
 }
 
-const mockRepo = {
-  async list() {
-    seedMock();
-    return [...mockStore.values()];
-  },
-  async create(input) {
-    const now = new Date().toISOString();
-    const task = { ...input, id: randomUUID(), created_at: now, updated_at: now };
-    mockStore.set(task.id, task);
-    return task;
-  },
-  async update(id, patch) {
-    const cur = mockStore.get(id);
-    if (!cur) throw new NotFoundError();
-    const task = { ...cur, ...patch, id, updated_at: new Date().toISOString() };
-    mockStore.set(id, task);
-    return task;
-  },
-  async remove(id) {
-    if (!mockStore.delete(id)) throw new NotFoundError();
-    return { id };
-  },
-};
+let cache = null; // { at, data }
 
-export function getRepo() {
-  return env('MOCK_SHEETS') === 'true' ? mockRepo : sheetRepo;
-}
+/**
+ * Trả về dữ liệu dashboard đã chuẩn hoá.
+ * Có cache trong bộ nhớ (CACHE_SECONDS, mặc định 30s) để không vượt quota Google Sheets API
+ * khi nhiều màn hình cùng mở.
+ */
+export async function getDashboardData({ force = false } = {}) {
+  const ttl = Number(env('CACHE_SECONDS', '30')) * 1000;
+  if (!force && cache && Date.now() - cache.at < ttl) return cache.data;
 
-export function isMock() {
-  return env('MOCK_SHEETS') === 'true';
+  const flows = flowConfig();
+  let raw;
+  if (isMock()) {
+    const mock = buildMockSheets(flows);
+    raw = { spreadsheetTitle: 'MOCK', matched: flows.map((f) => f.sheet), sheets: mock };
+  } else {
+    raw = await fetchRaw(flows);
+  }
+
+  const result = flows.map((f, i) => {
+    const title = raw.matched[i];
+    const base = { key: f.key, label: f.label, sheet: title || f.sheet };
+    if (!title) return { ...base, error: `Không tìm thấy sheet "${f.sheet}"`, days: [], items: [] };
+    try {
+      const parsed = parseCashflowSheet(raw.sheets[title]);
+      return { ...base, sheetTitle: parsed.title, days: parsed.days, items: parsed.items };
+    } catch (err) {
+      return { ...base, error: err.message, days: [], items: [] };
+    }
+  });
+
+  const data = {
+    spreadsheetTitle: raw.spreadsheetTitle,
+    generatedAt: new Date().toISOString(),
+    mode: isMock() ? 'mock' : 'google-sheets',
+    flows: result,
+  };
+  cache = { at: Date.now(), data };
+  return data;
 }

@@ -6,7 +6,7 @@
 //
 // Cách dùng (từ thư mục gốc repo):
 //   node deploy/vercel-env.mjs --key path/to/service-account.json --sheet <GOOGLE_SHEET_ID> \
-//        [--tab Tasks] [--access-key <chuỗi bí mật>] [--targets production[,preview]]
+//        [--access-key <chuỗi bí mật>] [--sheets "Tên 1|Tên 2|..."] [--targets production[,preview]]
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -32,13 +32,14 @@ const targets = arg('targets', 'production').split(',').map((s) => s.trim()).fil
 
 const vars = {
   GOOGLE_SHEET_ID: sheetId,
-  GOOGLE_SHEET_TAB: arg('tab', 'Tasks'),
   GOOGLE_SERVICE_ACCOUNT_EMAIL: sa.client_email,
   GOOGLE_PRIVATE_KEY: sa.private_key,
 };
+const sheets = arg('sheets');
+if (sheets) vars.CASHFLOW_SHEETS = sheets;
 const accessKey = arg('access-key');
 if (accessKey) vars.APP_ACCESS_KEY = accessKey;
-else console.warn('⚠ Không có --access-key: API sẽ mở công khai cho bất kỳ ai có URL.');
+else console.warn('⚠ Không có --access-key: ai có URL cũng xem được dữ liệu dòng tiền.');
 
 function vercel(args, input) {
   return spawnSync('vercel', args, { cwd: feDir, input, encoding: 'utf8', shell: isWin });
