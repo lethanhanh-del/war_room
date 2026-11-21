@@ -6,7 +6,8 @@ export const DEFAULT_PASSWORD = "CTG@2026";
 const ITERATIONS = 20000; // ~3 ms CPU mỗi lần băm, nằm trong giới hạn CPU của Workers gói Free
 const COOKIE = "wr_session";
 const SESSION_SECONDS = 30 * 24 * 60 * 60;
-const LOCK_FAILS = 10;
+const LOCK_FAILS = 10; // sai liên tiếp cho cùng tên đăng nhập, từ cùng IP
+const LOCK_FAILS_PER_IP = 30; // sai từ cùng IP trên mọi tên đăng nhập (chặn dò mật khẩu hàng loạt)
 const LOCK_MINUTES = 15;
 const enc = new TextEncoder();
 let sessionKey = null;
@@ -54,17 +55,18 @@ export function adminVersion(adminHash) {
   return adminHash.slice(0, 16);
 }
 
-// Khóa theo cặp (tên đăng nhập, IP): người cố tình nhập sai chỉ tự khóa máy mình,
-// không khóa được chủ tài khoản (kể cả admin) đang đăng nhập từ nơi khác.
+// Khóa theo IP: người cố tình nhập sai chỉ tự khóa máy mình, không khóa được chủ tài khoản
+// (kể cả admin) đang đăng nhập từ nơi khác.
 export async function isLocked(env, request, username) {
   const since = new Date(Date.now() - LOCK_MINUTES * 60e3).toISOString();
   const ip = request.headers.get("CF-Connecting-IP") || "";
   const row = await env.DB.prepare(
-    "SELECT COUNT(*) AS n FROM audit_log WHERE username = ? AND ip = ? AND action = 'login_failed' AND ts > ?"
+    `SELECT COUNT(*) AS perIp, SUM(username = ?) AS perUser
+     FROM audit_log WHERE ip = ? AND action = 'login_failed' AND ts > ?`
   )
     .bind(username, ip, since)
     .first();
-  return row.n >= LOCK_FAILS;
+  return (row.perUser || 0) >= LOCK_FAILS || row.perIp >= LOCK_FAILS_PER_IP;
 }
 
 export function normKey(s) {

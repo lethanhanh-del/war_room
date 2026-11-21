@@ -29,6 +29,7 @@ export async function ensureSchema(env) {
       )`
     ),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_audit_user_ts ON audit_log (username, ts)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_audit_ip_action_ts ON audit_log (ip, action, ts)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"),
     env.DB.prepare(
       `CREATE TABLE IF NOT EXISTS chairman_bookings (
