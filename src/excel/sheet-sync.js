@@ -16,7 +16,7 @@ import { json } from '../http.js';
 import { notifyLive } from '../live.js';
 import { getStreams } from '../worksuite/index.js';
 import { SHEET_FILE_NAME, readSheet, sheetId } from './gsheet.js';
-import { importSummary, planImport, saveImport } from './index.js';
+import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport } from './index.js';
 
 export const SYNC_EVERY_MS = 20000;
 const FORCE_EVERY_MS = 5000;
@@ -75,6 +75,7 @@ export async function syncSheet(env, { force = false, now = Date.now() } = {}) {
   const id = sheetId(env);
   if (!id) return { off: true };
   await ensureTable(env);
+  await ensureImportsTable(env); // database mới (cron chạy trước khi ai mở trang): diff() đọc excel_imports
   if (!(await claim(env, force ? FORCE_EVERY_MS : SYNC_EVERY_MS, now))) return { skipped: true };
   try {
     const book = await readSheet(id, { now });

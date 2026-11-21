@@ -31,7 +31,7 @@ export function warRoomPeriod(env = {}) {
 }
 
 let ready = false;
-async function ensureTable(env) {
+export async function ensureTable(env) {
   if (ready) return;
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS excel_imports (
