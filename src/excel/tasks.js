@@ -218,9 +218,18 @@ function readRows(sheet, header, { defaultYear, label }) {
   const badDue = [];
   const codes = new Set();
   let hiddenRows = 0;
+  let fromGroup = 0; // dòng ghi việc ở cột "Nhóm công việc", để trống cột "Task / Đầu việc"
   for (const row of sheet.rows) {
     if (row.r <= header.row) continue;
-    const subject = text(col(row, 'subject'));
+    let subject = text(col(row, 'subject'));
+    let group = text(col(row, groupField)).slice(0, 80);
+    // File tổng: có người ghi việc vào cột "Nhóm công việc" và để trống cột "Task / Đầu việc" -> vẫn lấy dòng đó,
+    // tên task = nội dung "Nhóm công việc" (nếu dòng có người phụ trách / trạng thái / hạn, tức là 1 dòng việc thật).
+    if (!subject && groupField === 'group' && group && (text(col(row, 'owner')) || text(col(row, 'status')) || col(row, 'due'))) {
+      subject = text(col(row, groupField));
+      group = '';
+      fromGroup++;
+    }
     if (!subject) continue;
     const show = normKey(text(col(row, 'show')));
     if (['khong', 'no', 'false', 'an', '0'].includes(show)) { hiddenRows++; continue; }
@@ -242,7 +251,7 @@ function readRows(sheet, header, { defaultYear, label }) {
     tasks.push({
       row: row.r,
       code,
-      group: text(col(row, groupField)).slice(0, 80),
+      group,
       subject,
       owner: cleanOwner(ownerRaw),
       ownerRaw,
@@ -260,6 +269,7 @@ function readRows(sheet, header, { defaultYear, label }) {
     });
   }
   if (hiddenRows) warnings.push(`${label}: bỏ qua ${hiddenRows} dòng có “Hiển thị LED” = Không.`);
+  if (fromGroup) warnings.push(`${label}: ${fromGroup} dòng để trống cột “Task / Đầu việc” — đang lấy nội dung cột “Nhóm công việc” làm tên task. Nên ghi việc cụ thể vào cột “Task / Đầu việc”.`);
   if (unknownStatus.size) warnings.push(`${label}: trạng thái chưa nhận dạng được, tạm tính là “Chưa bắt đầu”: ${[...unknownStatus].map((s) => `“${s}”`).join(', ')}.`);
   if (badDue.length) warnings.push(`${label}: không đọc được hạn của ${badDue.slice(0, 5).join(', ')}${badDue.length > 5 ? '…' : ''}.`);
   return { tasks, warnings, streamValues: [...streamValues].filter(Boolean) };

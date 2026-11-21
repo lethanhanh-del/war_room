@@ -184,6 +184,23 @@ test('extractWorkbook: file tổng — mỗi sheet "Dòng tiền …" là 1 dòn
   assert.ok(!flags.includes('waiting') && !flags.includes('proof'), flags.join(','));
 });
 
+test('extractWorkbook: cột "Task / Đầu việc" trống nhưng có ghi "Nhóm công việc" -> vẫn lấy dòng, tên task = nhóm công việc', async () => {
+  const book = await parseWorkbookFile(await masterFile({
+    'Dòng tiền nợ khó đòi': [
+      [1, MASTER_HEADER],
+      [2, [1, 'Dòng tiền 3: Nợ khó đòi', 'Thúc đẩy tòa để ra bản án', '', 'Mạc Thị Thúy Hiền', '', '', 'Chưa cập nhật']],
+      [3, [2, 'Dòng tiền 3: Nợ khó đòi', 'Nhóm chưa có người', '']], // không có người / trạng thái / hạn -> bỏ
+      [4, [3, 'Dòng tiền 3: Nợ khó đòi', 'Pháp lý', 'Nộp hồ sơ thi hành án', 'Lê Công Sum', '', D(46350), 'Đang xử lý']],
+    ],
+  }), { now: NOW });
+  const [sec] = book.sections;
+  assert.deepEqual(sec.tasks.map((t) => [t.group, t.subject, t.owner]), [
+    ['', 'Thúc đẩy tòa để ra bản án', 'Mạc Thị Thúy Hiền'],
+    ['Pháp lý', 'Nộp hồ sơ thi hành án', 'Lê Công Sum'],
+  ]);
+  assert.ok(book.warnings.some((w) => /1 dòng để trống cột “Task \/ Đầu việc”/.test(w)), book.warnings.join(' | '));
+});
+
 test('extractWorkbook: file tổng lấy số dòng tiền từ cột "Dòng tiền" ("Dòng tiền 2: Banking" -> DT02)', async () => {
   const book = await parseWorkbookFile(await masterFile({
     'Dòng tiền Banking': [[1, MASTER_HEADER], [2, [1, 'Dòng tiền 2: Banking', 'H300 – DELTA', 'Lấy phán quyết của Tòa', 'Chị Thúy Hiền', '', D(46351), 'Vướng mắc', 'P0', 'Phán quyết', '']]],
