@@ -247,6 +247,9 @@
     if (d.sheetSync?.error) {
       out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Chưa đọc được Google Sheet WR - MASTER TASK.</b> ${esc(d.sheetSync.error)} Đang hiển thị dữ liệu lần đọc trước.</div></div>`);
     }
+    if (d.sheetSync?.warnings?.length) {
+      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý từ Google Sheet WR - MASTER TASK</b><ul>${d.sheetSync.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
+    }
     if (d.warnings && d.warnings.length) {
       out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý cấu hình Worksuite</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
     }
