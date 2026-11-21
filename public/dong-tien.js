@@ -1,4 +1,4 @@
-// Dashboard "Tiến độ dòng tiền" (v4). Dữ liệu: GET /api/streams (CT Worksuite + task từ sheet WR - MASTER TASK).
+// Dashboard "Tiến độ dòng tiền" (v4). Dữ liệu: GET /api/streams (task từ Google Sheet WR - MASTER TASK).
 (() => {
   'use strict';
 
@@ -180,7 +180,7 @@
       $('unstaffed').hidden = true;
       document.querySelector('.section-head .legend').hidden = true;
       document.querySelector('.section-head .hint').hidden = true;
-      $('gridTitle').textContent = 'Chưa có dữ liệu từ Worksuite';
+      $('gridTitle').textContent = 'Chưa có dữ liệu';
       $('grid').innerHTML = '';
       return;
     }
@@ -188,15 +188,7 @@
     $('pageTitle').textContent = n ? `Tiến độ ${n} dòng tiền` : 'Tiến độ dòng tiền';
     $('navCount').textContent = String(n);
     $('gridTitle').textContent = `${n} dòng tiền chính`;
-    const fromExcel = d.excelImports?.length ? ' và file Excel đã nạp' : '';
-    if (d.project) {
-      $('pageSub').textContent = `Task và tiến độ của từng người trong dự án ${d.project.name} trên CT Worksuite${fromExcel} · cập nhật tự động`;
-      if (safeUrl(d.project.url)) $('openWs').href = d.project.url;
-    } else if (fromExcel) {
-      $('pageSub').textContent = 'Task và tiến độ của từng người theo sheet WR - MASTER TASK · War Room 21–25/11/2026';
-    }
     document.title = `Tiến độ ${n} dòng tiền · War Room`;
-    if (d.worksuiteUrl && !d.project?.url) $('openWs').href = safeUrl(d.worksuiteUrl) || $('openWs').href;
     $('summary').hidden = false;
     document.querySelector('.section-head .legend').hidden = false;
     document.querySelector('.section-head .hint').hidden = false;
@@ -226,14 +218,13 @@
     let label;
     // Giờ đọc sheet gần nhất (đồng bộ tự động); chưa có thì lấy giờ nạp file gần nhất.
     const sheetAt = Date.parse(d.sheetSync?.checkedAt || '') || Math.max(0, ...(d.excelImports || []).map((i) => Date.parse(i.uploadedAt) || 0));
-    if (d.mode === 'unconfigured' && d.streams?.length) {
-      if (d.sheetSync?.error) state = 'stale';
-      label = sheetAt ? `Google Sheet WR - MASTER TASK · cập nhật ${clock(sheetAt).slice(6)}` : 'Google Sheet WR - MASTER TASK';
-    }
-    else if (d.mode === 'unconfigured') { state = 'error'; label = 'Chưa kết nối Worksuite'; }
-    else if (d.error && !d.syncedAt) { state = 'error'; label = 'Không đọc được Worksuite'; }
-    else if (d.stale || d.error) { state = 'stale'; label = `Dữ liệu Worksuite lúc ${clock(d.syncedAt)}`; }
-    else label = `Đã đồng bộ Worksuite · ${ago(d.syncedAt)}`;
+    label = sheetAt ? `Google Sheet WR - MASTER TASK · cập nhật ${clock(sheetAt).slice(6)}` : 'Google Sheet WR - MASTER TASK';
+    if (d.stale && d.error) state = 'stale'; // trình duyệt không tải được lần mới, đang giữ dữ liệu cũ
+    else if (d.sheetSync?.error) state = 'stale';
+    else if (!d.streams?.length) state = 'error';
+    const sheetUrl = safeUrl(d.sheetSync?.sheetUrl);
+    $('openSheet').hidden = !sheetUrl;
+    if (sheetUrl) $('openSheet').href = sheetUrl;
     el.dataset.state = state;
     $('syncText').textContent = label;
   }
@@ -242,7 +233,7 @@
     const d = S.data;
     const out = [];
     if (d.error) {
-      out.push(`<div class="notice err">${icon('alert')}<div class="grow"><b>Không đọc được CT Worksuite.</b> ${esc(d.error)}${d.syncedAt ? ` Đang hiển thị dữ liệu lúc ${clock(d.syncedAt)}.` : ''}${d.excelImports?.length ? ' Task nạp từ Excel vẫn hiển thị.' : ''}</div></div>`);
+      out.push(`<div class="notice err">${icon('alert')}<div class="grow">${esc(d.error)} Đang hiển thị dữ liệu lần tải trước.</div></div>`);
     }
     if (d.sheetSync?.error) {
       out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Chưa đọc được Google Sheet WR - MASTER TASK.</b> ${esc(d.sheetSync.error)} Đang hiển thị dữ liệu lần đọc trước.</div></div>`);
@@ -251,7 +242,7 @@
       out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý từ Google Sheet WR - MASTER TASK</b><ul>${d.sheetSync.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
     }
     if (d.warnings && d.warnings.length) {
-      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý cấu hình Worksuite</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
+      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
     }
     $('notices').innerHTML = out.join('');
   }
@@ -263,14 +254,10 @@
     $('unstaffed').hidden = true;
     document.querySelector('.section-head .legend').hidden = true;
     document.querySelector('.section-head .hint').hidden = true;
-    $('gridTitle').textContent = 'Chưa kết nối CT Worksuite';
+    $('gridTitle').textContent = 'Chưa có task';
     $('grid').innerHTML = `<div class="setup" style="grid-column:1/-1">
-      <h2>Cần kết nối CT Worksuite để hiển thị tiến độ thật</h2>
-      <ol>
-        <li>Dùng 1 tài khoản Worksuite chỉ có quyền <b>xem</b> Project, Task, Employee.</li>
-        <li>Đặt biến bí mật <code>WORKSUITE_API_KEY</code> + <code>WORKSUITE_API_SECRET</code> (mục API Access › Generate Keys), hoặc <code>WORKSUITE_USERNAME</code> + <code>WORKSUITE_PASSWORD</code> của tài khoản đó, cho Worker (Cloudflare › Settings › Variables and secrets) hoặc trong file <code>.env</code>.</li>
-        <li>Dòng tiền được đọc từ dự án <b>WAR ROOM</b>: mỗi task cấp cao có tiêu đề “Dòng tiền …” là 1 dòng tiền, người thực hiện task đó là PIC. Có thể chỉ định dự án bằng <code>WORKSUITE_PROJECT=PROJ-0536</code>.</li>
-      </ol>
+      <h2>Chưa có task nào trong Google Sheet WR - MASTER TASK</h2>
+      <p class="hint">Thêm task vào sheet của từng dòng tiền (mỗi sheet “Dòng tiền …” là 1 dòng tiền). Dashboard tự cập nhật trong vòng 1 phút.</p>
     </div>`;
   }
 
@@ -298,7 +285,7 @@
   function statsHtml(c, own) {
     if (!c.total) {
       const ownTxt = own && own.status !== 'todo' ? `<span class="st ${own.status}"><i></i>${esc(own.statusLabel)} · ${esc(own.dueLabel)}</span>` : '';
-      return `<span class="st todo"><i></i>Chưa có task con</span>${ownTxt}`;
+      return `<span class="st todo"><i></i>Thêm task vào Google Sheet</span>${ownTxt}`;
     }
     if (c.done === c.total) return `<span class="st done"><i></i>${c.done} hoàn thành</span>`;
     const parts = [];
@@ -329,7 +316,7 @@
         aria-label="${esc(`Dòng tiền ${s.name}: ${pctText(s.percent)}, ${s.counts.overdue} task quá hạn. Xem task từng người`)}">
       <span class="card-head"><span class="titles"><span class="code">${esc(codeLabel(s))}${s.excel ? `<span class="src-tag">Excel</span>` : ''}</span><span class="name">${esc(s.name)}</span></span><span class="go">${icon('chevronRight')}</span></span>
       ${picHtml(s.pic, false)}
-      <span class="prog"><span class="nums"><span class="pct">${pctText(s.percent)}</span><span class="done">${s.counts.done}/${s.counts.total} task hoàn thành</span></span><span class="bar"><i style="width:${barWidth(s.percent)}"></i></span></span>
+      <span class="prog"><span class="nums"><span class="pct">${pctText(s.percent)}</span><span class="done">${s.counts.total ? `${s.counts.done}/${s.counts.total} task hoàn thành` : 'Chưa có task'}</span></span><span class="bar"><i style="width:${barWidth(s.percent)}"></i></span></span>
       <span class="stats">${statsHtml(s.counts, s.own)}${rule}</span>
       <span class="divider"></span>
       <span class="foot"><span class="people">${icon('users')}${s.headcount} nhân sự<span class="stack">${avatars}${more}</span></span><span class="more-link">Xem task ${icon('arrowRight')}</span></span>
@@ -339,7 +326,7 @@
   function renderGrid(streams) {
     const grid = $('grid');
     if (!streams.length) {
-      grid.innerHTML = `<div class="setup" style="grid-column:1/-1"><h2>Chưa có dòng tiền nào có nhân sự</h2><p class="hint">Khi project dòng tiền trên Worksuite có PIC hoặc task được giao, dòng tiền sẽ hiện ở đây.</p></div>`;
+      grid.innerHTML = `<div class="setup" style="grid-column:1/-1"><h2>Chưa có dòng tiền nào có nhân sự</h2><p class="hint">Khi sheet của dòng tiền có task được giao, dòng tiền sẽ hiện ở đây.</p></div>`;
       return;
     }
     grid.innerHTML = streams.map(cardHtml).join('');
@@ -486,16 +473,14 @@
     const metaParts = [`${s.counts.done}/${s.counts.total} task hoàn thành`, `${s.headcount} nhân sự`];
     if (s.counts.overdue) metaParts.push(`${s.counts.overdue} task quá hạn`);
     if (s.counts.waiting) metaParts.push(`${s.counts.waiting} task đang chờ`);
-    const wsLink = safeUrl(s.url) ? `<a class="btn" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${icon('externalLink')}Mở trong Worksuite</a>` : '';
 
     drawer.innerHTML = `
       <div class="d-head tone-${s.tone}">
         <div class="d-top">
           <div><div class="code">${s.code ? `${esc(s.code)} · ` : ''}Dòng tiền</div><h2 id="dTitle">${esc(s.name)}</h2></div>
-          <div class="d-actions">${wsLink}<button type="button" class="icon-btn" data-close aria-label="Đóng">${icon('x')}</button></div>
+          <div class="d-actions"><button type="button" class="icon-btn" data-close aria-label="Đóng">${icon('x')}</button></div>
         </div>
         ${picHtml(s.pic, true)}
-        ${s.own ? `<div class="own"><span class="badge ${s.own.status}">${esc(s.own.statusLabel)}</span><span>Task nhóm trên Worksuite · ${esc(s.own.dueLabel)}</span>${s.own.blocker ? `<span class="blocker">${icon('alert')}Lý do chờ: ${esc(s.own.blocker)}</span>` : ''}</div>` : ''}
         ${excelInfoHtml(s)}
         <div class="d-prog"><span class="value">${pctText(s.percent)}</span><div class="col"><div class="bar"><i style="width:${barWidth(s.percent)}"></i></div><span class="meta">${esc(metaParts.join(' · '))}</span></div></div>
       </div>
@@ -503,7 +488,7 @@
       <div class="d-body">
         <div class="list-head"><span>${visible.length} nhân sự${f === 'all' ? ' · người có task quá hạn xếp trước' : ` có task “${esc(FILTERS.find(([k]) => k === f)[1].toLowerCase())}”`}</span>
           ${f === 'all' && shown.length ? `<button type="button" class="linkbtn" data-toggle-all>${allOpen ? 'Thu gọn tất cả' : 'Mở tất cả'}</button>` : ''}</div>
-        <div class="members">${shown.map(({ p, tasks }) => memberHtml(s, p, tasks, f !== 'all' || expanded.has(p.key))).join('') || `<div class="no-match">${f === 'all' ? `Dòng tiền này chưa có task con trên Worksuite. Thêm task con (giao người, hạn) dưới task nhóm “${esc(s.fullName)}” để theo dõi tiến độ.` : 'Không có task nào ở trạng thái này.'}</div>`}</div>
+        <div class="members">${shown.map(({ p, tasks }) => memberHtml(s, p, tasks, f !== 'all' || expanded.has(p.key))).join('') || `<div class="no-match">${f === 'all' ? 'Dòng tiền này chưa có task. Thêm task (người phụ trách, hạn hoàn thành) vào sheet của dòng tiền trong Google Sheet WR - MASTER TASK, dashboard tự cập nhật trong vòng 1 phút.' : 'Không có task nào ở trạng thái này.'}</div>`}</div>
         ${hiddenCount > 0 ? `<button type="button" class="show-more" data-show-all>Xem thêm ${hiddenCount} nhân sự ${icon('chevronDown')}</button>` : ''}
       </div>`;
     const body = drawer.querySelector('.d-body');
@@ -622,11 +607,11 @@
         + `<option value="new"${sel === 'new' ? ' selected' : ''}>Tạo thẻ dòng tiền riêng từ file Excel</option>`;
       let note;
       if (sec.target.streamId) note = 'Tự nhận theo tên dòng tiền trong file — có thể chọn lại.';
-      else if (p.choices.length) note = 'Không thấy dòng tiền cùng tên trên Worksuite: chọn dòng tiền cần gắn, hoặc để thành thẻ riêng.';
-      else note = `Chưa đọc được danh sách dòng tiền từ Worksuite${p.worksuiteError ? ` (${p.worksuiteError})` : ''}: task sẽ hiện thành thẻ riêng.`;
+      else if (p.choices.length) note = 'Không thấy dòng tiền cùng tên: chọn dòng tiền cần gắn, hoặc để thành thẻ riêng.';
+      else note = 'Task sẽ hiện thành thẻ dòng tiền riêng.';
       where = `<label class="xl-field"><span>Gắn vào dòng tiền</span><select id="xlTarget">${options}</select><span class="hint">${esc(note)}</span></label>`;
     } else {
-      where = `<span class="xl-where">${icon('arrowRight')}${sec.target.streamId ? `Thẻ “${esc(sec.target.streamName)}”` : 'Thẻ dòng tiền riêng (không thấy tên này trên Worksuite)'}</span>`;
+      where = `<span class="xl-where">${icon('arrowRight')}${sec.target.streamId ? `Thẻ “${esc(sec.target.streamName)}”` : 'Thẻ dòng tiền riêng'}</span>`;
     }
     let existing = '';
     if (sec.existing && sec.counts.total) {
