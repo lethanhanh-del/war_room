@@ -12,5 +12,8 @@
     "run_worker_first": true
   },
   // Lịch họp Chủ tịch (src/bookings.js). Lần deploy đầu, wrangler tự tạo database theo tên này.
-  "d1_databases": [{ "binding": "DB", "database_name": "ctgwarroom" }]
+  "d1_databases": [{ "binding": "DB", "database_name": "ctgwarroom" }],
+  // Đẩy thông báo thời gian thực qua WebSocket (src/live.js). SQLite Durable Object chạy được trên gói Free.
+  "durable_objects": { "bindings": [{ "name": "LIVE", "class_name": "LiveRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveRoom"] }]
 }

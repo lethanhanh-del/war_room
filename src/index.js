@@ -26,8 +26,12 @@ import {
 } from "./auth.js";
 import { handleBookings } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
+import { handleLive, LiveRoom } from "./live.js";
 import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
 import { json, redirect, text } from "./http.js";
+
+// Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
+export { LiveRoom };
 
 const VIEW_PAGES = new Set(["/", "/lich", "/admin"]);
 
@@ -54,7 +58,8 @@ export default {
       return path.startsWith("/api/") ? json({ error: "Bạn cần đổi mật khẩu trước.", mustChange: true }, 403) : redirect("/doi-mat-khau");
     }
 
-    if (path === "/api/bookings") return handleBookings(request, env, url, user);
+    if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
+    if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);

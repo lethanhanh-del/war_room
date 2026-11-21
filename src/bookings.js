@@ -10,11 +10,12 @@
 
 import { log } from "./db.js";
 import { json } from "./http.js";
+import { notifyLive } from "./live.js";
 
 const SLOT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const KINDS = ["meeting", "block"];
 
-export async function handleBookings(request, env, url, user) {
+export async function handleBookings(request, env, url, user, ctx) {
   if (request.method === "GET") {
     const { results } = await env.DB.prepare(
       "SELECT slot, kind, name, note, username, created_at FROM chairman_bookings WHERE slot >= ? AND slot < ? ORDER BY slot"
@@ -40,6 +41,7 @@ export async function handleBookings(request, env, url, user) {
       .run();
     if (!meta.changes) return json({ error: "Khung giờ này vừa có người đặt. Vui lòng chọn khung khác." }, 409);
     await log(env, request, user.username, kind === "block" ? "booking_blocked" : "booking_created", `${slot}${note ? " · " + note : ""}`);
+    ctx.waitUntil(notifyLive(env, { scope: "bookings" }));
     return json({ ok: true }, 201);
   }
 
@@ -52,6 +54,7 @@ export async function handleBookings(request, env, url, user) {
     }
     await env.DB.prepare("DELETE FROM chairman_bookings WHERE slot = ?").bind(slot).run();
     await log(env, request, user.username, "booking_cancelled", `${slot} · ${row.kind === "block" ? "chặn lịch" : "lịch của " + row.name}`);
+    ctx.waitUntil(notifyLive(env, { scope: "bookings" }));
     return json({ ok: true });
   }
 

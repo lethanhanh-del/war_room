@@ -319,8 +319,25 @@
     $("fBlock").onclick = () => book("block");
     $("fClose").onclick = () => $("dlg").close();
 
+    // Thời gian thực: server đẩy gợi ý "lịch vừa thay đổi" qua WebSocket, trang tự tải lại.
+    // Mất kết nối thì thử lại (chờ tăng dần tới 30 giây) và tạm hỏi server định kỳ 30 giây.
+    let ws = null, wsDelay = 1000;
+    const live = () => ws && ws.readyState === WebSocket.OPEN;
+    function connect() {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/live/ws");
+      ws.onopen = () => { wsDelay = 1000; load(); };
+      ws.onmessage = (e) => {
+        let m; try { m = JSON.parse(e.data); } catch (_) { return; } // "pong"
+        if (m.type === "change" && m.scope === "bookings") load();
+      };
+      ws.onclose = () => { ws = null; setTimeout(connect, wsDelay); wsDelay = Math.min(wsDelay * 2, 30000); };
+    }
+
     load();
-    setInterval(() => { if (!document.hidden) load(); }, 20000);
+    connect();
+    setInterval(() => { if (live()) ws.send("ping"); }, 30000);
+    // Khi có WebSocket chỉ vẽ lại (khung "đã qua", "bây giờ"); khi mất kết nối thì tải lại từ server.
+    setInterval(() => { if (!document.hidden) (live() ? render() : load()); }, 30000);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
   })();
   </script>
