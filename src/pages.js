@@ -99,19 +99,81 @@ const NAV_STYLE = `<style>
 .wr-link:hover{color:#f3f6fa}
 .wr-link[aria-current=page]{border-bottom-color:#c8ff4d;color:#f3f6fa;font-weight:600}
 .wr-sp{flex:1 0 12px}
+.wr-auto{display:flex;align-items:center;gap:8px;margin:8px 12px 8px 0;padding:0 12px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.wr-auto:hover{border-color:#c8ff4d;color:#f3f6fa}
+.wr-auto i{position:relative;width:28px;height:16px;border-radius:999px;background:#2a3442;flex:none;transition:background .2s}
+.wr-auto i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#8994a6;transition:transform .2s,background .2s}
+.wr-auto[aria-pressed=true]{border-color:#c8ff4d;color:#f3f6fa}
+.wr-auto[aria-pressed=true] i{background:color-mix(in srgb,#c8ff4d 30%,#151a23)}
+.wr-auto[aria-pressed=true] i::after{transform:translateX(12px);background:#c8ff4d}
+.wr-auto[hidden]{display:none}
 .wr-user{display:flex;align-items:center;gap:12px;color:#8994a6;font-size:12.5px;white-space:nowrap}
 .wr-user b{color:#f3f6fa;font-weight:600}
 .wr-user a{color:#b6c0ce}
 .wr-user a:hover,.wr-user a[aria-current=page]{color:#c8ff4d}
 .wr-nav~#root{height:calc(100% - 44px)}.wr-nav~#root .wall{height:calc(100vh - 44px)}
 :root[data-tv] .wr-nav,:root[data-theme=tv] .wr-nav{display:none}
-@media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name{display:none}}
+@media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name,.wr-auto span{display:none}}
+@media (prefers-reduced-motion:reduce){.wr-auto i,.wr-auto i::after{transition:none}}
 </style>`;
+
+// Nút "Tự cuộn": cuộn chậm từ đầu đến cuối trang, dừng 5 giây ở cuối, về đầu trang, dừng 5 giây rồi cuộn lại — cho màn hình
+// treo tường. Bật / tắt nhớ theo từng trang (localStorage); thêm ?tucuon=1 trên địa chỉ để màn hình tự bật khi mở.
+// Người xem tự cuộn, bấm phím hoặc chạm màn hình thì tạm dừng 15 giây. Trang không dài hơn màn hình (vd "/") thì ẩn nút.
+const AUTO_SCROLL = `<script>(() => {
+  const SPEED = 28; // px mỗi giây: chậm, đọc kịp
+  const HOLD_MS = 5000, PAUSE_MS = 15000;
+  const btn = document.getElementById("wrAuto");
+  if (!btn) return;
+  const key = "wr-autoscroll:" + location.pathname;
+  const store = { get() { try { return localStorage.getItem(key) === "1"; } catch (e) { return false; } }, set(v) { try { localStorage.setItem(key, v ? "1" : "0"); } catch (e) {} } };
+  const q = new URLSearchParams(location.search).get("tucuon");
+  let on = q === "1" ? true : q === "0" ? false : store.get();
+  let timer = 0, last = 0, carry = 0, holdUntil = 0, pausedUntil = 0;
+  const el = document.scrollingElement || document.documentElement;
+  const room = () => el.scrollHeight - innerHeight;
+  function frame() {
+    const t = performance.now();
+    const dt = last ? Math.min(t - last, 1000) : 0; // trình duyệt chạy chậm lại (tab nền): vẫn giữ đúng tốc độ
+    last = t;
+    const now = Date.now();
+    if (now < holdUntil || now < pausedUntil || document.hidden) return;
+    if (room() < 40) return; // trang chưa tải xong dữ liệu (còn ngắn): chờ, đừng coi là đã tới cuối
+    if (el.scrollTop >= room() - 1) { // tới cuối: dừng rồi về đầu trang
+      holdUntil = now + HOLD_MS;
+      setTimeout(() => { if (!on) return; scrollTo({ top: 0, behavior: "smooth" }); holdUntil = Date.now() + HOLD_MS; }, HOLD_MS);
+      holdUntil = now + HOLD_MS * 2 + 1500;
+      return;
+    }
+    carry += (SPEED * dt) / 1000;
+    const step = Math.floor(carry);
+    if (step >= 1) { carry -= step; scrollBy(0, step); }
+  }
+  function render() {
+    btn.hidden = room() < 40;
+    btn.setAttribute("aria-pressed", String(on));
+    btn.title = on ? "Đang tự cuộn trang. Bấm để tắt." : "Tự cuộn chậm từ đầu đến cuối trang, rồi lặp lại.";
+  }
+  function set(v) {
+    on = v; store.set(v); render();
+    clearInterval(timer); timer = 0; last = 0; carry = 0; holdUntil = 0; pausedUntil = 0;
+    if (on) timer = setInterval(frame, 40); // 25 lần / giây, mỗi lần 1–2px: mượt mà vẫn chậm
+  }
+  btn.addEventListener("click", () => set(!on));
+  const pause = () => { if (on) pausedUntil = Date.now() + PAUSE_MS; };
+  addEventListener("wheel", pause, { passive: true });
+  addEventListener("touchstart", pause, { passive: true });
+  addEventListener("keydown", (e) => { if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) pause(); });
+  addEventListener("resize", render);
+  setInterval(render, 3000); // trang tải dữ liệu xong mới dài ra
+  render();
+  if (on) set(true);
+})();</script>`;
 
 /** Thanh điều hướng cho trang `path` (đánh dấu trang đang mở), kèm tên người dùng, Quản trị / Đổi mật khẩu, Đăng xuất. */
 export function navBar(user, path) {
   const cur = (href) => (href === path ? ' aria-current="page"' : "");
   const links = NAV_PAGES.map(([href, label]) => `<a class="wr-link" href="${href}"${cur(href)}>${label}</a>`).join("");
   const account = user.role === "admin" ? `<a href="/admin"${cur("/admin")}>Quản trị</a>` : `<a href="/doi-mat-khau">Đổi mật khẩu</a>`;
-  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>`;
+  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><button type="button" class="wr-auto" id="wrAuto" aria-pressed="false" hidden><i aria-hidden="true"></i><span>Tự cuộn</span></button><span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>${AUTO_SCROLL}`;
 }

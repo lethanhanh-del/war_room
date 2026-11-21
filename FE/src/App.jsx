@@ -22,6 +22,7 @@ const IDLE_SEC = params.get('idle') === null ? 120 : Math.max(0, Number(params.g
 const TODAY_OVERRIDE = /^\d{4}-\d{2}-\d{2}$/.test(params.get('today') || '') ? params.get('today') : null;
 
 const CLOSED = null;
+const DUE_SHIFT_MS = 5 * 3600 * 1000; // KPI ngày D hết hạn lúc 05:00 ngày D+1 (giờ Việt Nam)
 
 export default function App() {
   const [data, setData] = useState(null);
@@ -98,7 +99,8 @@ export default function App() {
     window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
   }, [filter]);
 
-  const today = TODAY_OVERRIDE || todayVN(now);
+  // Hạn của KPI là 05:00 sáng hôm sau: trước 05:00 vẫn tính là ngày hôm trước (việc hôm qua chưa tick vẫn là Đang làm).
+  const today = TODAY_OVERRIDE || todayVN(new Date(now.getTime() - DUE_SHIFT_MS));
   const days = useMemo(() => allDays(data), [data]);
   const pics = useMemo(() => allPics(data), [data]);
   const view = useMemo(() => buildView(data, filter, today), [data, filter, today]);
@@ -165,7 +167,7 @@ export default function App() {
         (data ? view.flows : Array.from({ length: 5 }, () => null)).map((flow, i) => (
           <FlowPanel
             key={flow?.key || i}
-            index={i + 2}
+            index={flow?.no ?? i + 2}
             flow={flow}
             date={filter.date}
             days={days}

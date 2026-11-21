@@ -163,10 +163,15 @@ test('kpi-model: trạng thái theo hôm nay, đếm, ghi chú ở KPI tồn đ�
   assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-22', '2026-11-23'), 'K'); // đã qua ngày chưa tick: Không đạt
   assert.equal(statusOf({ kpi: 'a', res: '?' }, '2026-11-21', '2026-11-23'), 'K');
   assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-24', '2026-11-23'), 'S');
-  // Hoàn thành trễ hạn: tick sau khi hết ngày của KPI (giờ VN = UTC+7), có 10 phút du di sau nửa đêm
+  // Hạn của KPI ngày 21 là 05:00 sáng ngày 22 giờ VN (= 22:00 UTC ngày 21), du di 10 phút
   assert.equal(isLateTick('2026-11-21', '2026-11-21T16:59:00.000Z'), false); // 23:59 ngày 21
-  assert.equal(isLateTick('2026-11-21', '2026-11-21T17:05:00.000Z'), false); // 00:05 ngày 22: còn du di
-  assert.equal(isLateTick('2026-11-21', '2026-11-21T17:11:00.000Z'), true); // 00:11 ngày 22
+  assert.equal(isLateTick('2026-11-21', '2026-11-21T21:59:00.000Z'), false); // 04:59 ngày 22
+  assert.equal(isLateTick('2026-11-21', '2026-11-21T22:09:00.000Z'), false); // 05:09 ngày 22: còn du di
+  assert.equal(isLateTick('2026-11-21', '2026-11-21T22:11:00.000Z'), true); // 05:11 ngày 22
+  // Chưa tick: trước 05:00 sáng hôm sau là Đang làm, từ 05:00 là Không đạt
+  assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-21', '2026-11-22', Date.UTC(2026, 10, 21, 21, 30)), 'N'); // 04:30 ngày 22
+  assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-21', '2026-11-22', Date.UTC(2026, 10, 21, 22, 0)), 'K'); // 05:00 ngày 22
+  assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-22', '2026-11-22', Date.UTC(2026, 10, 21, 22, 0)), 'N');
   assert.equal(isLateTick('2026-11-21', ''), false); // không biết giờ tick
   assert.equal(statusOf({ kpi: 'a', res: 'D', at: '2026-11-22T02:00:00.000Z' }, '2026-11-21', '2026-11-23'), 'L');
   assert.equal(statusOf({ kpi: 'a', res: 'D', at: '2026-11-21T02:00:00.000Z' }, '2026-11-21', '2026-11-23'), 'D');
@@ -329,4 +334,45 @@ test('stampTicks: ghi giờ cho ô vừa tick, giữ giờ cũ khi chèn dòng /
   // Dòng tiền mới thêm vào file: ô đã tick sẵn không có giờ
   const f = stampTicks([...mk([]), { name: 'Banking', groups: [{ name: 'SS1', rows: [{ row: 3, person: 'Tài', cells: { '2026-11-21': { kpi: 'Hồ sơ', res: 'D' } } }] }] }], e, T2);
   assert.equal(f[1].groups[0].rows[0].cells['2026-11-21'].at, undefined);
+});
+
+test('plan: 8 dòng tiền đánh số trong file phân chia nhiệm vụ — xếp, đánh số, đặt tên theo file, ẩn tab ngoài danh sách', async () => {
+  const { parsePlan, planName, applyPlan } = await import('../src/kpi/plan.js');
+  assert.deepEqual(planName('Dòng tiền bán 4 dự án'), { name: 'Bán 4 dự án', desc: '' });
+  assert.deepEqual(planName('1. Cổ phiếu – Equity 2. IPO / niêm yết'), { name: 'Cổ phiếu – Equity · IPO / niêm yết', desc: '' });
+  assert.deepEqual(planName('Các gói tài trợ – Tài chính 57: Tổ chức Ban Tài chính 57.'), { name: 'Các gói tài trợ – Tài chính 57', desc: 'Tổ chức Ban Tài chính 57.' });
+  const plan = parsePlan([tab('DS nhân sự War-Room', [
+    ',,,',
+    'STT,STT dòng tiền,Dòng tiền,Thành viên',
+    '1,,Cố vấn chỉ đạo,Trần Kim Chung',
+    '2,1,Dòng tiền bán 4 dự án,Hoàng Thị Quỳnh Mai',
+    '3,,,Mạc Thị Thúy Hiền',
+    '4,2,Dòng tiền Banking,Nguyễn Thị Mai Thu',
+    '5,5,"1. Cổ phiếu – Equity 2. IPO / niêm yết",',
+    '6,8,Thanh lý,',
+  ].join('\n'))]);
+  assert.deepEqual(plan.map((p) => [p.no, p.name]), [[1, 'Bán 4 dự án'], [2, 'Banking'], [5, 'Cổ phiếu – Equity · IPO / niêm yết'], [8, 'Thanh lý']]);
+
+  // Tab task "Dòng tiền 5: Equity / IPO" -> số 5; tab "Dòng tiền Tài chính" không có trong danh sách -> ẩn
+  const book = parseKpiBook([
+    tab('Dòng tiền bán 4 dự án', [TASK_HEAD, '1,Dòng tiền 1: Bán 4 dự án,Networking,Lập kế hoạch,Mai'].join('\n')),
+    tab('Trang tính6', MASTER_KPI),
+    tab('Dòng tiền Tài chính', TASK_HEAD),
+    tab('Trang tính9', [HEAD, SUB].join('\n')),
+    tab('Dòng tiền Equity / IPO', [TASK_HEAD, '1,Dòng tiền 5: Equity / IPO,Equity / IPO,Lộ trình,Nhiên'].join('\n')),
+    tab('Trang tính12', [HEAD, SUB, '1,Equity / IPO,Anh Nguyễn Thế Nhiên,Tổng hợp lộ trình,FALSE'].join('\n')),
+  ], { year: 2026 });
+  assert.deepEqual(book.streams.map((s) => [s.name, s.no ?? null]), [['Bán 4 dự án', 1], ['Tài chính', null], ['Equity / IPO', 5]]);
+  const r = applyPlan(book.streams, plan);
+  assert.deepEqual(r.streams.map((s) => [s.no, s.name, s.sourceName, s.groups.length]), [
+    [1, 'Bán 4 dự án', 'Bán 4 dự án', 1],
+    [2, 'Banking', '', 0], // chưa có tab KPI: vẫn hiện
+    [5, 'Cổ phiếu – Equity · IPO / niêm yết', 'Equity / IPO', 1],
+    [8, 'Thanh lý', '', 0],
+  ]);
+  assert.match(r.warnings.join('\n'), /Không hiện “Dòng tiền Tài chính”/);
+  assert.deepEqual(applyPlan(book.streams, []).streams, book.streams); // chưa đọc được danh sách: giữ nguyên
+
+  const { attachPeople } = await kpi();
+  assert.deepEqual(attachPeople(r.streams).map((s) => [s.code, s.no]), [['DT01', 1], ['DT02', 2], ['DT05', 5], ['DT08', 8]]);
 });
