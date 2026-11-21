@@ -79,15 +79,30 @@ $('tvBtn').addEventListener('click', () => { prefs.tv = !prefs.tv; store.set('wr
 applyTheme();
 
 // ---------- trạng thái + tải dữ liệu ----------
+const parseTab = (v) => (v === 'ho-tro' ? 'support' : v === 'thanh-ly' ? 'liquidation' : 'cashflow');
+const tabParam = (t) => (t === 'support' ? 'ho-tro' : t === 'liquidation' ? 'thanh-ly' : '');
+
 const S = {
   data: null,
   model: null,
-  filter: { day: params.get('ngay') || '', stream: params.get('dong') || 'all', result: params.get('kq') || 'all' },
+  filter: {
+    tab: parseTab(params.get('tab')),
+    day: params.get('ngay') || '',
+    stream: params.get('dong') || 'all',
+    result: params.get('kq') || 'all',
+  },
   groupStream: '',
   timer: null,
   loading: false,
   stale: false,
 };
+
+const cashStreams = (m) => (m?.streams || []).filter((s) => s.kind !== 'support' && s.kind !== 'liquidation');
+const supportStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'support');
+const liquidationStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'liquidation');
+const activePool = (m, tab) => (tab === 'support' ? supportStreams(m) : tab === 'liquidation' ? liquidationStreams(m) : cashStreams(m));
+const isSpecialTab = (tab) => tab === 'support' || tab === 'liquidation';
+const TAB_NAME = { cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Nhóm thanh lý' };
 
 async function load() {
   if (S.loading) return;
@@ -119,8 +134,9 @@ async function load() {
 function normalizeFilter() {
   const m = S.model;
   const f = S.filter;
+  const pool = activePool(m, f.tab);
   if (f.day !== 'all' && !m.days.some((d) => d.date === f.day)) f.day = defaultDay(m);
-  if (f.stream !== 'all' && !m.streams.some((s) => s.key === f.stream)) f.stream = 'all';
+  if (isSpecialTab(f.tab) || (f.stream !== 'all' && !pool.some((s) => s.key === f.stream))) f.stream = 'all';
   if (!['all', 'D', 'T', 'L'].includes(f.result)) f.result = 'all';
 }
 
@@ -128,8 +144,9 @@ function syncUrl() {
   const p = new URLSearchParams(location.search);
   const f = S.filter;
   const put = (k, v, def) => { if (v && v !== def) p.set(k, v); else p.delete(k); };
+  put('tab', tabParam(f.tab), '');
   put('ngay', f.day, defaultDay(S.model));
-  put('dong', f.stream, 'all');
+  put('dong', isSpecialTab(f.tab) ? 'all' : f.stream, 'all');
   put('kq', f.result, 'all');
   const q = p.toString();
   history.replaceState(null, '', `${location.pathname}${q ? `?${q}` : ''}${location.hash}`);
@@ -233,24 +250,44 @@ function renderFatal(message) {
 function view(override = {}) {
   const m = S.model;
   const f = { ...S.filter, ...override };
-  const streams = f.stream === 'all' ? m.streams : m.streams.filter((s) => s.key === f.stream);
+  const pool = activePool(m, f.tab);
+  const streams = isSpecialTab(f.tab) || f.stream === 'all' ? pool : pool.filter((s) => s.key === f.stream);
   const groupOf = new Map(m.streams.flatMap((s) => s.groups.map((g) => [`${s.key}/${g.key}`, g])));
-  return { m, f, today: m.today, ref: refDate(m), streams, items: streams.flatMap((s) => s.items), groupOf };
+  return { m, f, today: m.today, ref: refDate(m), pool, streams, items: streams.flatMap((s) => s.items), groupOf };
 }
 
 function filtersHtml() {
   const m = S.model;
   const f = S.filter;
+  const cash = cashStreams(m);
+  const sup = supportStreams(m);
+  const liq = liquidationStreams(m);
+  const supKpiCount = sup.reduce((n, s) => n + s.items.length, 0);
+  const liqKpiCount = liq.reduce((n, s) => n + s.items.length, 0);
+  const badgeOf = (list, cnt) => (cnt ? `${cnt} KPI` : list.length ? 'Sheet' : '0');
+  const tabBar = `<div class="k-mode-tabs" role="tablist" aria-label="Phân khu KPI">
+      <button type="button" role="tab" class="k-mtab" data-tab="cashflow" aria-selected="${f.tab === 'cashflow'}">
+        <span>Dòng tiền</span><b>${cash.length}</b>
+      </button>
+      <button type="button" role="tab" class="k-mtab" data-tab="liquidation" aria-selected="${f.tab === 'liquidation'}">
+        ${icon('folder')}<span>Nhóm thanh lý</span><b>${badgeOf(liq, liqKpiCount)}</b>
+      </button>
+      <button type="button" role="tab" class="k-mtab" data-tab="support" aria-selected="${f.tab === 'support'}">
+        ${icon('users')}<span>Nhóm hỗ trợ</span><b>${badgeOf(sup, supKpiCount)}</b>
+      </button>
+    </div>`;
   const opt = (val, label) => `<button type="button" class="kf-opt" data-day="${esc(val)}" aria-pressed="${f.day === val}">${label}</button>`;
   const days = m.days.map((d) => opt(d.date, `${d.weekday} ${esc(d.label)}${d.date === m.today ? ' · Hôm nay' : ''}`)).join('');
-  const streams = [`<option value="all">Tất cả dòng tiền</option>`, ...m.streams.map((s) => `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${s.no ? `${s.no}. ` : ''}${esc(s.name)}</option>`)].join('');
+  const streams = [`<option value="all">Tất cả dòng tiền</option>`, ...cash.map((s) => `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${s.no ? `${s.no}. ` : ''}${esc(s.name)}</option>`)].join('');
+  const streamSelect = f.tab === 'cashflow'
+    ? `<span class="kf-sep" aria-hidden="true"></span><label class="kf-group"><span class="kf-label">Dòng tiền</span><select class="kf-select" data-stream-select>${streams}</select></label>`
+    : '';
   const res = [['all', 'Tất cả', ''], ['D', 'Hoàn thành', 'D'], ['L', 'Hoàn thành trễ hạn', 'L'], ['T', 'Tồn đọng', 'K']]
     .map(([v, l, st]) => `<button type="button" class="kf-chip" data-result="${v}" aria-pressed="${f.result === v}">${st ? `<i class="kd st-${st}"></i>` : ''}${l}</button>`).join('');
-  return `<div class="kf-bar">
+  return `${tabBar}<div class="kf-bar">
       <span class="kf-lead">${icon('filter')}Lọc</span>
       <div class="kf-group"><span class="kf-label">Ngày</span><div class="kf-seg" role="group" aria-label="Lọc theo ngày">${opt('all', `Cả ${m.days.length} ngày`)}${days}</div></div>
-      <span class="kf-sep" aria-hidden="true"></span>
-      <label class="kf-group"><span class="kf-label">Dòng tiền</span><select class="kf-select" data-stream-select>${streams}</select></label>
+      ${streamSelect}
       <span class="kf-sep" aria-hidden="true"></span>
       <div class="kf-group"><span class="kf-label">Kết quả</span><div class="kf-chips" role="group" aria-label="Lọc theo kết quả">${res}</div></div>
     </div>`;
@@ -258,7 +295,12 @@ function filtersHtml() {
 
 function pageHtml() {
   const x = view();
-  if (!x.m.streams.length) {
+  if (isSpecialTab(x.f.tab) && !x.streams.length) {
+    const label = TAB_NAME[x.f.tab];
+    const sample = x.f.tab === 'support' ? '9. Nhóm hỗ trợ' : '8. Nhóm thanh lý';
+    return `<section class="k-panel k-empty"><h2>Chưa tìm thấy sheet ${esc(label)}</h2><p class="hint">Google Sheet KPI cần có tab “${esc(label)}” (hoặc “${esc(sample)}”) với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
+  }
+  if (!x.streams.length) {
     return `<section class="k-panel k-empty"><h2>Chưa có dữ liệu KPI</h2><p class="hint">Google Sheet KPI cần có tab “Dòng tiền …” với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
   }
   return `${heroHtml(x)}${membersHtml(x)}${tableHtml(x)}${groupsHtml(x)}${guideHtml()}`;
@@ -366,13 +408,24 @@ function membersHtml(x) {
     // Mỗi dòng tiền 1 khối riêng: tiêu đề lớn (mã, tên, PIC) + tổng số KPI của dòng tiền, rồi các nhóm bên dưới.
     const stat = (n, st, label, extra = '') => `<span class="kms-stat st-${st}${n ? '' : ' is-zero'}"><b>${n}${extra}</b><small>${label}</small></span>`;
     const p = pct(sum.done, sum.total);
+    const sheetNote = s.kpiSheet || s.sheet;
+    const isSpecial = s.kind === 'support' || s.kind === 'liquidation';
+    const meta = [
+      s.pic ? `${isSpecial ? 'PIC' : 'PIC dòng tiền'} <b>${esc(s.pic)}</b>` : isSpecial && sheetNote ? `Đọc trực tiếp từ sheet <b>${esc(sheetNote)}</b>` : 'Chưa ghi PIC dòng tiền',
+      `${sum.groups} nhóm`,
+      `${sum.people.size} người`,
+    ].join(' · ');
     const head = `<header class="km-stream">
         <div class="kms-id">${s.code ? `<span class="kms-code">${esc(s.code)}</span>` : `<span class="kms-code is-none">${si + 1}</span>`}
-          <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${[s.pic ? `PIC dòng tiền <b>${esc(s.pic)}</b>` : 'Chưa ghi PIC dòng tiền', `${sum.groups} nhóm`, `${sum.people.size} người`].join(' · ')}</p></div></div>
+          <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
         <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
-    const body = cards ? `<div class="km-grid">${cards}</div>` : `<p class="k-none">Chưa có nhóm nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
-    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="Dòng tiền ${esc(s.name)}">${head}${body}</section>`;
+    const body = cards
+      ? `<div class="km-grid">${cards}</div>`
+      : isSpecial
+        ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
+        : `<p class="k-none">Chưa có nhóm nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
+    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="${isSpecial ? '' : 'Dòng tiền '}${esc(s.name)}">${head}${body}</section>`;
   }).join('');
   const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
   const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện người có KPI ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
@@ -447,8 +500,11 @@ function tableHtml(x, { tv = false } = {}) {
         <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
   const legend = STATUSES.map((st) => `<span><i class="kd st-${st}"></i>${STATUS_LABEL[st]}</span>`).join('');
-  return `<section class="k-panel k-streams" aria-labelledby="k-tbl-t"><header class="k-phead"><div><h2 id="k-tbl-t">Kết quả theo dòng tiền</h2>${tv ? '' : '<p class="hint">Mỗi ô vuông là 1 KPI của 1 người trong ngày. Bấm tên dòng tiền để xem chi tiết từng nhóm.</p>'}</div>${tv ? '' : `<div class="k-legend-row">${legend}</div>`}</header>
-      <div class="k-table" role="table" style="--days:${m.days.length}"><div class="kt-row kt-head" role="row"><div class="kt-c kt-stream" role="columnheader">Dòng tiền</div>${head}<div class="kt-c kt-sum" role="columnheader">${tv ? 'Lũy kế' : 'Lũy kế đến hôm nay'}</div></div>${rows}</div></section>`;
+  const isSp = isSpecialTab(f.tab);
+  const tblTitle = isSp ? `Kết quả theo ngày · ${TAB_NAME[f.tab]}` : 'Kết quả theo dòng tiền';
+  const tblCol = isSp ? 'Sheet nguồn' : 'Dòng tiền';
+  return `<section class="k-panel k-streams" aria-labelledby="k-tbl-t"><header class="k-phead"><div><h2 id="k-tbl-t">${tblTitle}</h2>${tv ? '' : `<p class="hint">Mỗi ô vuông là 1 KPI của 1 người trong ngày.${isSp ? '' : ' Bấm tên dòng tiền để xem chi tiết từng nhóm.'}</p>`}</div>${tv ? '' : `<div class="k-legend-row">${legend}</div>`}</header>
+      <div class="k-table" role="table" style="--days:${m.days.length}"><div class="kt-row kt-head" role="row"><div class="kt-c kt-stream" role="columnheader">${tblCol}</div>${head}<div class="kt-c kt-sum" role="columnheader">${tv ? 'Lũy kế' : 'Lũy kế đến hôm nay'}</div></div>${rows}</div></section>`;
 }
 
 // ----- Kế hoạch & kết quả theo nhóm -----
@@ -542,16 +598,16 @@ function planCard(g, x) {
 }
 
 function groupsHtml(x) {
-  const { m, f, today, ref } = x;
-  const pool = f.stream === 'all' ? m.streams : m.streams.filter((s) => s.key === f.stream);
-  const s = pool.find((v) => v.key === S.groupStream) || pool.find((v) => v.items.length) || pool[0];
+  const { m, f, today, ref, pool } = x;
+  const listPool = isSpecialTab(f.tab) || f.stream === 'all' ? pool : pool.filter((s) => s.key === f.stream);
+  const s = listPool.find((v) => v.key === S.groupStream) || listPool.find((v) => v.items.length) || listPool[0];
   if (!s) return '';
   const isAll = f.day === 'all';
   const people = new Set(s.groups.flatMap((g) => [g.pic?.name, ...(g.members || [])].filter(Boolean)));
   const active = s.groups.filter((g) => g.items.length);
   const idle = s.groups.filter((g) => !g.items.length);
-  const tabs = f.stream === 'all' && m.streams.length > 1
-    ? `<div class="k-tabs" role="tablist" aria-label="Chọn dòng tiền">${m.streams.map((v) => {
+  const tabs = f.tab === 'cashflow' && f.stream === 'all' && pool.length > 1
+    ? `<div class="k-tabs" role="tablist" aria-label="Chọn dòng tiền">${pool.map((v) => {
       const c = count(upTo(v.items, ref));
       const p = pct(doneOf(c), c.total);
       return `<button type="button" role="tab" data-gstream="${esc(v.key)}" aria-selected="${v.key === s.key}">${esc(v.name)}<b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b></button>`;
@@ -602,9 +658,14 @@ function tvHtml() {
 
 // ---------- tương tác ----------
 $('filters').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-day],[data-result]');
+  const b = e.target.closest('[data-tab],[data-day],[data-result]');
   if (!b) return;
-  if (b.dataset.day) S.filter.day = b.dataset.day; else S.filter.result = b.dataset.result;
+  if (b.dataset.tab) {
+    S.filter.tab = b.dataset.tab;
+    S.filter.stream = 'all';
+    S.groupStream = '';
+  } else if (b.dataset.day) S.filter.day = b.dataset.day;
+  else S.filter.result = b.dataset.result;
   syncUrl();
   render();
 });

@@ -129,15 +129,16 @@ function sentence(s) {
   return t.charAt(0).toLocaleUpperCase('vi') + t.slice(1);
 }
 
-/** "DÒNG TIỀN 2: BANKING | NHẬP TASK & THEO DÕI" -> { no: 2, name: 'Banking' } */
+/** "DÒNG TIỀN 2: BANKING | NHẬP TASK & THEO DÕI" hoặc "2. Dòng tiền Banking" -> { no: 2, name: 'Banking' } */
 export function parseStreamTitle(s) {
   const head = String(s || '').split('|')[0].trim();
-  // "Dòng tiền", "DÒNG TIỀN", "Dong tien" (không dấu)
-  const m = /^d[oòóỏõọ]ng\s*ti[eèéẻẽẹêềếểễệ]n(?![\p{L}\d])\s*(?:số\s*)?(\d{1,2})?\s*[:\-–—.]?\s*(.*)$/iu.exec(head);
+  // "1. Dòng tiền ...", "Dòng tiền", "DÒNG TIỀN", "Dong tien" (không dấu)
+  const m = /^(?:(\d{1,2})\s*[.)\-–]\s*)?d[oòóỏõọ]ng\s*ti[eèéẻẽẹêềếểễệ]n(?![\p{L}\d])\s*(?:số\s*)?(\d{1,2})?\s*[:\-–—.]?\s*(.*)$/iu.exec(head);
   if (!m) return null;
-  const name = sentence(m[2].trim());
-  if (!name && !m[1]) return null;
-  return { no: m[1] ? Number(m[1]) : null, name };
+  const no = m[2] ? Number(m[2]) : m[1] ? Number(m[1]) : null;
+  const name = sentence(m[3].trim());
+  if (!name && !no) return null;
+  return { no, name };
 }
 
 /** Tên file "DONG_TIEN_2_BANKING_Template….xlsx" -> { no: 2, name: 'Banking' } */

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { csvSheet, parseCsv } from '../src/excel/gsheet.js';
-import { isKpiTab, parseKpiBook, parseKpiTab, personName, resultCode, streamNameOf } from '../src/kpi/sheet.js';
+import { isKpiTab, isLiquidationTab, isSupportTab, parseKpiBook, parseKpiTab, personName, resultCode, streamNameOf } from '../src/kpi/sheet.js';
 import { buildModel, count, defaultDay, isLateTick, memberStats, noteTargets, refDate, statusOf, weekday } from '../public/kpi-model.js';
 import { stampTicks } from '../src/kpi/ticks.js';
 import { DEMO } from '../public/kpi-demo.js';
@@ -375,4 +375,89 @@ test('plan: 8 dòng tiền đánh số trong file phân chia nhiệm vụ — x�
 
   const { attachPeople } = await kpi();
   assert.deepEqual(attachPeople(r.streams).map((s) => [s.code, s.no]), [['DT01', 1], ['DT02', 2], ['DT05', 5], ['DT08', 8]]);
+});
+
+test('Nhóm hỗ trợ, Nhóm thanh lý & 9 tab đánh số (1. Dòng tiền ... -> 8. Nhóm thanh lý -> 9. Nhóm hỗ trợ)', async () => {
+  const { parsePlan, applyPlan } = await import('../src/kpi/plan.js');
+  const { attachPeople } = await kpi();
+  const { toDashboard, flowLabel } = await import('../src/kpi/dashboard.js');
+
+  assert.equal(isKpiTab('1. Dòng tiền bán 4 dự án'), true);
+  assert.equal(isKpiTab('7. Dòng tiền Tài chính 57'), true);
+  assert.equal(isKpiTab('Bản sao của 1. Dòng tiền bán 4 dự án'), false);
+  assert.equal(isLiquidationTab('8. Nhóm thanh lý'), true);
+  assert.equal(isLiquidationTab('Nhóm thanh lý'), true);
+  assert.equal(isSupportTab('9. Nhóm hỗ trợ'), true);
+  assert.equal(isSupportTab('9. Nho\u0301m ho\u0302\u0303 tro\u031b\u0323'), true);
+  assert.equal(isSupportTab('Nhóm hỗ trợ'), true);
+  assert.equal(streamNameOf('1. Dòng tiền bán 4 dự án'), 'Bán 4 dự án');
+  assert.equal(streamNameOf('7. Dòng tiền Tài chính 57'), 'Tài chính 57');
+  assert.equal(streamNameOf('8. Nhóm thanh lý'), 'Nhóm thanh lý');
+  assert.equal(streamNameOf('9. Nhóm hỗ trợ'), 'Nhóm hỗ trợ');
+  assert.equal(flowLabel({ sheet: '1. Dòng tiền bán 4 dự án', name: 'Bán 4 dự án' }), 'Dòng tiền bán 4 dự án');
+
+  const book = parseKpiBook([
+    tab('Waiting Point', 'STT,Dòng tiền\n1,X'),
+    tab('1. Dòng tiền bán 4 dự án', MASTER_KPI),
+    tab('2. Dòng tiền Banking', [HEAD, SUB, '1,H300,Hiền,Phán quyết,FALSE'].join('\n')),
+    tab('3. Dòng tiền nợ khó đòi', [HEAD, SUB, '1,Tòa,Sum,Thi hành án,FALSE'].join('\n')),
+    tab('4. Dòng tiền thu trước hạn quá hạn', [HEAD, SUB, '1,Dữ liệu,Thu,Tổng hợp,TRUE'].join('\n')),
+    tab('5. Dòng tiền Equity / IPO', [HEAD, SUB, '1,Equity / IPO,Anh Nguyễn Thế Nhiên,Lộ trình IPO,FALSE'].join('\n')),
+    tab('6. Dòng tiền trái phiếu', [HEAD, SUB, '1,Trái phiếu,Anh Nguyễn Thế Nhiên,Nhu cầu vốn,FALSE'].join('\n')),
+    tab('7. Dòng tiền Tài chính 57', [HEAD, SUB].join('\n')),
+    tab('8. Nhóm thanh lý', [HEAD, SUB, '1,Thanh lý đợt 2,Phạm Thị Như Thủy,Đề xuất danh mục tài sản,TRUE'].join('\n')),
+    tab('9. Nho\u0301m ho\u0302\u0303 tro\u031b\u0323', [HEAD, SUB, '1,Nhóm IT,Nguyễn Thanh Phong,Chuẩn bị tài khoản AI,TRUE'].join('\n')),
+  ], { year: 2026 });
+  assert.deepEqual(book.streams.map((s) => [s.name, s.kind || 'cash']), [
+    ['Bán 4 dự án', 'cash'],
+    ['Banking', 'cash'],
+    ['Nợ khó đòi', 'cash'],
+    ['Thu trước hạn quá hạn', 'cash'],
+    ['Equity / IPO', 'cash'],
+    ['Trái phiếu', 'cash'],
+    ['Tài chính 57', 'cash'],
+    ['Nhóm thanh lý', 'liquidation'],
+    ['Nhóm hỗ trợ', 'support'],
+  ]);
+  assert.deepEqual(book.warnings, []);
+
+  const plan = parsePlan([tab('DS nhân sự War-Room', [
+    'STT,STT dòng tiền,Dòng tiền,Thành viên',
+    '1,1,Dòng tiền bán 4 dự án,Mai',
+    '2,2,Dòng tiền Banking,Thu',
+    '3,3,Dòng tiền nợ khó đòi,Hiền',
+    '4,4,Dòng tiền thu trước hạn/quá hạn,Hà Thu',
+    '5,5,"1. Cổ phiếu – Equity 2. IPO / niêm yết",',
+    '6,6,Trái phiếu,',
+    '7,7,Các gói tài trợ – Tài chính 57: Tổ chức Ban Tài chính 57.,',
+    '8,8,Thanh lý,',
+  ].join('\n'))]);
+  const applied = applyPlan(book.streams, plan);
+  assert.deepEqual(applied.warnings, []);
+  assert.deepEqual(applied.streams.map((s) => [s.no || null, s.name, s.kind || 'cash', s.groups.length]), [
+    [1, 'Bán 4 dự án', 'cash', 1],
+    [2, 'Banking', 'cash', 1],
+    [3, 'Nợ khó đòi', 'cash', 1],
+    [4, 'Thu trước hạn/quá hạn', 'cash', 1],
+    [5, 'Cổ phiếu – Equity · IPO / niêm yết', 'cash', 1],
+    [6, 'Trái phiếu', 'cash', 1],
+    [7, 'Các gói tài trợ – Tài chính 57', 'cash', 0],
+    [8, 'Nhóm thanh lý', 'liquidation', 1],
+    [null, 'Nhóm hỗ trợ', 'support', 1],
+  ]);
+
+  const attached = attachPeople(applied.streams);
+  const sup = attached.find((s) => s.kind === 'support');
+  const liq = attached.find((s) => s.kind === 'liquidation');
+  assert.equal(sup.code, 'HT');
+  assert.equal(sup.sheet, '9. Nho\u0301m ho\u0302\u0303 tro\u031b\u0323');
+  assert.equal(sup.groups[0].rows[0].person, 'Nguyễn Thanh Phong');
+  assert.equal(liq.code, 'TL');
+  assert.equal(liq.sheet, '8. Nhóm thanh lý');
+  assert.equal(liq.groups[0].rows[0].person, 'Phạm Thị Như Thủy');
+
+  // Dashboard "/" giữ đủ 8 dòng tiền (1..8 gồm cả Thanh lý), chỉ loại Nhóm hỗ trợ (#9)
+  const dash = toDashboard({ today: '2026-11-22', now: Date.UTC(2026, 10, 22), source: {}, streams: attached });
+  assert.equal(dash.flows.length, 8);
+  assert.ok(dash.flows.every((f) => f.key !== sup.key));
 });

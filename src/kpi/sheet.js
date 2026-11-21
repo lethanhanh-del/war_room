@@ -24,16 +24,26 @@ const PIC_RE = /\bPIC(?:\s+phụ\s+trách)?\s*[:：]\s*([^\n]+)/iu;
 const raw = (row, i) => (i == null || i < 0 ? '' : String(row?.cells?.[i]?.v ?? ''));
 const text = (row, i) => raw(row, i).replace(/\s+/g, ' ').trim();
 
-/** Tab "Dòng tiền …" (không phân biệt hoa thường, dấu). */
-export const isKpiTab = (name) => /^dong tien(\s|:|-|$)/.test(normKey(name));
+/** Bỏ số thứ tự đứng đầu tên tab: "1. Dòng tiền ..." -> "Dòng tiền ..."; "8. Nhóm hỗ trợ" -> "Nhóm hỗ trợ". */
+const stripPrefixNo = (s) => String(s || '').normalize('NFC').replace(/\s+/g, ' ').trim().replace(/^\d+\s*[.)\-–]\s*/, '');
 
-/** "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Bán 4 dự án"; "Dòng tiền tài chính " -> "Tài chính"; "Dòng tiền Equity / IPO" -> "Equity / IPO". */
+/** Tab "Dòng tiền …" (có thể có số thứ tự "1. " ở đầu). */
+export const isKpiTab = (name) => /^dong tien(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
+
+/** Tab "Nhóm hỗ trợ" (có thể có số thứ tự "8. " ở đầu). */
+export const isSupportTab = (name) => /^nhom ho tro(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
+
+/** Tab "Nhóm thanh lý" (có thể có số thứ tự "9. " ở đầu). */
+export const isLiquidationTab = (name) => /^nhom thanh ly(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
+
+/** "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Bán 4 dự án"; "1. Dòng tiền bán 4 dự án" -> "Bán 4 dự án"; "8. Nhóm hỗ trợ" -> "Nhóm hỗ trợ"; "9. Nhóm thanh lý" -> "Nhóm thanh lý". */
 export function streamNameOf(tab) {
-  const words = String(tab || '').normalize('NFC').replace(/\s+/g, ' ').trim().split(' ');
+  const clean = stripPrefixNo(tab);
+  const words = clean.split(' ').filter(Boolean);
   let i = 0;
   if (normKey(words[0]) === 'dong' && normKey(words[1]).replace(/[:\-–]$/, '') === 'tien') i = 2;
   const rest = words.slice(i).join(' ').replace(/^[:\-–]\s*/, '');
-  if (!rest) return String(tab || '').trim();
+  if (!rest) return clean || String(tab || '').trim();
   // Tên viết hoa toàn bộ -> dạng câu; tên đã viết thường / hoa đúng (vd "Equity / IPO") giữ nguyên, chỉ viết hoa chữ đầu.
   const base = rest === rest.toLocaleUpperCase('vi') ? rest.toLocaleLowerCase('vi') : rest;
   return base.charAt(0).toLocaleUpperCase('vi') + base.slice(1);
@@ -216,16 +226,20 @@ export function parseKpiBook(tabs, opts = {}) {
   for (const tab of tabs) {
     if (tab.hidden) continue;
     const named = isKpiTab(tab.name);
+    const support = isSupportTab(tab.name);
+    const liquidation = isLiquidationTab(tab.name);
     const owner = task;
     task = null;
-    if (named && isTaskTab(tab)) { task = tab; continue; }
-    if (!named && !owner) continue;
+    if ((named || support || liquidation) && isTaskTab(tab)) { task = tab; continue; }
+    if (!named && !support && !liquidation && !owner) continue;
     const kpiName = String(tab.name).trim();
     const taskName = owner ? String(owner.name).trim() : '';
+    const ownerSupport = owner ? isSupportTab(owner.name) : false;
+    const ownerLiquidation = owner ? isLiquidationTab(owner.name) : false;
     const label = owner ? `Tab “${kpiName}” (KPI của “${taskName}”)` : `Tab “${kpiName}”`;
     const s = parseKpiTab(tab, { ...opts, label });
     if (s.error) {
-      if (named) warnings.push(s.error); // tab sau tab task mà không phải bảng KPI: bỏ qua, không báo
+      if (named) warnings.push(s.error); // tab sau tab task hoặc tab Nhóm hỗ trợ / thanh lý không phải bảng KPI -> bỏ qua
       continue;
     }
     if (owner) {
@@ -235,6 +249,13 @@ export function parseKpiBook(tabs, opts = {}) {
       if (!s.pic) s.pic = picAbove(owner.rows || [], 5);
       const no = streamNoOf(owner);
       if (no) s.no = no;
+    }
+    if (support || ownerSupport) {
+      s.kind = 'support';
+      s.name = 'Nhóm hỗ trợ';
+    } else if (liquidation || ownerLiquidation) {
+      s.kind = 'liquidation';
+      s.name = 'Nhóm thanh lý';
     }
     const key = normKey(s.name);
     if (seen.has(key)) { warnings.push(`${label}: dòng tiền “${s.name}” đã có bảng KPI ở tab khác, bỏ qua tab này.`); continue; }

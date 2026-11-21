@@ -58,22 +58,42 @@ export function parsePlan(tabs) {
  */
 export function applyPlan(streams, plan) {
   if (!plan?.length) return { streams, warnings: [] };
+  const support = streams.filter((s) => s.kind === 'support');
+  const liquidation = streams.filter((s) => s.kind === 'liquidation');
+  const cash = streams.filter((s) => s.kind !== 'support' && s.kind !== 'liquidation');
   const used = new Set();
+  const usedLiq = new Set();
+  const tokens = (s) => normKey(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
   const pick = (p) => {
-    let i = streams.findIndex((s, k) => !used.has(k) && s.no === p.no);
+    let i = cash.findIndex((s, k) => !used.has(k) && s.no === p.no);
     if (i < 0) {
       const keys = [loose(p.name), loose(p.raw.replace(/^dòng tiền/i, ''))];
-      i = streams.findIndex((s, k) => !used.has(k) && !s.no && keys.includes(loose(s.name)));
+      i = cash.findIndex((s, k) => !used.has(k) && !s.no && keys.includes(loose(s.name)));
+    }
+    if (i < 0) {
+      const hay = `${normKey(p.name)} ${normKey(p.raw)}`;
+      const hits = cash
+        .map((s, k) => ({ s, k, toks: tokens(s.name) }))
+        .filter(({ s, k, toks }) => !used.has(k) && !s.no && toks.length >= 2 && toks.every((t) => hay.includes(t)));
+      if (hits.length === 1) i = hits[0].k;
     }
     if (i >= 0) used.add(i);
     return i;
   };
   const out = plan.map((p) => {
+    const liqIdx = liquidation.findIndex((s, k) => !usedLiq.has(k) && normKey(p.name).includes('thanh ly'));
+    if (liqIdx >= 0) {
+      usedLiq.add(liqIdx);
+      const base = liquidation[liqIdx];
+      return { ...base, no: p.no, name: 'Nhóm thanh lý', kind: 'liquidation', desc: p.desc, sourceName: base.name };
+    }
     const i = pick(p);
-    const base = i >= 0 ? streams[i] : { sheet: '', pic: '', days: [], groups: [] };
-    return { ...base, no: p.no, name: p.name, desc: p.desc, sourceName: i >= 0 ? streams[i].name : '' };
+    const base = i >= 0 ? cash[i] : { sheet: '', pic: '', days: [], groups: [] };
+    return { ...base, no: p.no, name: p.name, desc: p.desc, sourceName: i >= 0 ? cash[i].name : '' };
   });
-  const hidden = streams.filter((_, k) => !used.has(k)).map((s) => s.sheet || s.name);
+  for (const [k, s] of liquidation.entries()) if (!usedLiq.has(k)) out.push({ ...s, kind: 'liquidation' });
+  for (const s of support) out.push({ ...s, kind: 'support' });
+  const hidden = cash.filter((_, k) => !used.has(k)).map((s) => s.sheet || s.name);
   const warnings = hidden.length
     ? [`Không hiện ${hidden.map((n) => `“${n}”`).join(', ')}: không có trong ${plan.length} dòng tiền đánh số của file phân chia nhiệm vụ.`]
     : [];

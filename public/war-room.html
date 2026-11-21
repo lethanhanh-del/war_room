@@ -173,6 +173,25 @@
     @media (max-width: 960px) { .shift-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .shift-day { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 12.5px; }
     .x-on { display: inline-flex; width: 24px; height: 22px; align-items: center; justify-content: center; border-radius: 5px; font-family: var(--font-mono); font-weight: 700; background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+    .x-warn { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 45%, transparent); }
+    .x-warn-night { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent); }
+    .shift-warn-banner { margin-bottom: 14px; padding: 13px 16px; border-radius: 12px; border: 1px solid var(--warning-border); border-left: 4px solid var(--warning); background: color-mix(in srgb, var(--warning) 10%, var(--surface)); display: flex; flex-direction: column; gap: 10px; }
+    .shift-warn-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .shift-warn-title { font-size: 13.5px; font-weight: 800; color: var(--warning); letter-spacing: .02em; text-transform: uppercase; display: inline-flex; align-items: center; gap: 8px; }
+    .shift-warn-sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+    .shift-warn-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .shift-warn-item { display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--warning-border); background: var(--surface); color: var(--text-primary); font-family: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+    .shift-warn-item:hover { background: var(--surface-hover); border-color: var(--warning); }
+    .shift-warn-item.is-nd { border-color: var(--danger-border); }
+    .shift-warn-item.is-nd:hover { border-color: var(--danger); }
+    .shift-warn-pairs { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--warning); }
+    .shift-warn-item.is-nd .shift-warn-pairs { color: var(--danger); }
+    tr.shift-warn-row { background: color-mix(in srgb, var(--warning) 7%, transparent); }
+    tr.shift-warn-row > td:first-child { box-shadow: inset 3px 0 0 var(--warning), 1px 0 0 var(--border); background: color-mix(in srgb, var(--warning) 9%, var(--surface)); }
+    tr.shift-warn-row.is-nd { background: color-mix(in srgb, var(--danger) 7%, transparent); }
+    tr.shift-warn-row.is-nd > td:first-child { box-shadow: inset 3px 0 0 var(--danger), 1px 0 0 var(--border); background: color-mix(in srgb, var(--danger) 9%, var(--surface)); }
+    .sw-badge { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning-border); }
+    .sw-badge.is-nd { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
 
     /* DRAWER */
     .drawer-bg { position: fixed; inset: 0; background: rgba(3, 5, 8, 0.72); z-index: 80; display: none; justify-content: flex-end; }
@@ -381,10 +400,14 @@
 
     <section id="tab-shifts" class="tab-panel">
       <div id="shiftCards" class="shift-cards"></div>
+      <div id="shiftWarnings"></div>
       <div class="panel">
         <div class="panel-head">
-          <div><h2 class="panel-title">Ma trận lịch trực 24/7 — Ca Ngày &amp; Ca Đêm</h2><div class="panel-sub">Tự động cập nhật khi có dấu "X" mới trong file Excel</div></div>
-          <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;cursor:pointer;"><input id="onlySchedChk" type="checkbox" /> Chỉ hiển thị người đã có lịch (X)</label>
+          <div><h2 class="panel-title">Ma trận lịch trực 24/7 — Ca Ngày &amp; Ca Đêm</h2><div class="panel-sub">Tự động cập nhật khi có dấu "X" mới trong file Excel · Tự cảnh báo ca Tối ↔ Sáng liền kề</div></div>
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--warning);font-weight:600;"><input id="onlyWarnChk" type="checkbox" /> ⚠ Chỉ người trực ca liền kề (<span id="warnCnt" class="mono">0</span>)</label>
+            <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;cursor:pointer;"><input id="onlySchedChk" type="checkbox" /> Chỉ hiển thị người đã có lịch (X)</label>
+          </div>
         </div>
         <div class="tbl-wrap"><table class="sticky-first"><thead id="shiftsHead"></thead><tbody id="shiftsBody"></tbody></table></div>
       </div>
@@ -468,7 +491,7 @@
       log: [{ id: "init", timestamp: INITIAL_DATA.meta.lastSyncAt, source: "gdrive", actor: "Google Drive WAR ROOM", fileName: "4 tệp đồng bộ", summary: "Đã tải dữ liệu thực tế mới nhất từ Google Drive WAR ROOM (63 đầu việc, 8/10 dòng tiền, 20 vị trí chủ chốt).", diffs: [] }],
       src: "Google Drive WAR ROOM (4 files)",
       lastSync: INITIAL_DATA.meta.lastSyncAt,
-      cat: "all", q: "", g: "all", s: "all", st: "all", stg: "all", onlySched: false, rp: "all", rc: "all",
+      cat: "all", q: "", g: "all", s: "all", st: "all", stg: "all", onlySched: false, onlyWarn: false, rp: "all", rc: "all",
       flashed: new Set(), watchHandle: null, watchTimer: null, watchMtime: 0, watchSize: 0,
       op: localStorage.getItem("wr10_op") || "",
     };
@@ -942,12 +965,105 @@
       $("tasksBody").querySelectorAll(".edit-btn").forEach((b) => { b.onclick = () => openDrawer(b.dataset.id); });
     }
 
+    function dayNum(dateStr) {
+      const m = /(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/.exec(dateStr || "");
+      if (!m) return null;
+      let y = m[3] ? Number(m[3]) : 2026;
+      if (y < 100) y += 2000;
+      return Math.round(Date.UTC(y, Number(m[2]) - 1, Number(m[1])) / 86400000);
+    }
+
+    // Phát hiện ca liền kề 24h liên tiếp (Ca Đêm -> Ca Sáng hôm sau, hoặc Ca Sáng -> Ca Đêm cùng ngày).
+    // Gộp theo tên nhân sự (bỏ qua placeholder) để bắt cả trường hợp 1 người có tên ở nhiều dòng/nhóm.
+    function detectAdjacentShifts(cols, tasks) {
+      const ordered = (cols || []).map((c, idx) => ({ ...c, idx, dnum: dayNum(c.date) }));
+      const byPerson = new Map();
+      (tasks || []).forEach((t) => {
+        if (t.isPlaceholder) return;
+        const pk = normKey(t.member);
+        if (!pk) return;
+        if (!byPerson.has(pk)) byPerson.set(pk, { member: t.member, streams: new Set(), keys: new Set(), taskIds: [] });
+        const p = byPerson.get(pk);
+        if (t.streamShort) p.streams.add(t.streamShort);
+        p.taskIds.push(t.id);
+        (t.activeShiftKeys || []).forEach((k) => p.keys.add(k));
+      });
+      const warningsByPerson = new Map();
+      byPerson.forEach((p, pk) => {
+        const pairs = [];
+        const warnKeys = new Map(); // shiftKey -> 'night-day' | 'day-night'
+        for (let i = 0; i < ordered.length - 1; i++) {
+          const a = ordered[i], b = ordered[i + 1];
+          if (!p.keys.has(a.key) || !p.keys.has(b.key)) continue;
+          const isNightToDay = a.shift === "night" && b.shift === "day" && (a.dnum == null || b.dnum == null || b.dnum - a.dnum === 1);
+          const isDayToNight = a.shift === "day" && b.shift === "night" && (a.dnum == null || b.dnum == null || b.dnum === a.dnum);
+          if (!isNightToDay && !isDayToNight) continue;
+          const kind = isNightToDay ? "night-day" : "day-night";
+          const label = isNightToDay
+            ? `Đêm ${a.date.slice(0, 5)} → Sáng ${b.date.slice(0, 5)}`
+            : `Sáng ${a.date.slice(0, 5)} → Đêm ${b.date.slice(0, 5)}`;
+          pairs.push({ a: a.key, b: b.key, kind, label });
+          // Ưu tiên mức 'night-day' (ca tối -> ca sáng hôm sau) nếu 1 ô dính cả 2 loại
+          if (warnKeys.get(a.key) !== "night-day") warnKeys.set(a.key, kind);
+          if (warnKeys.get(b.key) !== "night-day") warnKeys.set(b.key, kind);
+        }
+        if (pairs.length) {
+          const hasNightToDay = pairs.some((x) => x.kind === "night-day");
+          warningsByPerson.set(pk, { member: p.member, streams: [...p.streams], taskIds: p.taskIds, pairs, warnKeys, hasNightToDay });
+        }
+      });
+      return warningsByPerson;
+    }
+
     function renderShifts(m) {
       const cols = m.shiftCols || [], byD = new Map();
       cols.forEach((c) => { if (!byD.has(c.date)) byD.set(c.date, { label: c.dateLabel, day: 0, night: 0 }); byD.get(c.date)[c.shift] = m.tasks.filter((t) => (t.activeShiftKeys || []).includes(c.key)).length; });
       $("shiftCards").innerHTML = [...byD.values()].map((d) => `<div class="shift-day"><div style="font-weight:700;padding-bottom:6px;margin-bottom:6px;border-bottom:1px solid var(--border);">${esc(d.label)}</div><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>Ca Ngày</span><span class="badge ${d.day ? "b-done" : "b-blocked"} mono">${d.day} người</span></div><div style="display:flex;justify-content:space-between;"><span>Ca Đêm</span><span class="badge ${d.night ? "b-in_progress" : "b-verifying"} mono">${d.night} người</span></div></div>`).join("");
+
+      const warnMap = detectAdjacentShifts(cols, m.tasks);
+      const warnList = [...warnMap.values()].sort((a, b) => Number(b.hasNightToDay) - Number(a.hasNightToDay) || b.pairs.length - a.pairs.length);
+      if ($("warnCnt")) $("warnCnt").textContent = String(warnList.length);
+      $("shiftWarnings").innerHTML = warnList.length
+        ? `<div class="shift-warn-banner" role="alert">
+            <div class="shift-warn-head">
+              <div>
+                <div class="shift-warn-title">⚠ Cảnh báo trực ca Tối ↔ Sáng liền kề (${warnList.length} nhân sự)</div>
+                <div class="shift-warn-sub">Các nhân sự dưới đây đang được xếp trực 2 ca liên tiếp (24h không nghỉ). Nhấn vào tên để nhảy tới dòng tương ứng trong bảng.</div>
+              </div>
+              <button type="button" class="btn" id="toggleWarnFilterBtn">${S.onlyWarn ? "Hiện tất cả lịch trực" : `Lọc ${warnList.length} người bị cảnh báo`}</button>
+            </div>
+            <div class="shift-warn-list">${warnList.map((w) => `<button type="button" class="shift-warn-item${w.hasNightToDay ? " is-nd" : ""}" data-jump-member="${esc(normKey(w.member))}" title="${esc(w.streams.join(" · "))}"><strong>${esc(w.member)}</strong><span class="shift-warn-pairs">${esc(w.pairs.map((p) => p.label).join(" · "))}</span></button>`).join("")}</div>
+          </div>`
+        : "";
+      const tfBtn = $("toggleWarnFilterBtn");
+      if (tfBtn) tfBtn.onclick = () => { S.onlyWarn = !S.onlyWarn; $("onlyWarnChk").checked = S.onlyWarn; renderShifts(computeModel()); };
+      $("shiftWarnings").querySelectorAll("[data-jump-member]").forEach((btn) => {
+        btn.onclick = () => {
+          const row = $("shiftsBody").querySelector(`tr[data-member-key="${CSS.escape(btn.dataset.jumpMember)}"]`);
+          if (row) { row.scrollIntoView({ behavior: "smooth", block: "center" }); row.classList.remove("row-flash"); void row.offsetWidth; row.classList.add("row-flash"); }
+        };
+      });
+
       $("shiftsHead").innerHTML = `<tr><th>Thành viên</th><th>Dòng tiền / Nhóm</th><th style="text-align:center;">Tổng</th>${cols.map((c) => `<th style="text-align:center;">${esc(c.date.slice(0,5))}<br/>${c.shift === "night" ? "Đêm" : "Ngày"}</th>`).join("")}</tr>`;
-      $("shiftsBody").innerHTML = m.tasks.filter((t) => !S.onlySched || (t.activeShiftKeys || []).length > 0).map((t) => `<tr><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc(t.department || t.title || "")}</div></td><td><strong>${esc(t.streamShort)}</strong></td><td class="mono" style="text-align:center;font-weight:700;">${(t.activeShiftKeys || []).length}</td>${cols.map((c) => `<td style="text-align:center;">${(t.activeShiftKeys || []).includes(c.key) ? "<span class=\"x-on\">X</span>" : "<span style=\"color:var(--border-strong);\">·</span>"}</td>`).join("")}</tr>`).join("");
+      const visible = m.tasks.filter((t) => {
+        if (S.onlySched && !(t.activeShiftKeys || []).length) return false;
+        if (S.onlyWarn && !warnMap.has(normKey(t.member))) return false;
+        return true;
+      });
+      $("shiftsBody").innerHTML = visible.length ? visible.map((t) => {
+        const mk = normKey(t.member);
+        const w = !t.isPlaceholder ? warnMap.get(mk) : null;
+        const rowCls = w ? `shift-warn-row${w.hasNightToDay ? " is-nd" : ""}` : "";
+        const warnTag = w ? `<div class="sw-badge${w.hasNightToDay ? " is-nd" : ""}" title="Trực ca liền kề 24h">⚠ ${esc(w.pairs.map((p) => p.label).join(" · "))}</div>` : "";
+        return `<tr class="${rowCls}" data-member-key="${esc(mk)}"><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc(t.department || t.title || "")}</div>${warnTag}</td><td><strong>${esc(t.streamShort)}</strong></td><td class="mono" style="text-align:center;font-weight:700;">${(t.activeShiftKeys || []).length}</td>${cols.map((c) => {
+          const on = (t.activeShiftKeys || []).includes(c.key);
+          if (!on) return `<td style="text-align:center;"><span style="color:var(--border-strong);">·</span></td>`;
+          const wk = w && w.warnKeys.get(c.key);
+          const xCls = wk === "night-day" ? "x-on x-warn x-warn-night" : wk ? "x-on x-warn" : "x-on";
+          const xTip = wk ? ` title="⚠ Trực liền kề: ${esc(w.pairs.filter((p) => p.a === c.key || p.b === c.key).map((p) => p.label).join(", "))}"` : "";
+          return `<td style="text-align:center;"><span class="${xCls}"${xTip}>X</span></td>`;
+        }).join("")}</tr>`;
+      }).join("") : `<tr><td colspan="${cols.length + 3}" style="text-align:center;padding:24px;color:var(--text-muted);">Không có nhân sự phù hợp bộ lọc.</td></tr>`;
     }
 
     function renderRoles(m) {
@@ -1063,6 +1179,7 @@
     $("stgFilter").onchange = (e) => { S.stg = e.target.value; renderTasks(computeModel()); };
     $("clearFiltersBtn").onclick = () => { S.q=""; S.g="all"; S.s="all"; S.st="all"; S.stg="all"; $("qInput").value=""; $("gFilter").value="all"; $("sFilter").value="all"; $("stFilter").value="all"; $("stgFilter").value="all"; renderTasks(computeModel()); };
     $("onlySchedChk").onchange = (e) => { S.onlySched = e.target.checked; renderShifts(computeModel()); };
+    $("onlyWarnChk").onchange = (e) => { S.onlyWarn = e.target.checked; renderShifts(computeModel()); };
     $("rpFilter").onchange = (e) => { S.rp = e.target.value; renderRoles(computeModel()); };
     $("rcFilter").onchange = (e) => { S.rc = e.target.value; renderRoles(computeModel()); };
     $("dClose").onclick = closeDrawer; $("dCancel").onclick = closeDrawer; $("dSave").onclick = saveDrawer;

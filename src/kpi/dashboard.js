@@ -10,7 +10,7 @@
 
 /** Tên ô dòng tiền: tên tab task ("Dòng tiền bán 4 dự án"); tên viết hoa toàn bộ thì đổi sang dạng câu. */
 export function flowLabel(stream) {
-  const sheet = String(stream.sheet || '').replace(/\s+/g, ' ').trim();
+  const sheet = String(stream.sheet || '').replace(/\s+/g, ' ').trim().replace(/^\d+\s*[.)\-–]\s*/, '');
   const t = /^dòng tiền\b/i.test(sheet) ? sheet : `Dòng tiền ${stream.name || sheet}`.trim();
   if (t !== t.toLocaleUpperCase('vi')) return t;
   const lower = t.toLocaleLowerCase('vi');
@@ -19,7 +19,7 @@ export function flowLabel(stream) {
 
 /** Dữ liệu /api/kpi (kpiData) -> dữ liệu /api/dashboard cho app React. */
 export function toDashboard(data) {
-  const flows = (data.streams || []).map((s) => {
+  const flows = (data.streams || []).filter((s) => s.kind !== 'support').map((s) => {
     const days = (s.days || []).map((d) => d.date);
     const groups = [];
     const items = [];

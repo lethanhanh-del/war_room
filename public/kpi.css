@@ -31,6 +31,16 @@ details.notice summary::-webkit-details-marker { display: none; }
 .k-pill.ok-line { background: none; border-color: var(--success-border); color: var(--success); }
 .k-pill.bad-line { background: none; border-color: var(--danger-border); color: var(--danger); }
 
+/* ---------- tab phân khu KPI (Dòng tiền / Nhóm hỗ trợ) ---------- */
+.k-filters { display: flex; flex-direction: column; gap: var(--s12); }
+.k-mode-tabs { display: inline-flex; align-self: flex-start; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-surface); }
+.k-mtab { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border: 0; border-radius: var(--r-md); background: none; color: var(--text-2); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.k-mtab .ic { width: 15px; height: 15px; }
+.k-mtab b { padding: 1px 7px; border-radius: 999px; background: var(--bg-subtle); color: var(--muted); font-family: var(--mono); font-size: 11px; line-height: 16px; font-weight: 700; }
+.k-mtab:hover { background: var(--bg-hover); color: var(--text); }
+.k-mtab[aria-selected="true"] { background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.k-mtab[aria-selected="true"] b { background: rgba(0, 0, 0, .18); color: var(--on-accent); }
+
 /* ---------- bộ lọc ---------- */
 .kf-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; flex-wrap: wrap; gap: var(--s12) var(--s16); padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--bg-surface); }
 .kf-lead { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--fs-label); line-height: var(--lh-label); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
