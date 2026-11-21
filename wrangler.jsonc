@@ -1,0 +1,12 @@
+{
+  "name": "ctgwarroom",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-21",
+  "assets": {
+    // Dashboard: public/index.html
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Mọi request đều qua Worker trước để kiểm tra mật khẩu.
+    "run_worker_first": true
+  }
+}
