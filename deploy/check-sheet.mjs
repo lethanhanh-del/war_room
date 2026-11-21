@@ -43,9 +43,12 @@ try {
       console.log(`✖ Ô ${i + 2} · ${f.label}: ${f.error}`);
       return;
     }
-    const withKpi = f.items.filter((it) => it.days.some((x) => x.kpi !== null)).length;
+    const kpis = f.items.filter((it) => !it.placeholder);
+    const withKpi = kpis.filter((it) => it.days.some((x) => x.kpi !== null)).length;
+    const noKpi = f.items.filter((it) => it.placeholder).map((it) => it.group);
     console.log(
-      `✔ Ô ${i + 2} · ${f.label}  ←  sheet "${f.sheet}"\n    ngày: ${f.days.join(', ')}\n    ${f.items.length} dòng PIC, ${withKpi} dòng đã nhập KPI`
+      `✔ Ô ${i + 2} · ${f.label}  ←  sheet "${f.sheet}"\n    ngày: ${f.days.join(', ')}\n    ${f.groups.length} nhóm nhỏ, ${kpis.length} dòng KPI (${withKpi} dòng đã nhập số)` +
+        (noKpi.length ? `\n    nhóm chưa có dòng KPI: ${noKpi.join(', ')}` : '')
     );
   });
   process.exit(bad ? 2 : 0);

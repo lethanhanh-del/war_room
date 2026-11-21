@@ -40,7 +40,15 @@ export function flowConfig() {
     .split('|')
     .map((s) => s.trim())
     .filter(Boolean)
-    .map((sheet, i) => ({ key: `flow-${i + 1}`, label: sheet, sheet }));
+    .map((sheet, i) => ({ key: `flow-${i + 1}`, label: prettyLabel(sheet), sheet }));
+}
+
+/** "DÒNG TIỀN BANKING" -> "Dòng tiền banking" (tên sheet viết hoa toàn bộ thì đổi sang dạng câu) */
+export function prettyLabel(name) {
+  const t = name.trim();
+  if (t !== t.toUpperCase()) return t;
+  const lower = t.toLocaleLowerCase('vi');
+  return lower.charAt(0).toLocaleUpperCase('vi') + lower.slice(1);
 }
 
 let jwtClient;
@@ -128,12 +136,12 @@ export async function getDashboardData({ force = false } = {}) {
   const result = flows.map((f, i) => {
     const title = raw.matched[i];
     const base = { key: f.key, label: f.label, sheet: title || f.sheet };
-    if (!title) return { ...base, error: `Không tìm thấy sheet "${f.sheet}"`, days: [], items: [] };
+    if (!title) return { ...base, error: `Không tìm thấy sheet "${f.sheet}"`, days: [], groups: [], items: [] };
     try {
       const parsed = parseCashflowSheet(raw.sheets[title]);
-      return { ...base, sheetTitle: parsed.title, days: parsed.days, items: parsed.items };
+      return { ...base, sheetTitle: parsed.title, days: parsed.days, groups: parsed.groups, items: parsed.items };
     } catch (err) {
-      return { ...base, error: err.message, days: [], items: [] };
+      return { ...base, error: err.message, days: [], groups: [], items: [] };
     }
   });
 

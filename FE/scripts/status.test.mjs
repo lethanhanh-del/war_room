@@ -1,7 +1,7 @@
 // Kiểm thử quy tắc trạng thái đã thống nhất.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dayStatus, aggregateStatus, buildView, allDays, allPics } from '../src/lib/status.js';
+import { dayStatus, aggregateStatus, buildView, allDays, allPics, allGroups } from '../src/lib/status.js';
 
 const D = ['2026-11-21', '2026-11-22', '2026-11-23', '2026-11-24', '2026-11-25'];
 const mk = (pairs) => pairs.map(([kpi, result], i) => ({ date: D[i], kpi, result }));
@@ -54,6 +54,7 @@ const DATA = {
       key: 'a',
       label: 'A',
       days: D,
+      groups: [{ name: 'G1' }, { name: 'G2' }, { name: 'G3' }],
       items: [
         { row: 5, pic: 'P1', group: 'G1', note: 'vướng', days: mk([[10, 10], [10, 2], [10, 3], [10, null], [null, null]]) },
         { row: 6, pic: 'P2', group: 'G2', note: '', days: mk([[10, 4], [10, 16], [10, 10], [10, null], [10, null]]) },
@@ -99,4 +100,22 @@ test('buildView: lọc theo ngày, trạng thái, PIC', () => {
 
   assert.deepEqual(allDays(DATA), D);
   assert.deepEqual(allPics(DATA), ['P1', 'P2', 'P3']);
+});
+
+test('Kết luận Đạt / Không đạt', () => {
+  const week = buildView(DATA, { date: 'all', status: 'all', pic: 'all' }, TODAY).flows[0].rows;
+  // P1: 15/40, có ngày trễ hạn -> Không đạt ; P2: 30/50, chưa trễ ngày nào nhưng chưa đủ tổng -> Đang làm ; P3: chưa có KPI
+  assert.deepEqual(week.map((r) => r.verdict), ['fail', 'doing', 'none']);
+  const day21 = buildView(DATA, { date: '2026-11-21', status: 'all', pic: 'all' }, TODAY).flows[0].rows;
+  assert.deepEqual(day21.map((r) => r.verdict), ['pass', 'pass_late', 'none']);
+  const day23 = buildView(DATA, { date: '2026-11-23', status: 'all', pic: 'all' }, TODAY).flows[0].rows;
+  assert.deepEqual(day23.map((r) => r.verdict), ['doing', 'pass', 'none']);
+});
+
+test('Lọc theo dòng tiền và nhóm nhỏ', () => {
+  const two = { flows: [...DATA.flows, { ...DATA.flows[0], key: 'b', label: 'B' }] };
+  assert.equal(buildView(two, { date: 'all', status: 'all', pic: 'all', flow: 'b' }, TODAY).flows.length, 1);
+  const g = buildView(DATA, { date: 'all', status: 'all', pic: 'all', group: 'G2' }, TODAY).flows[0].rows;
+  assert.deepEqual(g.map((r) => r.item.pic), ['P2']);
+  assert.deepEqual(allGroups(DATA), ['G1', 'G2', 'G3']);
 });

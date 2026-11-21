@@ -1,5 +1,6 @@
-// Dữ liệu giả (MOCK_SHEETS=true) có cùng cấu trúc với sheet thật, để chạy thử dashboard
-// khi chưa cấu hình Google Sheet. Tên nhóm / PIC là tên giả, không dùng dữ liệu thật.
+// Dữ liệu giả (MOCK_SHEETS=true) có cùng cấu trúc với sheet thật (quy ước "cách 1"):
+//   dòng có Stt = nhóm nhỏ (tên nhóm + trưởng nhóm), dòng KPI chèn dưới, bỏ trống Stt.
+// Tên nhóm / người là tên giả, không dùng dữ liệu thật.
 import { todayVN } from './time.js';
 
 function rng(seed) {
@@ -21,15 +22,15 @@ function addDays(iso, n) {
 }
 
 const GROUPS = [
-  'Networking',
-  'Phụ trách đại lý',
-  'Data',
-  'Marketing',
-  'Hồ sơ, giấy tờ',
-  'Pháp lý',
-  'Chăm sóc khách hàng',
+  ['Networking', ['Số KH tiếp cận mới', 'Lịch hẹn gặp KH', 'Giới thiệu từ đối tác']],
+  ['Phụ trách đại lý', ['Đại lý hoạt động', 'Booking từ đại lý']],
+  ['Data', ['Data KH mới làm sạch', 'Cuộc gọi telesale']],
+  ['Viral marketing', ['Tin nhắn gửi đi', 'Lead phát sinh']],
+  ['Hồ sơ, giấy tờ', ['Hồ sơ hoàn thiện', 'Hồ sơ nộp ngân hàng']],
+  ['Pháp lý', ['Sổ hồng bàn giao', 'Hồ sơ pháp lý xử lý']],
+  ['Banking', ['Hồ sơ vay giải ngân', 'Ngân hàng làm việc']],
 ];
-const NOTES = ['', '', '', 'Chờ phản hồi từ đối tác', '', 'Thiếu hồ sơ pháp lý, cần hỗ trợ', ''];
+const NOTES = ['', '', '', 'Chờ phản hồi từ đối tác', '', 'Thiếu hồ sơ pháp lý, cần hỗ trợ', '', ''];
 
 export function buildMockSheets(flows, today = todayVN()) {
   const days = [-2, -1, 0, 1, 2].map((n) => addDays(today, n));
@@ -44,26 +45,30 @@ export function buildMockSheets(flows, today = todayVN()) {
     }
     head.push('Tổng kết', '', '', 'Ghi chú / Vướng mắc', 'Thư mục dữ liệu lưu trữ');
     sub.push('Lũy kế đạt', '% đạt KPI', 'Đánh giá', '', '');
-    const rows = [
-      [`BẢNG KPI ${f.label.toUpperCase()} (DỮ LIỆU GIẢ)`],
-      ['Dữ liệu demo'],
-      head,
-      sub,
-    ];
-    const n = 4 + Math.floor(rand() * 4);
-    for (let i = 0; i < n; i++) {
-      const row = [i + 1, GROUPS[(i + fi) % GROUPS.length], `Nhân sự ${String.fromCharCode(65 + fi)}${i + 1}`];
-      for (const d of days) {
-        const kpi = rand() < 0.1 ? '' : 5 + Math.floor(rand() * 16);
-        let res = '';
-        if (kpi !== '' && d <= today) {
-          const r = rand();
-          res = d === today ? Math.floor(kpi * r) : Math.round(kpi * (0.5 + r * 0.8));
+    const rows = [[`BẢNG KPI ${f.label.toUpperCase()} (DỮ LIỆU GIẢ)`], ['Dữ liệu demo'], head, sub];
+
+    const nGroups = 3 + Math.floor(rand() * 2);
+    for (let g = 0; g < nGroups; g++) {
+      const [gName, kpis] = GROUPS[(g + fi) % GROUPS.length];
+      const lead = `Trưởng nhóm ${String.fromCharCode(65 + fi)}${g + 1}`;
+      rows.push([g + 1, gName, lead]); // dòng nhóm (nền vàng trên sheet)
+      const noKpi = fi === 1 && g === nGroups - 1; // 1 nhóm chưa được giao KPI
+      if (noKpi) continue;
+      kpis.forEach((k, ki) => {
+        const pic = ki === 0 ? '' : `Nhân sự ${String.fromCharCode(65 + fi)}${g + 1}.${ki}`;
+        const row = ['', k, pic];
+        for (const d of days) {
+          const kpi = rand() < 0.08 ? '' : 5 + Math.floor(rand() * 16);
+          let res = '';
+          if (kpi !== '' && d <= today) {
+            const r = rand();
+            res = d === today ? Math.floor(kpi * r) : Math.round(kpi * (0.5 + r * 0.8));
+          }
+          row.push(kpi, res);
         }
-        row.push(kpi, res);
-      }
-      row.push('', '', '', NOTES[(i * 3 + fi) % NOTES.length], '');
-      rows.push(row);
+        row.push('', '', '', NOTES[(g * 3 + ki + fi) % NOTES.length], '');
+        rows.push(row);
+      });
     }
     out[f.sheet] = rows;
   });

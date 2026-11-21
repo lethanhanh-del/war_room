@@ -1,11 +1,19 @@
+import { Fragment } from 'react';
 import { STATUS } from '../lib/status.js';
 import { fmtDay, fmtNum, fmtPct } from '../lib/format.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
+import { DayCell, Pct } from './bits.jsx';
 
 const SUMMARY_KEYS = ['done', 'done_late', 'late', 'in_progress'];
 
-export default function FlowPanel({ index, flow, date, days, today }) {
-  const scrollRef = useAutoScroll([flow?.rows?.length, date]);
+/**
+ * Ô dòng tiền (ô 2..n).
+ *  - compact=false: bảng đầy đủ (ô rộng, bố cục 3x2)
+ *  - compact=true : dạng gọn cho ô hẹp (bố cục B): ô ngày chỉ còn ô màu, bỏ cột lũy kế
+ * Các dòng được nhóm theo "nhóm nhỏ" (dòng có Stt trên sheet).
+ */
+export default function FlowPanel({ index, flow, date, days, today, compact, onOpen }) {
+  const scrollRef = useAutoScroll([flow?.rows?.length, date, compact]);
 
   if (!flow) {
     return (
@@ -19,18 +27,20 @@ export default function FlowPanel({ index, flow, date, days, today }) {
   }
 
   const weekMode = date === 'all';
+  const colCount = 1 + (weekMode ? days.length + (compact ? 1 : 2) : compact ? 2 : 4);
 
   return (
-    <section className="panel flow">
-      <header className="fl-head">
+    <section className={`panel flow ${compact ? 'compact' : ''}`}>
+      <header className="fl-head clickable" onClick={onOpen} title="Bấm để xem chi tiết dòng tiền này">
         <em className="num">{index}</em>
         <div className="fl-title">
           <h2>{flow.label}</h2>
           <div className="fl-counts">
             {SUMMARY_KEYS.map((k) => (
-              <span key={k} className={`cnt st-${k} ${flow.counts[k] ? '' : 'zero'}`}>
+              <span key={k} className={`cnt st-${k} ${flow.counts[k] ? '' : 'zero'}`} title={STATUS[k].label}>
                 <i className={`dot st-${k}`} />
-                {STATUS[k].short} <b>{flow.counts[k]}</b>
+                {!compact && <>{STATUS[k].short} </>}
+                <b>{flow.counts[k]}</b>
               </span>
             ))}
           </div>
@@ -49,20 +59,28 @@ export default function FlowPanel({ index, flow, date, days, today }) {
         ) : !flow.rows.length ? (
           <p className="fl-empty">Không có task phù hợp bộ lọc</p>
         ) : (
-          <table className={`grid ${weekMode ? 'week' : 'day'}`}>
+          <table className={`grid ${weekMode ? 'week' : 'day'} ${compact ? 'compact' : ''}`}>
             <thead>
               <tr>
-                <th className="c-stt">#</th>
-                <th className="c-name">Nhóm · PIC</th>
+                <th className="c-name">KPI · Người làm</th>
                 {weekMode ? (
                   <>
                     {days.map((d) => (
                       <th key={d} className={`c-day ${d === today ? 'today' : ''}`}>
-                        <span className="wd">{d === today ? 'Hôm nay' : fmtDay(d).split(' ')[0]}</span>
-                        {fmtDay(d, false)}
+                        {!compact && <span className="wd">{d === today ? 'Hôm nay' : fmtDay(d).split(' ')[0]}</span>}
+                        {compact ? fmtDay(d, false).slice(0, 2) : fmtDay(d, false)}
                       </th>
                     ))}
-                    <th className="c-num">Lũy kế<span className="wd">/ KPI tuần</span></th>
+                    {!compact && (
+                      <th className="c-num">
+                        Lũy kế<span className="wd">/ KPI tuần</span>
+                      </th>
+                    )}
+                    <th className="c-pct">% đạt</th>
+                  </>
+                ) : compact ? (
+                  <>
+                    <th className="c-num">KQ / KPI</th>
                     <th className="c-pct">% đạt</th>
                   </>
                 ) : (
@@ -76,65 +94,68 @@ export default function FlowPanel({ index, flow, date, days, today }) {
               </tr>
             </thead>
             <tbody>
-              {flow.rows.map((r) => (
-                <tr key={r.item.row} className={`row st-${r.status}`}>
-                  <td className="c-stt">{r.item.stt}</td>
-                  <td className="c-name">
-                    <div className="nm">{r.item.group}</div>
-                    <div className="pic">{r.item.pic}</div>
-                    {r.item.note && <div className="note" title={r.item.note}>⚠ {r.item.note}</div>}
-                  </td>
-                  {weekMode ? (
-                    <>
-                      {days.map((d) => {
-                        const i = r.item.days.findIndex((x) => x.date === d);
-                        const dd = r.item.days[i];
-                        const st = i < 0 ? 'none' : r.dayStatuses[i];
-                        return (
-                          <td key={d} className={`c-day ${d === today ? 'today' : ''}`}>
-                            {st === 'none' ? (
-                              <span className="cell none">–</span>
-                            ) : (
-                              <span className={`cell st-${st}`} title={`${STATUS[st].label}: ${fmtNum(dd.result)} / ${fmtNum(dd.kpi)}`}>
-                                <b>{dd.result === null ? '–' : fmtNum(dd.result)}</b>
-                                <small>/{fmtNum(dd.kpi)}</small>
-                              </span>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="c-num">
-                        {r.pct === null ? '–' : <>{fmtNum(r.result)}<small> / {fmtNum(r.kpi)}</small></>}
+              {flow.rows.map((r, i) => {
+                const it = r.item;
+                const newGroup = i === 0 || flow.rows[i - 1].item.groupKey !== it.groupKey;
+                return (
+                  <Fragment key={`${it.groupKey}-${it.row}`}>
+                    {newGroup && (it.group || it.lead) && (
+                      <tr className="grp">
+                        <td colSpan={colCount}>
+                          {it.stt && <em>{it.stt}</em>}
+                          <span className="g-name">{it.group}</span>
+                          {it.lead && <span className="g-lead">· {it.lead}</span>}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className={`row st-${r.status}`}>
+                      <td className="c-name">
+                        <div className={`nm ${it.placeholder ? 'muted' : ''}`}>
+                          {it.kpi || (it.placeholder ? 'Chưa có KPI' : it.group)}
+                        </div>
+                        <div className="pic">{it.pic}</div>
+                        {it.note && !compact && <div className="note" title={it.note}>⚠ {it.note}</div>}
                       </td>
-                      <td className="c-pct"><Pct v={r.pct} /></td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="c-num">{r.pct === null ? '–' : fmtNum(r.kpi)}</td>
-                      <td className="c-num">{r.pct === null ? '–' : fmtNum(r.result)}</td>
-                      <td className="c-pct"><Pct v={r.pct} /></td>
-                      <td className="c-st"><span className={`badge st-${r.status}`}>{STATUS[r.status].label}</span></td>
-                    </>
-                  )}
-                </tr>
-              ))}
+                      {weekMode ? (
+                        <>
+                          {days.map((d) => {
+                            const idx = it.days.findIndex((x) => x.date === d);
+                            return (
+                              <td key={d} className={`c-day ${d === today ? 'today' : ''}`}>
+                                <DayCell day={it.days[idx]} status={idx < 0 ? 'none' : r.dayStatuses[idx]} mini={compact} />
+                              </td>
+                            );
+                          })}
+                          {!compact && (
+                            <td className="c-num">
+                              {r.pct === null ? '–' : <>{fmtNum(r.result)}<small> / {fmtNum(r.kpi)}</small></>}
+                            </td>
+                          )}
+                          <td className="c-pct"><Pct v={r.pct} /></td>
+                        </>
+                      ) : compact ? (
+                        <>
+                          <td className="c-num">
+                            {r.pct === null ? '–' : <>{fmtNum(r.result)}<small>/{fmtNum(r.kpi)}</small></>}
+                          </td>
+                          <td className="c-pct"><Pct v={r.pct} /></td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="c-num">{r.pct === null ? '–' : fmtNum(r.kpi)}</td>
+                          <td className="c-num">{r.pct === null ? '–' : fmtNum(r.result)}</td>
+                          <td className="c-pct"><Pct v={r.pct} /></td>
+                          <td className="c-st"><span className={`badge st-${r.status}`}>{STATUS[r.status].label}</span></td>
+                        </>
+                      )}
+                    </tr>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
     </section>
-  );
-}
-
-function Pct({ v }) {
-  if (v === null) return <span className="muted">–</span>;
-  const cls = v >= 1 ? 'ok' : v >= 0.7 ? 'mid' : 'bad';
-  return (
-    <span className={`pct ${cls}`}>
-      <b>{fmtPct(v)}</b>
-      <span className="track">
-        <i style={{ width: `${Math.min(100, v * 100)}%` }} />
-      </span>
-    </span>
   );
 }

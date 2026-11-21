@@ -13,7 +13,11 @@ Màn hình dashboard **1 trang duy nhất** để trình chiếu trên màn hìn
 ```
 
 - **Ô 1**: đồng hồ, kỳ báo cáo, bộ lọc **Ngày / Trạng thái / PIC**, tỷ lệ hoàn thành, số task theo trạng thái (Hoàn thành, Hoàn thành trễ hạn, Trễ hạn, Đang thực hiện, Chưa đến hạn), số vướng mắc và tiến độ 5 dòng tiền.
-- **Ô 2–6**: mỗi dòng tiền là 1 bảng PIC × ngày (Kết quả / KPI, tô màu theo trạng thái), lũy kế, % đạt và ghi chú vướng mắc.
+- **Ô 2–6**: mỗi dòng tiền là 1 bảng KPI × ngày, xếp theo nhóm nhỏ (Kết quả / KPI, tô màu theo trạng thái), lũy kế, % đạt và ghi chú vướng mắc.
+- **Từ 6 dòng tiền trở lên** (ví dụ 8 sheet + tổng quan): tự chuyển sang bố cục B, tổng quan là cột bên trái, dòng tiền xếp 2 hàng, mỗi ô ở dạng gọn.
+- **Chế độ chi tiết**: bấm trạng thái hoặc dòng tiền để xem từng dòng KPI: ai làm, KPI gì, chỉ tiêu, kết quả, **Đạt / Không đạt**, lọc theo Dòng tiền → Nhóm nhỏ → Người làm.
+
+Phong cách giao diện (màu, chữ, component, quy tắc bố cục) cho dev dùng lại: **[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md)**.
 
 ## Công nghệ
 
@@ -32,11 +36,15 @@ war_room/
 │   │   ├── health.js            # GET /api/health
 │   │   └── _lib/                # sheets.js (đọc Sheet + cache), parse.js (đọc cấu trúc sheet), mock.js, http.js
 │   ├── src/
-│   │   ├── App.jsx              # lưới 3×2, bộ lọc, tự làm mới
-│   │   ├── components/          # OverviewPanel (ô 1), FlowPanel (ô 2–6)
-│   │   └── lib/status.js        # quy tắc tính trạng thái
+│   │   ├── App.jsx              # chọn bố cục (3×2 / B / chi tiết), bộ lọc, tự làm mới
+│   │   ├── components/          # OverviewPanel, FlowPanel, DetailPanel, bits (DayCell, Pct, Verdict)
+│   │   ├── styles/tokens.css    # token màu, chữ, khoảng cách, thang co giãn
+│   │   └── lib/status.js        # quy tắc trạng thái + kết luận Đạt / Không đạt
 │   ├── scripts/                 # dev-api.mjs (chạy API local) + test
 │   └── vercel.json
+├── docs/
+│   ├── STYLE_GUIDE.md           # phong cách UI v5 "Night Ops" cho dev khác dùng lại
+│   └── images/                  # ảnh tham chiếu (dữ liệu giả)
 └── deploy/                      # Hướng dẫn & script triển khai
     ├── README.md                # hướng dẫn chi tiết, quy tắc trạng thái
     ├── check-sheet.mjs          # kiểm tra service account đọc đúng 5 sheet
@@ -57,7 +65,7 @@ npm run dev                # Web: http://localhost:5173  ·  API: http://localho
 - Chạy với Sheet thật: điền `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY` (xem `deploy/README.md`).
 
 ```bash
-npm test         # 20 test: parser, quy tắc trạng thái, API, lớp Google Sheet
+npm test         # 22 test: parser, quy tắc trạng thái + kết luận, API, lớp Google Sheet
 npm run build    # build production
 ```
 

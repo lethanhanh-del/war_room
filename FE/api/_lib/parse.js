@@ -122,38 +122,79 @@ export function parseCashflowSheet(values, { fallbackYear = new Date().getFullYe
   });
 
   // 3. Dữ liệu
+  // Quy ước nhập liệu (theo hướng dẫn ở dòng 2 của sheet, người dùng chọn "cách 1"):
+  //  - Dòng CÓ số Stt  = NHÓM NHỎ: cột Nhóm = tên nhóm, cột PIC = trưởng nhóm.
+  //  - Dòng KHÔNG có Stt, chèn ngay dưới nhóm = 1 KPI (task): cột Nhóm = tên KPI,
+  //    cột PIC = người làm (bỏ trống = trưởng nhóm).
+  //  - Nhóm chưa có dòng KPI nào: vẫn hiện 1 dòng "Chưa có KPI" để thấy ai chưa được giao.
+  //  - Tương thích dữ liệu cũ: nếu chính dòng nhóm có nhập số -> coi dòng nhóm là 1 task.
   const items = [];
-  let lastPic = '';
-  let lastGroup = '';
+  const groups = [];
+  let current = null;
+  const noteOf = (row) => (colNote >= 0 ? str(row[colNote]) : '');
+  const folderOf = (row) => (colFolder >= 0 ? str(row[colFolder]) : '');
+
   for (let r = h + 2; r < rows.length; r++) {
     const row = rows[r] || [];
-    const group = str(row[colGroup]);
-    const pic = str(row[colPic]);
+    const stt = str(row[colStt]);
+    const colB = str(row[colGroup]);
+    const colC = str(row[colPic]);
     const dayVals = days.map((d) => ({
       date: d.date,
       kpi: toNumber(row[d.kpiCol]),
       result: toNumber(row[d.resultCol]),
     }));
     const hasNumbers = dayVals.some((d) => d.kpi !== null || d.result !== null);
+    if (!stt && !colB && !colC && !hasNumbers) continue; // dòng trống
 
-    // Dòng trống hoặc dòng tiêu đề nhóm (không có PIC, không có số) -> bỏ qua
-    if (!pic && !hasNumbers) {
-      if (group) lastGroup = group;
+    if (stt) {
+      current = { key: `g${r + 1}`, stt, name: colB, lead: colC, row: r + 1, note: noteOf(row), folder: folderOf(row), count: 0 };
+      groups.push(current);
+      if (hasNumbers) {
+        current.count += 1;
+        items.push({
+          row: r + 1, stt, groupKey: current.key, group: colB, lead: colC,
+          kpi: '', pic: colC, note: noteOf(row), folder: folderOf(row), days: dayVals,
+        });
+      }
       continue;
     }
-    if (pic) lastPic = pic;
-    if (group) lastGroup = group;
 
+    if (!current) {
+      // KPI nằm trước mọi nhóm -> nhóm ẩn danh
+      current = { key: `g${r + 1}`, stt: '', name: '', lead: '', row: r + 1, note: '', folder: '', count: 0 };
+      groups.push(current);
+    }
+    current.count += 1;
     items.push({
-      row: r + 1, // số dòng trên sheet (1-based)
-      stt: str(row[colStt]),
-      group: group || lastGroup,
-      pic: pic || lastPic,
-      note: colNote >= 0 ? str(row[colNote]) : '',
-      folder: colFolder >= 0 ? str(row[colFolder]) : '',
+      row: r + 1,
+      stt: current.stt,
+      groupKey: current.key,
+      group: current.name,
+      lead: current.lead,
+      kpi: colB,
+      pic: colC || current.lead,
+      note: noteOf(row),
+      folder: folderOf(row) || current.folder,
       days: dayVals,
     });
   }
 
-  return { title, days: days.map((d) => d.date), items };
+  // Nhóm chưa có KPI -> dòng giữ chỗ
+  for (const g of groups) {
+    if (g.count) continue;
+    items.push({
+      row: g.row, stt: g.stt, groupKey: g.key, group: g.name, lead: g.lead,
+      kpi: '', pic: g.lead, note: g.note, folder: g.folder, placeholder: true,
+      days: days.map((d) => ({ date: d.date, kpi: null, result: null })),
+    });
+  }
+  items.sort((a, b) => a.row - b.row);
+
+  return {
+    title,
+    days: days.map((d) => d.date),
+    groups: groups.map(({ key, stt, name, lead }) => ({ key, stt, name, lead })),
+    items,
+  };
 }

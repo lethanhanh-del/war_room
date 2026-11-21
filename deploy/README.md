@@ -28,21 +28,38 @@ Màn hình trình chiếu (trình duyệt) ──> Vercel (React tĩnh + API /ap
    node deploy/check-sheet.mjs --key path/to/service-account.json --sheet <GOOGLE_SHEET_ID>
    ```
 
-   Kết quả đúng: 5 dòng ✔ (mỗi dòng tiền), liệt kê các ngày và số dòng PIC.
+   Kết quả đúng: mỗi dòng tiền 1 dòng ✔, liệt kê các ngày, số nhóm nhỏ và số KPI đã nhập.
 
 ### Cấu trúc sheet mà ứng dụng đọc
 
-Mỗi sheet dòng tiền (`DÒNG TIỀN BÁN 4 DỰ ÁN`, `DÒNG TIỀN NỢ KHÓ ĐÒI`, `DÒNG TIỀN BANKING`, `Dòng tiền tài chính`, `Dòng tiền thu trước hạn quá hạn`):
+Mỗi sheet dòng tiền (mặc định 5 sheet: `DÒNG TIỀN BÁN 4 DỰ ÁN`, `DÒNG TIỀN NỢ KHÓ ĐÒI`, `DÒNG TIỀN BANKING`, `Dòng tiền tài chính`, `Dòng tiền thu trước hạn quá hạn`; đổi hoặc thêm bằng biến `CASHFLOW_SHEETS`):
 
 | Dòng | Nội dung |
 |---|---|
 | 1 | Tiêu đề (có khoảng ngày, ví dụ `(21/11/2026 - 25/11/2026)`) |
 | 3 | `Stt` · `Nhóm` · `PIC` · các cột **ngày** (gộp 2 ô) · `Tổng kết` · `Ghi chú / Vướng mắc` · `Thư mục dữ liệu lưu trữ` |
 | 4 | Dưới mỗi ngày: `KPI` · `Kết quả` |
-| 5+ | Mỗi dòng 1 PIC / 1 đầu việc |
+| 5+ | Dữ liệu theo quy ước bên dưới |
 
-- Ứng dụng **tự dò vị trí cột theo tiêu đề**, nên thêm/bớt ngày hoặc đổi sang tuần mới vẫn chạy, miễn giữ đúng tên tiêu đề `Nhóm`, `PIC`, `KPI`, `Kết quả`.
-- Dòng không có PIC và không có số (dòng nhóm màu vàng) được bỏ qua. Dòng KPI chèn bên dưới (không ghi PIC) sẽ dùng PIC của dòng phía trên.
+**Quy ước nhập liệu (đã chốt "cách 1", đúng như hướng dẫn ở dòng 2 của sheet):**
+
+| Loại dòng | Cột Stt | Cột Nhóm | Cột PIC | Cột ngày |
+|---|---|---|---|---|
+| **Nhóm nhỏ** (dòng nền vàng) | có số (1, 2, 3…) | tên nhóm, ví dụ `Networking` | trưởng nhóm | để trống |
+| **KPI / task** (chèn ngay dưới nhóm) | **bỏ trống** | tên KPI, ví dụ `Số KH tiếp cận mới` | người làm (**bỏ trống = trưởng nhóm**) | KPI và Kết quả từng ngày |
+
+Ví dụ:
+
+| Stt | Nhóm | PIC | 21/11 KPI | 21/11 Kết quả | … | Ghi chú / Vướng mắc |
+|---|---|---|---|---|---|---|
+| 1 | Networking | Nguyễn Văn A | | | | |
+|  | Số KH tiếp cận mới | | 10 | 12 | | |
+|  | Lịch hẹn gặp KH | Trần Thị B | 5 | 3 | | Chờ phản hồi đối tác |
+| 2 | Data | Lê Văn C | | | | |
+
+- Nhóm chưa có dòng KPI nào vẫn hiện trên màn hình là "Chưa có KPI", để biết ai chưa được giao.
+- Dữ liệu cũ (nhập số ngay trên dòng nhóm) vẫn đọc được: dòng nhóm đó được coi là 1 task.
+- Ứng dụng **tự dò vị trí cột theo tiêu đề**, nên thêm/bớt ngày hoặc đổi sang tuần mới vẫn chạy, miễn giữ đúng tên tiêu đề `Stt`, `Nhóm`, `PIC`, `KPI`, `Kết quả`.
 - Ô số có thể nhập `1500000`, `1.500.000` hoặc `1,500,000`.
 
 ### Quy tắc trạng thái (task = KPI của 1 PIC trong 1 ngày)
@@ -55,6 +72,10 @@ Mỗi sheet dòng tiền (`DÒNG TIỀN BÁN 4 DỰ ÁN`, `DÒNG TIỀN NỢ KH�
 | Đang thực hiện | Là hôm nay, chưa đạt |
 | Chưa đến hạn | Ngày trong tương lai |
 | (không tính) | Ô KPI trống hoặc 0 |
+
+Kết luận ở màn chi tiết:
+- **Xem 1 ngày:** Đạt / Đạt (trễ) / Không đạt / Đang làm / Chưa đến hạn, suy ra từ trạng thái ở bảng trên.
+- **Xem cả kỳ:** lũy kế Kết quả ≥ tổng KPI kỳ thì **Đạt**; còn ngày trễ hạn thì **Không đạt**; còn lại là **Đang làm**.
 
 Tỷ lệ hoàn thành = (Hoàn thành + Hoàn thành trễ hạn) / số task đến hạn. Task "đến hạn" là task của ngày đã qua, hoặc đã hoàn thành.
 
@@ -99,7 +120,9 @@ Script deploy chạy `npm ci` → `npm test` → `npm run build` → `vercel --p
 1. Mở `https://<ten-project>.vercel.app/?key=<APP_ACCESS_KEY>` **một lần**. Key được lưu trong trình duyệt và tự xoá khỏi thanh địa chỉ.
 2. Bật toàn màn hình: **F11** (hoặc chạy Chrome kiosk: `chrome --kiosk https://<ten-project>.vercel.app`).
 3. Giao diện tự co giãn vừa đúng 1 màn hình (tối ưu tỷ lệ 2:1, chạy tốt cả 16:9). Dữ liệu tự làm mới mỗi 60 giây. Ô nào nhiều dòng hơn chiều cao sẽ tự cuộn chậm.
-4. Có thể đặt sẵn bộ lọc bằng URL, ví dụ:
+4. Bấm vào trạng thái (chip hoặc ô số đếm), tên dòng tiền hoặc nút "Danh sách chi tiết" để mở **chế độ chi tiết**: danh sách từng KPI gồm ai làm, chỉ tiêu, kết quả, Đạt / Không đạt, lọc tiếp theo Dòng tiền → Nhóm → Người làm. Màn hình tự về tổng quan sau 2 phút không thao tác (`?idle=<giây>`, `0` = tắt) hoặc khi bấm Esc.
+5. Từ **6 dòng tiền trở lên**, màn hình tự chuyển sang bố cục B: tổng quan thành cột bên trái, các dòng tiền xếp 2 hàng bên phải.
+6. Có thể đặt sẵn bộ lọc bằng URL, ví dụ:
    - `?status=late`: chỉ hiện Trễ hạn
    - `?date=2026-11-23`: xem 1 ngày
    - `?pic=<Tên PIC>`: lọc theo người

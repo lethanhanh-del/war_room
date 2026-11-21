@@ -1,5 +1,6 @@
 import { STATUS, STATUS_KEYS } from '../lib/status.js';
 import { fmtDay, fmtPct, fmtTime, fmtDateLong } from '../lib/format.js';
+import { useAutoScroll } from '../lib/useAutoScroll.js';
 
 export default function OverviewPanel({
   data,
@@ -15,13 +16,23 @@ export default function OverviewPanel({
   loading,
   onRefresh,
   refreshSec,
+  tall,
+  detailOpen,
+  onOpenDetail,
+  onCloseDetail,
 }) {
   const set = (k, v) => setFilter((f) => ({ ...f, [k]: f[k] === v && v !== 'all' ? 'all' : v }));
+  // Bấm vào trạng thái -> lọc + mở danh sách chi tiết (ai làm, KPI gì, đạt hay không)
+  const pickStatus = (k) => {
+    const off = filter.status === k && k !== 'all';
+    setFilter((f) => ({ ...f, status: off ? 'all' : k }));
+    if (!off && k !== 'all') onOpenDetail();
+  };
   const period = days.length ? `${fmtDay(days[0], false)} – ${fmtDay(days[days.length - 1], false)}/${days[0].slice(0, 4)}` : '';
   const rate = view.rate;
 
   return (
-    <section className="panel overview">
+    <section className={`panel overview ${tall ? 'tall' : ''}`}>
       <header className="ov-head">
         <div>
           <h1>WAR ROOM <span>CT HOMES</span></h1>
@@ -55,11 +66,11 @@ export default function OverviewPanel({
         </div>
         <div className="frow">
           <span className="flabel">Trạng thái</span>
-          <button className={`chip ${filter.status === 'all' ? 'on' : ''}`} onClick={() => set('status', 'all')}>
+          <button className={`chip ${filter.status === 'all' ? 'on' : ''}`} onClick={() => pickStatus('all')}>
             Tất cả
           </button>
           {['done', 'done_late', 'late', 'in_progress'].map((k) => (
-            <button key={k} className={`chip st-${k} ${filter.status === k ? 'on' : ''}`} onClick={() => set('status', k)}>
+            <button key={k} className={`chip st-${k} ${filter.status === k ? 'on' : ''}`} onClick={() => pickStatus(k)}>
               <i className={`dot st-${k}`} />
               {STATUS[k].short}
             </button>
@@ -98,7 +109,7 @@ export default function OverviewPanel({
             <button
               key={k}
               className={`tile st-${k} ${filter.status === k ? 'on' : ''} ${view.totals[k] ? '' : 'zero'}`}
-              onClick={() => set('status', k)}
+              onClick={() => pickStatus(k)}
             >
               <span>{STATUS[k].short}</span>
               <b>{view.totals[k]}</b>
@@ -111,9 +122,11 @@ export default function OverviewPanel({
         </div>
       </div>
 
+      {tall && <HotList view={view} onOpen={() => { setFilter((f) => ({ ...f, status: 'late' })); onOpenDetail(); }} />}
+
       <div className="ov-flows">
         {view.flows.map((f, i) => (
-          <div className="ovf" key={f.key}>
+          <div className="ovf" key={f.key} onClick={() => onOpenDetail({ flow: f.key, group: 'all' })} title="Bấm để xem chi tiết">
             <span className="ovf-name">
               <em>{i + 2}</em>
               {f.label}
@@ -140,10 +153,49 @@ export default function OverviewPanel({
             Cập nhật: {lastUpdated ? fmtTime(lastUpdated) : '…'} · tự làm mới mỗi {refreshSec}s
           </span>
         )}
-        <button className="chip ghost" onClick={onRefresh} disabled={loading}>
-          {loading ? 'Đang tải…' : 'Làm mới'}
-        </button>
+        <span className="foot-actions">
+          {detailOpen ? (
+            <button className="chip on" onClick={onCloseDetail}>✕ Về tổng quan</button>
+          ) : (
+            <button className="chip" onClick={() => onOpenDetail()}>☰ Danh sách chi tiết</button>
+          )}
+          <button className="chip ghost" onClick={onRefresh} disabled={loading}>
+            {loading ? 'Đang tải…' : 'Làm mới'}
+          </button>
+        </span>
       </footer>
     </section>
+  );
+}
+
+/** Ô tổng quan dạng cột cao: liệt kê các KPI đang trễ hạn, % đạt thấp nhất lên trước */
+function HotList({ view, onOpen }) {
+  const late = [];
+  for (const f of view.flows) for (const r of f.rows) if (r.status === 'late') late.push({ r, f });
+  late.sort((a, b) => (a.r.pct ?? 0) - (b.r.pct ?? 0));
+  const ref = useAutoScroll([late.length]);
+  const short = (l) => l.replace(/^dòng tiền\s*/i, '');
+  return (
+    <div className="hot">
+      <div className="hot-head">
+        Cần xử lý ngay · {late.length} KPI trễ hạn
+        {late.length > 0 && <span onClick={onOpen}>Xem tất cả ›</span>}
+      </div>
+      {late.length ? (
+        <div className="hot-list" ref={ref}>
+          {late.slice(0, 30).map(({ r, f }) => (
+            <div className="hot-item" key={`${f.key}-${r.item.row}`} onClick={onOpen} title={r.item.note || ''}>
+              <div style={{ minWidth: 0 }}>
+                <div className="nm">{r.item.kpi || r.item.group}</div>
+                <div className="pic">{r.item.pic} · {short(f.label)}</div>
+              </div>
+              <b>{fmtPct(r.pct)}</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="hot-empty">Không có KPI nào trễ hạn</div>
+      )}
+    </div>
   );
 }

@@ -16,6 +16,32 @@ export const STATUS = {
 };
 export const STATUS_KEYS = ['done', 'done_late', 'late', 'in_progress', 'upcoming'];
 
+// Kết luận hiển thị ở chế độ chi tiết
+export const VERDICT = {
+  fail: { label: 'Không đạt', icon: '✖' },
+  doing: { label: 'Đang làm', icon: '◔' },
+  upcoming: { label: 'Chưa đến hạn', icon: '○' },
+  pass_late: { label: 'Đạt (trễ)', icon: '✔' },
+  pass: { label: 'Đạt', icon: '✔' },
+  none: { label: 'Chưa có KPI', icon: '–' },
+};
+export const VERDICT_ORDER = ['fail', 'doing', 'upcoming', 'pass_late', 'pass', 'none'];
+const VERDICT_BY_STATUS = { done: 'pass', done_late: 'pass_late', late: 'fail', in_progress: 'doing', upcoming: 'upcoming', none: 'none' };
+
+/**
+ * Kết luận Đạt / Không đạt.
+ *  - Xem 1 ngày: theo trạng thái của ngày đó.
+ *  - Xem cả kỳ: lũy kế Kết quả >= tổng KPI -> Đạt; còn ngày trễ hạn -> Không đạt; còn lại -> Đang làm / Chưa đến hạn.
+ */
+export function verdictOf(row, weekMode) {
+  if (!weekMode) return VERDICT_BY_STATUS[row.status] || 'none';
+  if (row.pct === null) return 'none';
+  if (row.result >= row.kpi) return row.dayStatuses.includes('done_late') ? 'pass_late' : 'pass';
+  if (row.status === 'late') return 'fail';
+  if (row.dayStatuses.every((x) => x === 'upcoming' || x === 'none')) return 'upcoming';
+  return 'doing';
+}
+
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** Trạng thái của ngày thứ idx trong mảng days [{date, kpi, result}] */
@@ -54,14 +80,16 @@ const emptyCounts = () => Object.fromEntries([...STATUS_KEYS, 'none'].map((k) =>
  * @param {string} today 'YYYY-MM-DD'
  */
 export function buildView(data, filter, today) {
-  const flows = (data?.flows || []).map((flow) => {
+  const srcFlows = (data?.flows || []).filter((f) => !filter.flow || filter.flow === 'all' || f.key === filter.flow);
+  const flows = srcFlows.map((flow) => {
     const counts = emptyCounts();
     let due = 0;
     let completed = 0;
     const rows = [];
 
     for (const item of flow.items) {
-      if (filter.pic !== 'all' && item.pic !== filter.pic) continue;
+      if (filter.pic && filter.pic !== 'all' && item.pic !== filter.pic) continue;
+      if (filter.group && filter.group !== 'all' && item.group !== filter.group) continue;
       const dayStatuses = item.days.map((_, i) => dayStatus(item.days, i, today));
 
       let status;
@@ -101,14 +129,9 @@ export function buildView(data, filter, today) {
         }
       });
 
-      rows.push({
-        item,
-        status,
-        dayStatuses,
-        kpi,
-        result,
-        pct: hasKpi ? result / kpi : null,
-      });
+      const row = { item, status, dayStatuses, kpi, result, pct: hasKpi ? result / kpi : null };
+      row.verdict = verdictOf(row, filter.date === 'all');
+      rows.push(row);
     }
 
     const tasks = STATUS_KEYS.reduce((a, k) => a + counts[k], 0);
@@ -139,4 +162,10 @@ export function allPics(data) {
   return [...new Set((data?.flows || []).flatMap((f) => f.items.map((i) => i.pic)).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b, 'vi')
   );
+}
+
+/** Danh sách nhóm nhỏ (theo dòng tiền, hoặc tất cả) */
+export function allGroups(data, flowKey = 'all') {
+  const flows = (data?.flows || []).filter((f) => flowKey === 'all' || f.key === flowKey);
+  return [...new Set(flows.flatMap((f) => (f.groups || []).map((g) => g.name)).filter(Boolean))];
 }
