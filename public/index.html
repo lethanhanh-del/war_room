@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WAR ROOM – 10 DÒNG TIỀN | Real-Time Dashboard (Standalone)</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2317365d'/%3E%3Ctext x='16' y='21' font-family='Segoe UI,Arial,sans-serif' font-size='12' font-weight='800' fill='%23fff' text-anchor='middle'%3EWR%3C/text%3E%3C/svg%3E" />
   <style>
     :root {
       --bg: #f4f6f9;
@@ -69,6 +70,7 @@
     html, body { margin: 0; padding: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text-primary); background: var(--bg); }
     .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
     .hidden { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     /* TOPBAR */
     .topbar { background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-800) 100%); color: #fff; position: sticky; top: 0; z-index: 40; box-shadow: 0 4px 16px rgba(12, 31, 58, 0.2); }
@@ -101,7 +103,7 @@
     .principles-list { display: flex; gap: 14px; flex-wrap: wrap; }
     .principles-list strong { color: var(--text-primary); }
 
-    .main { max-width: 1640px; margin: 0 auto; padding: 18px 20px 48px; }
+    .main { max-width: 1640px; margin: 0 auto; padding: 18px 20px 88px; } /* chừa chỗ cho nút nổi Worker chèn ở 2 góc dưới */
     .kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
     @media (max-width: 1150px) { .kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 700px) { .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -121,16 +123,17 @@
     .bar-fill.warning { background: var(--warning); }
 
     /* TABS */
-    .tabs-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+    /* Thanh tab dính ngay dưới topbar; --topbar-h do JS đo (0 khi topbar không dính trên điện thoại) */
+    .tabs-bar { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; position: sticky; top: var(--topbar-h, 0px); z-index: 30; background: var(--bg); }
     .tab-btn { background: transparent; border: none; border-bottom: 2.5px solid transparent; padding: 10px 15px; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--text-secondary); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
     .tab-btn.active { color: var(--navy-800); border-bottom-color: var(--navy-800); }
     [data-theme="tv"] .tab-btn.active { color: #38bdf8; border-bottom-color: #38bdf8; }
     .tab-cnt { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--surface-hover); color: var(--text-secondary); }
 
     .overview-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(330px, 0.95fr); gap: 18px; align-items: start; }
-    @media (max-width: 1100px) { .overview-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 1100px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } }
     .two-col { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-    @media (max-width: 960px) { .two-col { grid-template-columns: 1fr; } }
+    @media (max-width: 960px) { .two-col { grid-template-columns: minmax(0, 1fr); } }
 
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
     .panel-head { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -180,7 +183,11 @@
     th { text-align: left; padding: 10px 13px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); background: var(--surface-subtle); border-bottom: 1px solid var(--border); white-space: nowrap; }
     td { padding: 10px 13px; border-bottom: 1px solid var(--border); vertical-align: top; }
     tbody tr:hover { background: var(--surface-hover); }
-    tr.row-flash { animation: rowFlash 2.2s ease-out; }
+    /* Giữ cột tên thành viên khi cuộn ngang bảng rộng */
+    .sticky-first th:first-child, .sticky-first td:first-child { position: sticky; left: 0; z-index: 1; min-width: 160px; background: var(--surface); box-shadow: 1px 0 0 var(--border); }
+    .sticky-first th:first-child { background: var(--surface-subtle); }
+    .sticky-first tbody tr:hover td:first-child { background: var(--surface-hover); }
+    tr.row-flash, tr.row-flash > td:first-child { animation: rowFlash 2.2s ease-out; }
     @keyframes rowFlash { 0% { background: rgba(16,185,129,0.26); } 100% { background: transparent; } }
 
     .shift-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
@@ -191,7 +198,7 @@
     /* DRAWER */
     .drawer-bg { position: fixed; inset: 0; background: rgba(10,17,29,0.55); z-index: 80; display: none; justify-content: flex-end; }
     .drawer-bg.open { display: flex; }
-    .drawer { width: min(470px, 100vw); height: 100vh; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+    .drawer { width: min(470px, 100vw); height: 100vh; height: 100dvh;background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
     .drawer-head { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
     .drawer-body { padding: 18px 20px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 12px; }
     .drawer-foot { padding: 12px 20px; border-top: 1px solid var(--border); background: var(--surface-subtle); display: flex; justify-content: flex-end; gap: 8px; }
@@ -199,13 +206,42 @@
     .field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
     .field label { font-weight: 700; color: var(--text-secondary); }
 
-    .toasts { position: fixed; bottom: 18px; right: 18px; z-index: 95; display: flex; flex-direction: column; gap: 8px; max-width: 390px; }
+    /* Góc trên phải: 2 góc dưới đã có nút nổi do Worker chèn vào */
+    .toasts { position: fixed; top: 14px; right: 14px; z-index: 95; display: flex; flex-direction: column; gap: 8px; max-width: min(390px, calc(100vw - 28px)); }
     .toast { background: var(--navy-950); color: #fff; border: 1px solid rgba(255,255,255,0.16); border-left: 4px solid #34d399; border-radius: 10px; padding: 11px 14px; font-size: 12.5px; box-shadow: 0 12px 30px rgba(0,0,0,0.3); }
     .toast.err { border-left-color: #f87171; }
     .loading-banner { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
   </style>
   <style>
     .drop-active { outline: 3px dashed #38bdf8; outline-offset: -6px; }
+
+    /* Điều hành Live: ai đang online, ai đang trực, lịch Chủ tịch hôm nay */
+    .live-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+    @media (max-width: 1100px) { .live-grid { grid-template-columns: minmax(0, 1fr); } }
+    .live-grid .panel-body { max-height: 190px; overflow-y: auto; }
+    .chip-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--surface-subtle); border: 1px solid var(--border); }
+    .chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+    .empty { font-size: 12.5px; color: var(--text-muted); }
+    .live-pill.warn { background: rgba(245,158,11,0.18); border-color: rgba(251,191,36,0.4); color: #fde68a; }
+    .live-pill.warn .live-dot { background: #fbbf24; }
+    .live-pill.err .live-dot { background: #f87171; animation: none; }
+    .live-pill.local .live-dot { background: #94a3b8; animation: none; }
+    .live-pill.local { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); color: rgba(255,255,255,0.8); }
+    .alert-box.past { opacity: 0.55; }
+
+    /* Điện thoại: thanh trên không dính để nhường màn hình cho nội dung */
+    @media (max-width: 760px) {
+      .topbar { position: static; }
+      .topbar-inner, .principles-inner, .main { padding-left: 16px; padding-right: 16px; }
+      .principles-list { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+      .kpi-label { flex-wrap: wrap; }
+      .kpi-val { font-size: 22px; }
+    }
+
+    /* Màn hình TV: dùng hết bề ngang, phóng to nội dung để đọc từ xa */
+    [data-theme="tv"] .topbar-inner, [data-theme="tv"] .principles-inner { max-width: none; }
+    @media (min-width: 1700px) { [data-theme="tv"] .main { max-width: none; zoom: 1.2; } [data-theme="tv"] .tabs-bar { top: calc(var(--topbar-h, 0px) / 1.2); } }
   </style>
 </head>
 <body>
@@ -280,7 +316,7 @@
       <article class="kpi-card success">
         <div class="kpi-label"><span>Cập nhật Real-Time</span><span id="kShifts" class="mono">0 ca X</span></div>
         <div id="kEvents" class="kpi-val">0</div>
-        <div class="kpi-sub">Kéo thả hoặc chọn file .xlsx để theo dõi 2s</div>
+        <div id="kEventsSub" class="kpi-sub">Kéo thả hoặc chọn file .xlsx để theo dõi 2s</div>
       </article>
     </section>
 
@@ -293,6 +329,20 @@
     </nav>
 
     <section id="tab-overview" class="tab-panel">
+      <div class="live-grid">
+        <div class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Đang online <span id="onlineCnt" class="tab-cnt">—</span></h2><div class="panel-sub">Người đang mở dashboard hoặc lịch Chủ tịch</div></div></div>
+          <div class="panel-body"><div id="onlineList" class="chip-list"></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2 class="panel-title"><span id="dutyTitle">Đang trực</span> <span id="dutyCnt" class="tab-cnt">0</span></h2><div id="dutySub" class="panel-sub"></div></div></div>
+          <div class="panel-body"><div id="dutyList" class="chip-list"></div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2 class="panel-title">Lịch Chủ tịch hôm nay</h2><div id="chairSub" class="panel-sub"></div></div><a class="btn" href="/lich">Mở lịch</a></div>
+          <div class="panel-body"><div id="chairList" class="alert-list"></div></div>
+        </div>
+      </div>
       <div class="overview-grid">
         <div class="stack">
           <div class="panel">
@@ -345,7 +395,7 @@
             <option value="all">Tất cả 6 bước</option><option value="1">1. Nhận diện</option><option value="2">2. Quyết định</option><option value="3">3. Phân công</option><option value="4">4. Hành động</option><option value="5">5. Kiểm chứng</option><option value="6">6. Đóng việc</option>
           </select>
         </div>
-        <div class="tbl-wrap"><table><thead><tr><th>Thành viên / Phòng ban</th><th>Dòng tiền / Nhóm</th><th>Nhiệm vụ &amp; Điểm nghẽn</th><th>Bước / Hạn</th><th>Trạng thái</th><th>Tiến độ</th><th>Lịch trực (X)</th><th>Thao tác</th></tr></thead><tbody id="tasksBody"></tbody></table></div>
+        <div class="tbl-wrap"><table class="sticky-first"><thead><tr><th>Thành viên / Phòng ban</th><th>Dòng tiền / Nhóm</th><th>Nhiệm vụ &amp; Điểm nghẽn</th><th>Bước / Hạn</th><th>Trạng thái</th><th>Tiến độ</th><th>Lịch trực (X)</th><th>Thao tác</th></tr></thead><tbody id="tasksBody"></tbody></table></div>
       </div>
     </section>
 
@@ -356,7 +406,7 @@
           <div><h2 class="panel-title">Ma trận lịch trực 24/7 — Ca Ngày &amp; Ca Đêm</h2><div class="panel-sub">Tự động cập nhật khi có dấu "X" mới trong file Excel</div></div>
           <label style="font-size:12.5px;display:flex;align-items:center;gap:6px;cursor:pointer;"><input id="onlySchedChk" type="checkbox" /> Chỉ hiển thị người đã có lịch (X)</label>
         </div>
-        <div class="tbl-wrap"><table><thead id="shiftsHead"></thead><tbody id="shiftsBody"></tbody></table></div>
+        <div class="tbl-wrap"><table class="sticky-first"><thead id="shiftsHead"></thead><tbody id="shiftsBody"></tbody></table></div>
       </div>
     </section>
 
@@ -459,7 +509,173 @@
     function persist() {
       const p = { data: S.data, log: S.log.slice(0, 60), src: S.src, lastSync: S.lastSync };
       try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch (_) {}
-      try { if (bc) bc.postMessage(p); } catch (_) {}
+      try { if (bc && L.mode !== "server") bc.postMessage(p); } catch (_) {}
+    }
+
+    /* Đồng bộ qua máy chủ (src/live.js): D1 lưu dữ liệu, WebSocket báo "có thay đổi" để mọi người thấy ngay.
+       Mở file trực tiếp (không qua Worker) thì chạy chế độ cục bộ như trước: chỉ lưu trên trình duyệt này. */
+    const L = { mode: "local", cursor: 0, base: null, baseAt: "", overrides: [], me: null, online: [], ws: null, wsOk: false, retry: 0, pulling: false, again: false, lastPull: 0, err: false, bookings: null, bookErr: "" };
+
+    async function api(path, body) {
+      const res = await fetch(path, body === undefined ? { cache: "no-store" } : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await res.json().catch(() => null);
+      if (data && data.mustChange) location.href = "/doi-mat-khau";
+      L.authLost = res.status === 401; // phiên hết hạn hoặc mật khẩu vừa bị reset
+      if (!res.ok || !data) throw new Error((data && data.error) || (L.authLost ? "Hết phiên đăng nhập, hãy tải lại trang." : `Máy chủ trả lỗi ${res.status}`));
+      return data;
+    }
+
+    // Dữ liệu hiển thị = dữ liệu gốc (Excel đã nạp lên máy chủ, hoặc INITIAL_DATA) + các cập nhật trên dashboard.
+    function rebuildData() {
+      const d = structuredClone(INITIAL_DATA);
+      if (L.base) { d.tasks = structuredClone(L.base.tasks); d.shiftColumns = structuredClone(L.base.shiftColumns); }
+      const ov = new Map(L.overrides.map((o) => [o.key, o]));
+      const apply = (obj, o) => { Object.entries(o.data || {}).forEach(([k, v]) => { obj[k] = v === "" ? undefined : v; }); obj.updatedBy = o.by; obj.updatedAt = o.at; };
+      d.tasks.forEach((t) => { const o = ov.get("task:" + t.id); if (o) apply(t, o); });
+      (d.directives || []).forEach((x) => { const o = ov.get("directive:" + x.id); if (o) apply(x, o); });
+      S.data = d;
+    }
+
+    function applyLive(p) {
+      const first = !L.cursor || p.full;
+      if (p.base === null) { L.base = null; L.baseAt = ""; }
+      else if (p.base && p.base.data) { L.base = p.base.data; L.baseAt = p.base.at; }
+      L.overrides = p.overrides || [];
+      const evs = (p.events || []).map((e) => ({ id: "s" + e.id, timestamp: e.ts, source: e.kind === "excel" ? "gdrive" : "dashboard", actor: e.actor, username: e.username, fileName: e.fileName, summary: e.summary, diffs: e.diffs || [] }));
+      if (!first && evs.length) {
+        evs.forEach((ev) => ev.diffs.forEach((d) => { if (d.taskId) S.flashed.add(d.taskId); }));
+        setTimeout(() => S.flashed.clear(), 3000);
+        const others = evs.filter((ev) => !L.me || ev.username !== L.me.username);
+        if (others.length === 1) toast(others[0].actor, others[0].summary);
+        else if (others.length > 1) toast(`${others.length} cập nhật mới`, others.map((ev) => ev.actor).filter((v, i, a) => a.indexOf(v) === i).join(", "));
+      }
+      S.log = first ? evs : [...evs, ...S.log].slice(0, 60);
+      L.cursor = p.cursor;
+      rebuildData();
+      S.src = "Máy chủ War Room • " + (p.base ? p.base.fileName : "Google Drive WAR ROOM (4 files)");
+      S.lastSync = S.log.length ? S.log[0].timestamp : INITIAL_DATA.meta.lastSyncAt;
+      persist(); renderAll();
+    }
+
+    async function pull() {
+      if (L.pulling) { L.again = true; return; }
+      L.pulling = true;
+      try {
+        const p = await api(`/api/live?since=${L.cursor}` + (L.base ? `&baseAt=${encodeURIComponent(L.baseAt)}` : ""));
+        L.err = false; L.lastPull = Date.now(); L.me = p.me;
+        if (L.mode !== "server") { L.mode = "server"; wsConnect(); loadBookings(); }
+        if (!p.unchanged) applyLive(p);
+      } catch (_) {
+        if (L.mode === "server") L.err = true;
+      } finally {
+        L.pulling = false;
+        renderLive();
+        if (L.again) { L.again = false; pull(); }
+      }
+    }
+
+    function wsConnect() {
+      let ws;
+      try { ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/api/live/ws"); } catch (_) { return; }
+      L.ws = ws;
+      ws.onopen = () => { L.wsOk = true; L.retry = 0; renderLive(); pull(); loadBookings(); };
+      ws.onmessage = (e) => {
+        let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+        if (m.type === "presence") { L.online = m.online || []; renderLive(); }
+        else if (m.type === "change") { if (m.scope === "bookings") loadBookings(); else if (!m.cursor || m.cursor > L.cursor) pull(); }
+      };
+      ws.onclose = () => { L.wsOk = false; L.ws = null; L.online = []; renderLive(); setTimeout(wsConnect, Math.min(30000, 1000 * 2 ** L.retry++)); };
+    }
+
+    // Ghi lên máy chủ; lỗi thì báo và tải lại trạng thái thật từ máy chủ.
+    function push(path, body, okTitle, okBody) {
+      api(path, body).then(() => { if (okTitle) toast(okTitle, okBody); pull(); }).catch((e) => { toast("Chưa lưu được lên máy chủ", e.message, true); pull(); });
+    }
+
+    const vnNow = () => new Date(Date.now() + 7 * 3600e3);
+    const dm = (s) => { const m = /(\d{1,2})\/(\d{1,2})/.exec(s || ""); return m ? `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}` : ""; };
+    const hhmm = (slot) => slot.slice(11, 16);
+
+    // Ca hiện tại theo giờ Việt Nam: Ngày 07:30–19:30, Đêm 19:30–07:30 (thuộc ngày bắt đầu ca).
+    function shiftNow() {
+      const vn = vnNow(), h = vn.getUTCHours() + vn.getUTCMinutes() / 60;
+      const day = (off) => dm(new Date(vn.getTime() + off * 86400e3).toISOString().slice(5, 10).split("-").reverse().join("/"));
+      if (h >= 7.5 && h < 19.5) return { cur: [day(0), "day"], next: [day(0), "night"] };
+      if (h >= 19.5) return { cur: [day(0), "night"], next: [day(1), "day"] };
+      return { cur: [day(-1), "night"], next: [day(0), "day"] };
+    }
+    function onShift([d, sh]) {
+      const col = (S.data.shiftColumns || []).find((c) => c.shift === sh && dm(c.date) === d);
+      if (!col) return null;
+      const people = new Map();
+      (S.data.tasks || []).forEach((t) => { if (!t.isPlaceholder && (t.activeShiftKeys || []).includes(col.key) && !people.has(t.member)) people.set(t.member, t.streamShort); });
+      return people;
+    }
+    const shiftName = ([d, sh]) => `Ca ${sh === "night" ? "Đêm" : "Ngày"} ${d}`;
+
+    function renderDuty() {
+      const sn = shiftNow(), cur = onShift(sn.cur), next = onShift(sn.next);
+      $("dutyTitle").textContent = `Đang trực — ${shiftName(sn.cur)}`;
+      $("dutyCnt").textContent = cur ? String(cur.size) : "—";
+      $("dutySub").innerHTML = `Ca kế tiếp (${esc(shiftName(sn.next))}): ` + (next ? (next.size ? `<strong>${next.size} người</strong>` : `<strong style="color:var(--danger);">chưa có ai</strong>`) : "chưa có lịch");
+      $("dutyList").innerHTML = !cur ? `<span class="empty">Ca này không có trong lịch trực (Excel).</span>`
+        : cur.size ? [...cur].map(([name, grp]) => `<span class="chip" title="${esc(grp)}">${esc(name)}</span>`).join("")
+        : `<span class="badge b-blocked">Chưa có ai đánh dấu X cho ca này</span>`;
+    }
+
+    // "Hôm nay" của lịch Chủ tịch chạy từ 04:00 đến 04:00 hôm sau (Ca Tối kéo dài tới 03:30).
+    function chairWindow() {
+      const d = new Date(vnNow().getTime() - 4 * 3600e3), n = new Date(d.getTime() + 86400e3);
+      return { from: d.toISOString().slice(0, 10) + "T04:00", to: n.toISOString().slice(0, 10) + "T04:00", label: d.toISOString().slice(5, 10).split("-").reverse().join("/") };
+    }
+    async function loadBookings() {
+      if (L.mode !== "server") return;
+      const w = chairWindow();
+      try { L.bookings = (await api(`/api/bookings?from=${w.from}&to=${w.to}`)).bookings || []; L.bookErr = ""; }
+      catch (e) { L.bookErr = e.message; }
+      renderChair();
+    }
+    function renderChair() {
+      const w = chairWindow();
+      if (L.mode !== "server") { $("chairSub").textContent = ""; $("chairList").innerHTML = `<span class="empty">Chỉ có khi mở qua máy chủ War Room.</span>`; return; }
+      if (L.bookErr) { $("chairSub").textContent = ""; $("chairList").innerHTML = `<span class="empty">Không tải được lịch: ${esc(L.bookErr)}</span>`; return; }
+      if (!L.bookings) return;
+      // Gộp các khung 30 phút liền nhau cùng người, cùng nội dung thành một cuộc họp.
+      const end = (slot) => new Date(Date.parse(slot + ":00Z") + 30 * 60e3).toISOString().slice(0, 16), items = [];
+      L.bookings.forEach((b) => {
+        const last = items[items.length - 1];
+        if (last && last.to === b.slot && last.kind === b.kind && last.name === b.name && last.note === b.note) last.to = end(b.slot);
+        else items.push({ from: b.slot, to: end(b.slot), kind: b.kind, name: b.name, note: b.note || "" });
+      });
+      const now = vnNow().toISOString().slice(0, 16), upcoming = items.filter((it) => it.to > now);
+      $("chairSub").textContent = `Hôm nay ${w.label} • ${items.length} lịch • còn ${upcoming.length}`;
+      const show = [...items.filter((it) => it.to <= now).slice(-1), ...upcoming].slice(0, 8);
+      $("chairList").innerHTML = show.length ? show.map((it) => {
+        const st = it.to <= now ? ["past", "Đã xong", "b-not_started"] : it.from <= now ? ["critical", "Đang diễn ra", "b-blocked"] : ["info", "Sắp tới", "b-in_progress"];
+        const what = it.kind === "block" ? `Chủ tịch bận${it.note ? ": " + it.note : ""}` : `Họp: ${it.name}${it.note ? " — " + it.note : ""}`;
+        return `<div class="alert-box ${st[0]}"><div style="display:flex;justify-content:space-between;gap:8px;"><strong class="mono">${hhmm(it.from)}–${hhmm(it.to)}</strong><span class="badge ${st[2]}">${st[1]}</span></div><div style="margin-top:2px;">${esc(what)}</div></div>`;
+      }).join("") : `<span class="empty">Chưa có lịch họp nào hôm nay.</span>`;
+    }
+
+    function renderLive() {
+      const srv = L.mode === "server", pill = $("livePill");
+      pill.classList.toggle("local", !srv);
+      pill.classList.toggle("err", srv && L.err);
+      pill.classList.toggle("warn", srv && !L.err && !L.wsOk);
+      $("liveText").textContent = !srv ? (S.watchHandle ? "Theo dõi: " + S.watchHandle.name : "Chế độ cục bộ")
+        : L.authLost ? "Hết phiên — tải lại trang" : L.err ? "Mất kết nối — đang thử lại" : L.wsOk ? `LIVE • ${L.online.length} online` : "Đồng bộ 5 giây/lần";
+      pill.title = !srv ? "Không kết nối máy chủ: thay đổi chỉ lưu trên trình duyệt này." : L.wsOk ? "Mọi cập nhật hiển thị ngay cho tất cả người đang xem." : "Kết nối tức thời bị gián đoạn, đang đồng bộ định kỳ.";
+      $("onlineCnt").textContent = srv && L.wsOk ? String(L.online.length) : "—";
+      $("onlineList").innerHTML = !srv ? `<span class="empty">Chỉ có khi mở qua máy chủ War Room.</span>`
+        : !L.wsOk ? `<span class="empty">Đang kết nối realtime…</span>`
+        : L.online.map((o) => `<span class="chip"><span class="chip-dot"></span>${esc(o.fullName || o.username)}</span>`).join("") || `<span class="empty">Chưa có ai.</span>`;
+      // Chế độ máy chủ: chỉ admin được khôi phục gốc và nạp/theo dõi file Excel (thay dữ liệu của mọi người).
+      const viewer = srv && !(L.me && L.me.role === "admin");
+      $("resetBtn").classList.toggle("hidden", viewer);
+      $("watchBtn").classList.toggle("hidden", viewer);
+      document.querySelector('label[for="uploadInp"]').classList.toggle("hidden", viewer);
+      $("kEventsSub").textContent = viewer ? "Mọi cập nhật hiển thị tức thì cho tất cả" : "Kéo thả hoặc chọn file .xlsx để theo dõi 2s";
+      renderDuty(); renderChair();
     }
 
     function toast(title, body, isErr) {
@@ -613,9 +829,12 @@
     }
 
     async function ingest(file, tag) {
+      if (L.mode === "server" && !(L.me && L.me.role === "admin")) { toast("Chỉ quản trị viên được nạp file Excel", file.name, true); return; }
       try {
         const parsed = await parseXlsx(await file.arrayBuffer());
-        const oldMap = new Map(S.data.tasks.map((t) => [`${t.streamKey}|${t.member}`, t]));
+        // Chế độ máy chủ: so với dữ liệu gốc đang lưu (không tính cập nhật trên dashboard, vì chúng vẫn được giữ).
+        const ref = L.mode === "server" ? (L.base || INITIAL_DATA).tasks : S.data.tasks;
+        const oldMap = new Map(ref.map((t) => [`${t.streamKey}|${t.member}`, t]));
         const diffs = [];
         parsed.tasks.forEach((nt) => {
           const ot = oldMap.get(`${nt.streamKey}|${nt.member}`);
@@ -631,6 +850,13 @@
             }
           });
         });
+        if (L.mode === "server") {
+          if (tag === "watch" && !diffs.length) return; // file lưu lại nhưng không đổi gì: không ghi đè cho mọi người
+          await api("/api/live/base", { data: { tasks: parsed.tasks, shiftColumns: parsed.shiftColumns }, fileName: file.name, diffs: diffs.slice(0, 25),
+            summary: diffs.length ? `${L.me.fullName} nạp ${file.name}: ${diffs.length} thay đổi` : `${L.me.fullName} nạp ${file.name} (${parsed.tasks.length} đầu việc)` });
+          toast(diffs.length ? `Đã đẩy ${diffs.length} thay đổi cho mọi người` : "Đã nạp file Excel lên máy chủ", file.name);
+          pull(); return;
+        }
         S.data.tasks = parsed.tasks; S.data.shiftColumns = parsed.shiftColumns; S.lastSync = new Date().toISOString();
         S.src = `${file.name} (${tag === "watch" ? "Real-Time 2s" : "Vừa nạp"})`;
         diffs.forEach((d) => { if (d.taskId) S.flashed.add(d.taskId); }); setTimeout(() => S.flashed.clear(), 3000);
@@ -643,7 +869,7 @@
     async function toggleWatch() {
       if (S.watchTimer) {
         clearInterval(S.watchTimer); S.watchTimer = null; S.watchHandle = null;
-        $("watchBtn").textContent = "● Theo dõi file Real-Time (2s)"; $("liveText").textContent = "Đã dừng theo dõi";
+        $("watchBtn").textContent = "● Theo dõi file Real-Time (2s)"; renderLive();
         return;
       }
       if (typeof window.showOpenFilePicker !== "function") { $("uploadInp").click(); return; }
@@ -651,7 +877,7 @@
         const [h] = await window.showOpenFilePicker({ types: [{ description: "Excel (.xlsx)", accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] } }] });
         S.watchHandle = h; const f = await h.getFile(); S.watchMtime = f.lastModified; S.watchSize = f.size;
         await ingest(f, "watch");
-        $("watchBtn").textContent = "■ Đang theo dõi (2s) — Dừng"; $("liveText").textContent = "Real-Time: " + f.name;
+        $("watchBtn").textContent = "■ Đang theo dõi (2s) — Dừng"; renderLive();
         S.watchTimer = setInterval(async () => {
           try {
             const nf = await S.watchHandle.getFile();
@@ -691,7 +917,7 @@
       $("kStreams").textContent = `${k.cfIn}/10`; $("kStreamsSub").textContent = `${k.cfActive} đã có người • ${k.cfIn - k.cfActive} chờ chốt`;
       $("kPeople").textContent = String(k.people); $("kRoles").textContent = `${k.rConf}/${k.rTot} vị trí`; $("kPeopleSub").textContent = `${k.wrCnt} War Room • ${k.supCnt} Hỗ trợ`;
       $("kBlocked").textContent = String(k.blocked); $("kBlockedSub").textContent = `${k.ph} vị trí trống / chờ bổ sung`;
-      $("kEvents").textContent = String(S.log.length); $("kShifts").textContent = `${k.shiftMarks} ca X`;
+      $("kEvents").textContent = String(L.mode === "server" ? L.cursor : S.log.length); $("kShifts").textContent = `${k.shiftMarks} ca X`;
       $("tcStreams").textContent = String(m.streams.length); $("tcTasks").textContent = String(m.tasks.length); $("tcShifts").textContent = String(k.shiftMarks); $("tcRoles").textContent = String(m.coreRoles.length); $("tcFiles").textContent = String((S.data.driveFiles || []).length);
 
       $("stageGrid").innerHTML = m.stages.map((st) => `<button type="button" class="stage-box" data-stg="${st.n}"><div class="stage-name">${esc(st.label)}</div><div class="stage-num">${st.cnt}</div></button>`).join("");
@@ -701,12 +927,12 @@
         const tag = s.streamNo != null ? `DÒNG TIỀN #${s.streamNo}` : s.category === "leadership" ? "BAN ĐIỀU HÀNH" : "NHÓM HỖ TRỢ";
         const bar = s.avg >= 90 ? "success" : s.blocked ? "danger" : s.avg < 25 ? "warning" : "";
         const mems = s.members.length ? s.members.slice(0,4).join(", ") + (s.members.length > 4 ? ` +${s.members.length-4}` : "") : "Chưa phân công nhân sự";
-        return `<div class="stream-card ${s.assigned === 0 ? "unassigned" : ""}" data-sk="${esc(s.streamKey)}"><div style="display:flex;justify-content:space-between;gap:8px;"><div><span class="stream-tag">${esc(tag)}</span><div style="font-weight:700;font-size:13px;">${esc(s.streamName)}</div></div><div class="mono" style="font-size:16px;font-weight:700;">${s.avg}%</div></div><div class="bar-track"><div class="bar-fill ${bar}" style="width:${s.avg}%"></div></div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);"><span><strong>${s.assigned}</strong> nhân sự${s.ph ? ` • <strong style="color:var(--danger);">${s.ph} trống</strong>` : ""}</span><span>${s.blocked ? `<span class="badge b-blocked">${s.blocked} nghẽn</span>` : `<span class="mono">${s.shifts} ca X</span>`}</span></div><div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(mems)}</div></div>`;
+        return `<div class="stream-card ${s.assigned === 0 ? "unassigned" : ""}" data-sk="${esc(s.streamKey)}" role="button" tabindex="0"><div style="display:flex;justify-content:space-between;gap:8px;"><div><span class="stream-tag">${esc(tag)}</span><div style="font-weight:700;font-size:13px;">${esc(s.streamName)}</div></div><div class="mono" style="font-size:16px;font-weight:700;">${s.avg}%</div></div><div class="bar-track"><div class="bar-fill ${bar}" style="width:${s.avg}%"></div></div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);"><span><strong>${s.assigned}</strong> nhân sự${s.ph ? ` • <strong style="color:var(--danger);">${s.ph} trống</strong>` : ""}</span><span>${s.blocked ? `<span class="badge b-blocked">${s.blocked} nghẽn</span>` : `<span class="mono">${s.shifts} ca X</span>`}</span></div><div style="font-size:11.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(mems)}</div></div>`;
       }).join("");
-      $("streamsGrid").querySelectorAll(".stream-card").forEach((c) => { c.onclick = () => { S.s = c.dataset.sk; S.g = "all"; $("sFilter").value = S.s; $("gFilter").value = "all"; switchTab("tasks"); renderTasks(m); }; });
+      $("streamsGrid").querySelectorAll(".stream-card").forEach((c) => { c.onclick = () => { S.s = c.dataset.sk; S.g = "all"; $("sFilter").value = S.s; $("gFilter").value = "all"; switchTab("tasks"); renderTasks(m); }; c.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); c.onclick(); } }; });
 
       $("alertsList").innerHTML = m.alerts.map((a) => `<div class="alert-box ${a.sev}"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;opacity:0.85;">${esc(a.cat)}</div><div style="font-weight:700;margin-top:2px;">${esc(a.title)}</div><div style="color:var(--text-secondary);margin-top:2px;">${esc(a.detail)}</div><div style="font-weight:600;margin-top:4px;">→ ${esc(a.act)}</div></div>`).join("");
-      $("feedList").innerHTML = S.log.slice(0, 30).map((ev) => `<div class="feed-box ${ev.source === "dashboard" ? "dashboard" : ""}"><div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);"><strong>${esc(ev.actor)}</strong><span class="mono">${esc(fmtDT(ev.timestamp))}</span></div><div style="font-weight:600;margin-top:3px;">${esc(ev.summary)}</div><div style="font-size:11.5px;color:var(--text-muted);">${esc(ev.fileName)}</div>${(ev.diffs || []).slice(0, 5).map((d) => `<div class="diff-line"><strong>${esc(d.member)}</strong> • ${esc(d.field)}: ${d.before ? `<span style="text-decoration:line-through;color:var(--danger);">${esc(d.before)}</span> → ` : ""}<strong style="color:var(--success);">${esc(d.after)}</strong></div>`).join("")}</div>`).join("");
+      $("feedList").innerHTML = S.log.slice(0, 30).map((ev) => `<div class="feed-box ${ev.source === "dashboard" ? "dashboard" : ""}"><div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);"><strong>${esc(ev.actor)}</strong><span class="mono">${esc(fmtDT(ev.timestamp))}</span></div><div style="font-weight:600;margin-top:3px;">${esc(ev.summary)}</div><div style="font-size:11.5px;color:var(--text-muted);">${esc(ev.fileName)}</div>${(ev.diffs || []).slice(0, 5).map((d) => `<div class="diff-line"><strong>${esc(d.member)}</strong> • ${esc(d.field)}: ${d.before ? `<span style="text-decoration:line-through;color:var(--danger);">${esc(d.before)}</span> → ` : ""}<strong style="color:var(--success);">${esc(d.after)}</strong></div>`).join("")}</div>`).join("") || `<span class="empty">Chưa có cập nhật nào.</span>`;
 
       const sf = $("sFilter"), prevS = S.s;
       sf.innerHTML = `<option value="all">Tất cả dòng tiền / nhóm (${m.streams.length})</option>` + m.streams.map((s) => `<option value="${esc(s.streamKey)}">${esc((s.streamNo != null ? `DT #${s.streamNo} — ` : "") + s.streamName.slice(0, 48))}</option>`).join("");
@@ -715,7 +941,7 @@
       rpf.innerHTML = `<option value="all">Tất cả mũi dự án (${pset.size})</option>` + [...pset].sort().map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
       rpf.value = [...rpf.options].some((o) => o.value === prevP) ? prevP : "all";
 
-      renderTasks(m); renderShifts(m); renderRoles(m); renderFiles();
+      renderTasks(m); renderShifts(m); renderRoles(m); renderFiles(); renderLive();
     }
 
     function renderTasks(m) {
@@ -755,15 +981,19 @@
         const sm = STATUS[d.status] || STATUS.not_started;
         return `<div class="alert-box"><div style="display:flex;justify-content:space-between;gap:8px;"><div><strong>${d.no}. ${esc(d.title)}</strong><div style="font-size:11.5px;color:var(--text-muted);">Đầu mối: <strong>${esc(d.owner)}</strong> • Hạn: <span class="mono">${esc(d.deadline)}</span></div></div><span class="badge ${sm.cls} mono">${d.progress}%</span></div><div style="font-size:12px;color:var(--text-secondary);margin:6px 0;">${esc(d.scope)}</div><div style="display:flex;gap:8px;align-items:center;"><input type="range" min="0" max="100" step="5" value="${d.progress}" data-dir="${esc(d.id)}" class="dir-rng" style="flex:1;" /><select data-dir="${esc(d.id)}" class="select dir-st" style="padding:4px 7px;font-size:11.5px;"><option value="not_started" ${d.status==="not_started"?"selected":""}>Chưa bắt đầu</option><option value="in_progress" ${d.status==="in_progress"?"selected":""}>Đang triển khai</option><option value="blocked" ${d.status==="blocked"?"selected":""}>Điểm chờ</option><option value="done" ${d.status==="done"?"selected":""}>Hoàn thành</option></select></div></div>`;
       }).join("");
-      $("directivesList").querySelectorAll(".dir-rng").forEach((el) => { el.onchange = () => { const d = S.data.directives.find((x) => x.id === el.dataset.dir); if (!d) return; d.progress = Number(el.value); d.status = d.progress >= 100 ? "done" : d.progress > 0 ? "in_progress" : "not_started"; S.lastSync = new Date().toISOString(); persist(); renderAll(); }; });
-      $("directivesList").querySelectorAll(".dir-st").forEach((el) => { el.onchange = () => { const d = S.data.directives.find((x) => x.id === el.dataset.dir); if (!d) return; d.status = el.value; if (d.status === "done") d.progress = 100; S.lastSync = new Date().toISOString(); persist(); renderAll(); }; });
+      $("directivesList").querySelectorAll(".dir-rng").forEach((el) => { el.onchange = () => { const d = S.data.directives.find((x) => x.id === el.dataset.dir); if (!d) return; d.progress = Number(el.value); d.status = d.progress >= 100 ? "done" : d.progress > 0 ? "in_progress" : "not_started"; syncDirective(d); S.lastSync = new Date().toISOString(); persist(); renderAll(); }; });
+      $("directivesList").querySelectorAll(".dir-st").forEach((el) => { el.onchange = () => { const d = S.data.directives.find((x) => x.id === el.dataset.dir); if (!d) return; d.status = el.value; if (d.status === "done") d.progress = 100; syncDirective(d); S.lastSync = new Date().toISOString(); persist(); renderAll(); }; });
+    }
+
+    function syncDirective(d) {
+      if (L.mode === "server") push("/api/live/directive", { id: d.id, title: d.title, fields: { status: d.status, progress: d.progress } });
     }
 
     function openDrawer(id) {
       const t = S.data.tasks.find((x) => x.id === id); if (!t) return;
       $("dId").value = t.id; $("dTitle").textContent = t.member; $("dSub").textContent = `${t.streamShort} • ${t.task || t.streamName}`;
       $("dStatus").value = t.status; $("dStage").value = String(t.stage); $("dProg").value = String(t.progress); $("dProgTxt").textContent = `${t.progress}%`;
-      $("dDeadline").value = t.deadline || ""; $("dVal").value = t.cashflowValue || ""; $("dBlocker").value = t.blocker || ""; $("dResult").value = t.result || ""; $("dNote").value = t.note || ""; $("dActor").value = S.op;
+      $("dDeadline").value = t.deadline || ""; $("dVal").value = t.cashflowValue || ""; $("dBlocker").value = t.blocker || ""; $("dResult").value = t.result || ""; $("dNote").value = t.note || ""; $("dActor").value = L.mode === "server" && L.me ? L.me.fullName : S.op; $("dActor").readOnly = L.mode === "server";
       $("drawerBg").classList.add("open");
     }
     function closeDrawer() { $("drawerBg").classList.remove("open"); }
@@ -773,6 +1003,16 @@
       const nx = { status: $("dStatus").value, stage: Number($("dStage").value), progress: Number($("dProg").value), deadline: $("dDeadline").value.trim(), cashflowValue: $("dVal").value.trim() || undefined, blocker: $("dBlocker").value.trim() || undefined, result: $("dResult").value.trim() || undefined, note: $("dNote").value.trim() || undefined };
       if (nx.status === "done") { nx.progress = 100; nx.stage = 6; }
       const diffs = []; [["status","Trạng thái"],["progress","Tiến độ %"],["blocker","Điểm chờ"],["result","Kết quả"]].forEach(([k,l]) => { if (String(t[k] ?? "") !== String(nx[k] ?? "")) diffs.push({ taskId: t.id, member: t.member, field: l, before: String(t[k] ?? "—"), after: String(nx[k] ?? "—") }); });
+      if (L.mode === "server") {
+        // Chỉ gửi trường thực sự đổi; "" = xóa giá trị gốc. Hiển thị ngay, máy chủ báo cho mọi người còn lại.
+        const fields = {};
+        Object.keys(nx).forEach((k) => { if (String(t[k] ?? "") !== String(nx[k] ?? "")) fields[k] = nx[k] ?? ""; });
+        closeDrawer();
+        if (!Object.keys(fields).length) return;
+        Object.assign(t, nx); S.flashed.add(t.id); setTimeout(() => S.flashed.delete(t.id), 2500); renderAll();
+        push("/api/live/task", { id: t.id, member: t.member, fields, diffs }, "Đã đồng bộ cho mọi người", `${t.member}: ${t.progress}%`);
+        return;
+      }
       Object.assign(t, nx); S.lastSync = new Date().toISOString(); S.flashed.add(t.id); setTimeout(() => S.flashed.delete(t.id), 2500);
       if (diffs.length) S.log.unshift({ id: "e_" + Date.now(), timestamp: S.lastSync, source: "dashboard", actor, fileName: "Dashboard War Room", summary: `${actor} cập nhật cho ${t.member}`, diffs });
       persist(); closeDrawer(); renderAll(); toast("Đã đồng bộ Real-Time", `${t.member}: ${t.progress}%`);
@@ -788,6 +1028,16 @@
     function switchTab(name) {
       document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
       document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("hidden", p.id !== `tab-${name}`));
+      // Đang cuộn quá thanh tab thì đưa đầu tab mới về ngay dưới thanh tab, không giữ vị trí cuộn của tab cũ.
+      const bar = document.querySelector(".tabs-bar"), gap = $(`tab-${name}`).getBoundingClientRect().top - bar.getBoundingClientRect().bottom - 16;
+      if (gap < 0) window.scrollBy(0, gap);
+      // Điện thoại: thanh tab cuộn ngang, kéo tab đang chọn vào tầm nhìn.
+      const b = bar.querySelector(".tab-btn.active");
+      if (b.offsetLeft < bar.scrollLeft || b.offsetLeft + b.offsetWidth > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = b.offsetLeft - 16;
+    }
+    function syncTopbarH() {
+      const tb = document.querySelector(".topbar");
+      document.documentElement.style.setProperty("--topbar-h", getComputedStyle(tb).position === "sticky" ? tb.offsetHeight + "px" : "0px");
     }
     function updateClock() {
       const now = new Date(), start = new Date("2026-11-21T07:30:00+07:00"), end = new Date("2026-11-25T23:59:59+07:00");
@@ -802,9 +1052,11 @@
     document.querySelectorAll(".tab-btn").forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
     $("watchBtn").onclick = toggleWatch;
     $("uploadInp").onchange = (e) => { const f = e.target.files?.[0]; if (f) ingest(f, "upload"); e.target.value = ""; };
-    document.body.ondragover = (e) => { e.preventDefault(); document.body.classList.add("drop-active"); };
+    // Tài khoản thường: kéo thả file không hiện gì, không báo lỗi (chỉ chặn trình duyệt mở file).
+    const noUpload = () => L.mode === "server" && !(L.me && L.me.role === "admin");
+    document.body.ondragover = (e) => { e.preventDefault(); if (!noUpload()) document.body.classList.add("drop-active"); };
     document.body.ondragleave = (e) => { if (e.target === document.body) document.body.classList.remove("drop-active"); };
-    document.body.ondrop = (e) => { e.preventDefault(); document.body.classList.remove("drop-active"); const f = e.dataTransfer?.files?.[0]; if (f && f.name.toLowerCase().endsWith(".xlsx")) ingest(f, "upload"); };
+    document.body.ondrop = (e) => { e.preventDefault(); document.body.classList.remove("drop-active"); if (noUpload()) return; const f = e.dataTransfer?.files?.[0]; if (f && f.name.toLowerCase().endsWith(".xlsx")) ingest(f, "upload"); };
     $("csvBtn").onclick = exportCsv;
     $("tvBtn").onclick = () => {
       const tv = document.documentElement.getAttribute("data-theme") === "tv";
@@ -812,7 +1064,12 @@
       else { document.documentElement.setAttribute("data-theme","tv"); localStorage.setItem("wr10_theme","tv"); $("tvBtn").textContent = "Giao diện Sáng"; }
     };
     if (localStorage.getItem("wr10_theme") === "tv") { document.documentElement.setAttribute("data-theme","tv"); $("tvBtn").textContent = "Giao diện Sáng"; }
-    $("resetBtn").onclick = () => { try { localStorage.removeItem(STORE_KEY); } catch (_) {} S.data = structuredClone(INITIAL_DATA); S.src = "Google Drive WAR ROOM (4 files)"; S.lastSync = INITIAL_DATA.meta.lastSyncAt; renderAll(); toast("Đã khôi phục dữ liệu gốc", "Google Drive WAR ROOM"); };
+    $("resetBtn").onclick = () => {
+      if (L.mode === "server") {
+        if (confirm("Khôi phục dữ liệu gốc cho TẤT CẢ mọi người? Mọi cập nhật trên dashboard và file Excel đã nạp sẽ bị xóa.")) push("/api/live/reset", {}, "Đã khôi phục dữ liệu gốc", "Áp dụng cho mọi người");
+        return;
+      }
+      if (!confirm("Khôi phục dữ liệu gốc? Mọi cập nhật đã nhập trên trình duyệt này sẽ bị xóa.")) return; try { localStorage.removeItem(STORE_KEY); } catch (_) {} S.data = structuredClone(INITIAL_DATA); S.src = "Google Drive WAR ROOM (4 files)"; S.lastSync = INITIAL_DATA.meta.lastSyncAt; renderAll(); toast("Đã khôi phục dữ liệu gốc", "Google Drive WAR ROOM"); };
     $("catFilter").onchange = (e) => { S.cat = e.target.value; renderAll(); };
     $("qInput").oninput = (e) => { S.q = e.target.value; renderTasks(computeModel()); };
     $("gFilter").onchange = (e) => { S.g = e.target.value; renderTasks(computeModel()); };
@@ -825,10 +1082,19 @@
     $("rcFilter").onchange = (e) => { S.rc = e.target.value; renderRoles(computeModel()); };
     $("dClose").onclick = closeDrawer; $("dCancel").onclick = closeDrawer; $("dSave").onclick = saveDrawer;
     $("drawerBg").onclick = (e) => { if (e.target === $("drawerBg")) closeDrawer(); };
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && $("drawerBg").classList.contains("open")) closeDrawer(); });
     $("dProg").oninput = (e) => { const v = Number(e.target.value); $("dProgTxt").textContent = `${v}%`; if (v === 100) { $("dStatus").value = "done"; $("dStage").value = "6"; } };
     $("dStatus").onchange = (e) => { if (e.target.value === "done") { $("dProg").value = "100"; $("dProgTxt").textContent = "100%"; $("dStage").value = "6"; } };
 
     updateClock(); setInterval(updateClock, 1000); renderAll();
+    syncTopbarH(); new ResizeObserver(syncTopbarH).observe(document.querySelector(".topbar")); window.addEventListener("resize", syncTopbarH);
+
+    // Realtime: thử kết nối máy chủ; WebSocket báo thay đổi tức thì, kéo định kỳ chỉ để dự phòng.
+    if (location.protocol.startsWith("http")) pull();
+    setInterval(() => { if (L.ws && L.ws.readyState === 1) L.ws.send("ping"); }, 30000);
+    setInterval(() => { if (L.mode === "server" && !document.hidden && (!L.wsOk || Date.now() - L.lastPull > 60000)) pull(); }, 5000);
+    setInterval(() => { renderLive(); if (L.mode === "server" && !document.hidden && !L.wsOk) loadBookings(); }, 60000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && L.mode === "server") { pull(); loadBookings(); } });
   })();
   </script>
 </body>
