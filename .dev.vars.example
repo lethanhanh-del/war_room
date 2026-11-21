@@ -17,3 +17,5 @@ WORKSUITE_PASSWORD=
 # Thời hạn War Room, để đánh dấu task Excel có hạn vượt thời hạn (mặc định 2026-11-21 → 2026-11-25)
 # WARROOM_START=2026-11-21
 # WARROOM_END=2026-11-25
+# Google Sheet tự đồng bộ task mỗi phút (link hoặc ID; mặc định WR - MASTER TASK; "off" để tắt)
+# EXCEL_SHEET_URL=https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit

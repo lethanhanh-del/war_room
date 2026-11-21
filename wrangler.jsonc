@@ -15,5 +15,7 @@
   "d1_databases": [{ "binding": "DB", "database_name": "ctgwarroom" }],
   // Đẩy thông báo thời gian thực qua WebSocket (src/live.js). SQLite Durable Object chạy được trên gói Free.
   "durable_objects": { "bindings": [{ "name": "LIVE", "class_name": "LiveRoom" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveRoom"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveRoom"] }],
+  // Mỗi phút đọc lại Google Sheet WR - MASTER TASK lên dashboard "Tiến độ dòng tiền" (src/excel/sheet-sync.js).
+  "triggers": { "crons": ["* * * * *"] }
 }

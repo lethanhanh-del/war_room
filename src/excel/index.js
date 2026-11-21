@@ -15,6 +15,7 @@
 
 import { log } from '../db.js';
 import { json } from '../http.js';
+import { notifyLive } from '../live.js';
 import { normKey } from '../worksuite/model.js';
 import { matchStream, mergeExcelImports, previewImport } from './merge.js';
 import { parseWorkbookFile } from './tasks.js';
@@ -141,40 +142,13 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
     return json({ error: `Không đọc được file: ${e?.message || e}` }, 400);
   }
 
-  // Chọn thẻ dòng tiền cho từng phần (sheet) của file.
-  const ws = await getWorksuite(env).catch(() => null);
-  const choices = (ws?.streams || []).map((s) => ({ id: s.id, name: s.name, fullName: s.fullName }));
-  const single = book.sections.length === 1;
-  const target = single ? String(url.searchParams.get('target') || '') : '';
-  const ownKey = (sec) => `xl:${sec.code || normKey(sec.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'khong-ten'}`;
-  const warnings = [...book.warnings];
-  const used = new Map();
-  const plan = [];
-  for (const sec of book.sections) {
-    let match = null;
-    let key;
-    if (target === 'new') key = ownKey(sec);
-    else if (target) {
-      match = choices.find((c) => c.id === target) || null;
-      if (!match) return json({ error: 'Dòng tiền đã chọn không còn trên Worksuite. Tải lại trang rồi thử lại.' }, 400);
-      key = match.id;
-    } else {
-      match = matchStream(choices, sec);
-      key = match ? match.id : ownKey(sec);
-    }
-    if (used.has(key)) {
-      warnings.push(`Sheet “${sec.sheet}” cùng dòng tiền với sheet “${used.get(key)}” — bỏ qua sheet “${sec.sheet}”.`);
-      continue;
-    }
-    used.set(key, sec.sheet);
-    plan.push({ sec, key, match });
-  }
-
-  const existingRows = await listImports(env, { withTasks: false });
-  const existing = new Map(existingRows.map((r) => [r.key, r]));
-  const period = warRoomPeriod(env);
+  const planned = await planImport(env, book, getWorksuite, String(url.searchParams.get('target') || ''));
+  if (planned.error) return json({ error: planned.error }, 400);
+  const { ws, choices, plan, warnings } = planned;
 
   if (url.searchParams.get('preview') === '1') {
+    const existing = new Map((await listImports(env, { withTasks: false })).map((r) => [r.key, r]));
+    const period = warRoomPeriod(env);
     const users = await loadUsers(env);
     return json({
       preview: true,
@@ -204,6 +178,58 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
     });
   }
 
+  const saved = await saveImport(env, plan, { fileName, user, now });
+  if (saved.error) return json({ error: saved.error }, saved.status);
+  await log(env, request, user.username, 'excel_import', importSummary(fileName, saved));
+  await notifyLive(env, { scope: 'streams' });
+  return json({ ok: true, total: saved.total, results: saved.results });
+}
+
+export const importSummary = (fileName, saved) =>
+  `${fileName} · ${saved.total} task · ${saved.results.map((r) => `${r.title} → ${r.removed ? 'gỡ' : r.streamName}`).join('; ')}`.slice(0, 1000);
+
+/**
+ * Chọn thẻ dòng tiền cho từng phần (sheet) của file. Dùng chung cho "Nạp task Excel" và đồng bộ Google Sheet.
+ * @param target  chỉ áp dụng cho file 1 dòng tiền: id thẻ Worksuite | "new" | "" (tự nhận theo tên)
+ * @returns {Promise<{ error: string } | { ws, choices, plan: {sec, key, match}[], warnings: string[] }>}
+ */
+export async function planImport(env, book, getWorksuite, target = '') {
+  const ws = await getWorksuite(env).catch(() => null);
+  const choices = (ws?.streams || []).map((s) => ({ id: s.id, name: s.name, fullName: s.fullName }));
+  if (book.sections.length !== 1) target = '';
+  const ownKey = (sec) => `xl:${sec.code || normKey(sec.name).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'khong-ten'}`;
+  const warnings = [...book.warnings];
+  const used = new Map();
+  const plan = [];
+  for (const sec of book.sections) {
+    let match = null;
+    let key;
+    if (target === 'new') key = ownKey(sec);
+    else if (target) {
+      match = choices.find((c) => c.id === target) || null;
+      if (!match) return { error: 'Dòng tiền đã chọn không còn trên Worksuite. Tải lại trang rồi thử lại.' };
+      key = match.id;
+    } else {
+      match = matchStream(choices, sec);
+      key = match ? match.id : ownKey(sec);
+    }
+    if (used.has(key)) {
+      warnings.push(`Sheet “${sec.sheet}” cùng dòng tiền với sheet “${used.get(key)}” — bỏ qua sheet “${sec.sheet}”.`);
+      continue;
+    }
+    used.set(key, sec.sheet);
+    plan.push({ sec, key, match });
+  }
+  return { ws, choices, plan, warnings };
+}
+
+/**
+ * Lưu kết quả planImport() vào D1. Sheet trống của file tổng -> gỡ task Excel cũ của dòng tiền đó.
+ * @returns {Promise<{ error: string, status: number } | { total: number, results: object[] }>}
+ */
+export async function saveImport(env, plan, { fileName, user, now }) {
+  await ensureTable(env);
+  const existing = new Set((await listImports(env, { withTasks: false })).map((r) => r.key));
   const at = new Date(now).toISOString();
   const statements = [];
   const results = [];
@@ -218,7 +244,7 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
       continue;
     }
     const tasksJson = JSON.stringify(sec.tasks);
-    if (tasksJson.length > MAX_JSON_BYTES) return json({ error: `${sec.title}: quá nhiều nội dung để lưu. Hãy bớt số dòng hoặc rút gọn ghi chú.` }, 413);
+    if (tasksJson.length > MAX_JSON_BYTES) return { error: `${sec.title}: quá nhiều nội dung để lưu. Hãy bớt số dòng hoặc rút gọn ghi chú.`, status: 413 };
     statements.push(
       env.DB.prepare(
         `INSERT INTO excel_imports (stream_key, title, code, name, pic, as_of, file_name, task_count, tasks, uploaded_by, uploaded_by_name, uploaded_at)
@@ -231,7 +257,5 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
     results.push({ key, title: sec.title, count: sec.tasks.length, streamName });
   }
   if (statements.length) await env.DB.batch(statements);
-  const total = results.reduce((n, r) => n + r.count, 0);
-  await log(env, request, user.username, 'excel_import', `${fileName} · ${total} task · ${results.map((r) => `${r.title} → ${r.removed ? 'gỡ' : r.streamName}`).join('; ')}`.slice(0, 1000));
-  return json({ ok: true, total, results });
+  return { total: results.reduce((n, r) => n + r.count, 0), results };
 }

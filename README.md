@@ -39,6 +39,15 @@ Cách đọc file (`src/excel/`):
 
 Task Excel lưu trong D1 (bảng `excel_imports`), không ghi ngược lên Worksuite. Tính năng chỉ có trên Worker, không có trên bản Express.
 
+### Tự đồng bộ từ Google Sheet "WR - MASTER TASK"
+
+Không cần nạp tay: Worker tự đọc Google Sheet [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) mỗi phút (Cron Trigger) và mỗi 20 giây khi có người đang xem trang `/`. Sửa trên Sheet → dashboard cập nhật sau khoảng 20–60 giây, mọi màn hình tự tải lại.
+
+- Sheet phải chia sẻ **"Bất kỳ ai có đường liên kết" – Người xem** (Worker đọc không cần tài khoản Google). Mỗi sheet tên "Dòng tiền …" là 1 dòng tiền, đọc theo đúng quy tắc của Nạp task Excel ở trên.
+- Sheet là nguồn chính: task nạp tay từ file tổng của cùng dòng tiền bị thay bằng dữ liệu Sheet; sheet trống hoặc hỏng dòng tiêu đề → gỡ task của dòng tiền đó. File riêng của dòng tiền khác không bị đụng tới.
+- Trạng thái (lần đọc gần nhất, lỗi, cảnh báo như "sheet không có dòng tiêu đề hợp lệ") có trong trường `sheetSync` của `/api/streams`; `POST /api/excel/sync` đồng bộ ngay.
+- Đổi sang Sheet khác: biến `EXCEL_SHEET_URL` (link hoặc ID); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
+
 ## Cấu hình trên Cloudflare
 
 Vào Worker **ctgwarroom** › **Settings** › **Variables and Secrets** › **Add**. Chọn loại **Secret**, không chọn Text: biến loại Text có thể bị xoá mỗi lần deploy.

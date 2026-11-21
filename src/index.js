@@ -31,6 +31,7 @@ import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.
 import { json, redirect, text } from "./http.js";
 import { getStreams } from "./worksuite/index.js";
 import { handleExcel, withExcel } from "./excel/index.js";
+import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
@@ -69,14 +70,17 @@ export default {
 
     if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
     if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
-    // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task nạp từ file Excel (src/excel/). ?demo=1: dữ liệu mẫu.
+    // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
-      const demo = url.searchParams.get("demo") === "1";
-      let data = await getStreams(env, { demo });
-      if (!demo) data = await withExcel(env, data);
+      // Có người đang xem: đọc lại Google Sheet nếu lần trước đã quá 20 giây (chạy nền, không làm chậm trang).
+      ctx.waitUntil(syncSheet(env).catch(() => {}));
+      const data = await withExcel(env, await getStreams(env));
+      data.sheetSync = await sheetSyncStatus(env);
       return json(data, data.error && !data.streams.length ? 502 : 200);
     }
+    // Đồng bộ task từ Google Sheet WR - MASTER TASK (src/excel/sheet-sync.js): GET trạng thái, POST đồng bộ ngay.
+    if (path === "/api/excel/sync") return handleSheetSync(request, env);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
     if (path === "/api/excel") return handleExcel(request, env, url, user, (e) => getStreams(e));
@@ -100,6 +104,11 @@ export default {
         .transform(out);
     }
     return out;
+  },
+
+  // Cron mỗi phút (wrangler.jsonc › triggers): đọc lại Google Sheet WR - MASTER TASK — xem src/excel/sheet-sync.js.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(syncSheet(env));
   },
 };
 
