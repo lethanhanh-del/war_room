@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { buildDailyStats, formatClock, formatDateLabelVN, normalizeText, shortStreamName, WP_CONFIG } from './sheetService.js';
-import { useAutoScroll } from '../lib/useAutoScroll.js';
 import { IconCheckCircle, IconChevronLeft, IconChevronRight, IconHistory, IconX } from './Icons.jsx';
 
 export default function ClearedPanel({ historyByDate, todayKey, selectedDate, onSelectDate, page, onPageChange, onClose }) {
   const [supporterFilter, setSupporterFilter] = useState('all');
+  const [pageSize, setPageSize] = useState(WP_CONFIG.CLEARED_PAGE_SIZE);
+  const bodyRef = useRef(null);
 
   // Danh sách các ngày có dữ liệu (luôn gồm hôm nay ở đầu)
   const availableDates = useMemo(() => {
@@ -15,7 +16,10 @@ export default function ClearedPanel({ historyByDate, todayKey, selectedDate, on
   }, [historyByDate, todayKey]);
 
   const activeDate = selectedDate || todayKey;
-  const dayItems = useMemo(() => (historyByDate && Array.isArray(historyByDate[activeDate]) ? historyByDate[activeDate] : []), [historyByDate, activeDate]);
+  const dayItems = useMemo(
+    () => (historyByDate && Array.isArray(historyByDate[activeDate]) ? historyByDate[activeDate] : []),
+    [historyByDate, activeDate],
+  );
   const stats = useMemo(() => buildDailyStats(dayItems), [dayItems]);
 
   const filteredItems = useMemo(() => {
@@ -26,12 +30,42 @@ export default function ClearedPanel({ historyByDate, todayKey, selectedDate, on
     });
   }, [dayItems, supporterFilter]);
 
-  const pageSize = WP_CONFIG.CLEARED_PAGE_SIZE;
+  // Tự động đo chiều cao thực tế vùng bảng để hiển thị tối đa số dòng vừa khít màn hình rồi mới phân trang
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return undefined;
+
+    const recalc = () => {
+      const h = el.clientHeight;
+      if (!h) return;
+      const rootFs = parseFloat(getComputedStyle(document.documentElement).fontSize) || 14;
+      const headH = el.querySelector('thead')?.getBoundingClientRect().height || rootFs * 2.15;
+      const rows = el.querySelectorAll('tbody tr');
+      let rowH = rootFs * 2.95;
+      if (rows.length > 0) {
+        let maxH = 0;
+        for (const r of rows) maxH = Math.max(maxH, r.getBoundingClientRect().height);
+        if (maxH > 16) rowH = maxH;
+      }
+      const fit = Math.max(5, Math.floor((h - headH - 4) / rowH));
+      setPageSize((prev) => (prev === fit ? prev : fit));
+    };
+
+    const raf = requestAnimationFrame(recalc);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(recalc) : null;
+    if (ro) ro.observe(el);
+    window.addEventListener('resize', recalc);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+      window.removeEventListener('resize', recalc);
+    };
+  }, [activeDate, supporterFilter, filteredItems.length]);
+
   const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
   const safePage = Math.min(Math.max(0, page), totalPages - 1);
   const start = safePage * pageSize;
   const pageItems = filteredItems.slice(start, start + pageSize);
-  const scrollRef = useAutoScroll([safePage, pageItems.length, activeDate, supporterFilter]);
 
   const handleDateChange = (nextDate) => {
     if (!nextDate) return;
@@ -165,7 +199,7 @@ export default function ClearedPanel({ historyByDate, todayKey, selectedDate, on
         </div>
       )}
 
-      <div className="dt-body" ref={scrollRef}>
+      <div className="dt-body" ref={bodyRef}>
         {!filteredItems.length ? (
           <div className="wp-cl-empty">
             <IconHistory className="wp-cl-empty-ico" />

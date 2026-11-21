@@ -21,7 +21,7 @@
   gap: var(--gap-wall);
   padding: var(--gap-wall);
   height: 100vh;
-  width: 100vw;
+  width: 100%;
   overflow: hidden;
 }
 
