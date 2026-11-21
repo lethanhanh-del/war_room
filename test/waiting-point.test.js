@@ -7,6 +7,7 @@ import {
   resolveDeadlineFromSpec,
   computeTiming,
   isCompleteWaitingRow,
+  reconcileMissingItems,
   parseGvizPayload,
   parseCsvText,
   groupItemsByPerson,
@@ -187,6 +188,57 @@ test('mergeWaitingPointState giữ lastSupporter khi xóa cột G trước cột
   assert.equal(stats.bySupporter[0].name, 'Chiến');
   assert.equal(formatDateLabelVN('2026-11-22', '2026-11-22'), 'Hôm nay · 22/11');
   assert.equal(resolveDeadlineFromSpec(parseTimeSpec('15 phút'), d1).totalSec, 900);
+});
+
+test('Xóa 1 hàng chỉ chốt đúng 1 việc (không đánh hoàn thành toàn bộ), chống lỗi thiếu header và chống Ctrl+Z', () => {
+  // 1. Dữ liệu lỗi/HTML không có dòng header -> phải throw, tuyệt đối không trả mảng rỗng làm chốt oan toàn bộ task
+  assert.throws(() => parseCsvText('<html><body>Temporary error</body></html>'));
+
+  // 2. Xóa 1 hàng trên Sheet (kể cả xóa luôn dòng banner PIC ở dòng 1) -> 2 hàng còn lại giữ nguyên ID
+  const csvBefore = [
+    'PIC phụ trách: Hoàng Thị Quỳnh Mai,,,,,,',
+    'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
+    '1,Dòng tiền 1: Bán 4 dự án,Networking,Hư wifi,15 phút,Thành Anh,Chiến',
+    '2,Dòng tiền 1: Bán 4 dự án,Data,Thiếu file,10 phút,Mai,Tuấn',
+    '3,Dòng tiền 2: Thu hồi công nợ,Pháp lý,Ký phụ lục,30 phút,Hương,Phong',
+  ].join('\n');
+  const csvAfterDeleteRow1 = [
+    'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
+    '2,Dòng tiền 1: Bán 4 dự án,Data,Thiếu file,10 phút,Mai,Tuấn',
+    '3,Dòng tiền 2: Thu hồi công nợ,Pháp lý,Ký phụ lục,30 phút,Hương,Phong',
+  ].join('\n');
+
+  const before = parseCsvText(csvBefore);
+  const after = parseCsvText(csvAfterDeleteRow1);
+  assert.equal(before.items.length, 3);
+  assert.equal(after.items.length, 2);
+  assert.equal(after.items[0].id, before.items[1].id);
+  assert.equal(after.items[1].id, before.items[2].id);
+
+  // 3. reconcileMissingItems: nhịp 1 tạm giữ (nếu Ctrl+Z kịp thời -> không đánh hoàn thành), nhịp 2 mới chốt đúng 1 việc bị xóa
+  const prevMap = new Map(before.items.map((x) => [x.id, x]));
+  const pending = new Map();
+
+  const poll1Next = new Map(after.items.map((x) => [x.id, x]));
+  const r1 = reconcileMissingItems(prevMap, poll1Next, pending, 2);
+  assert.equal(r1.confirmedRemoved.length, 0);
+  assert.equal(r1.heldItems.length, 1);
+  assert.equal(poll1Next.size, 3);
+
+  // Nếu người dùng ấn Ctrl+Z ở nhịp 2 -> xóa bộ đếm thiếu, 0 việc bị chốt oan
+  const undoNext = new Map(before.items.map((x) => [x.id, x]));
+  const rUndo = reconcileMissingItems(poll1Next, undoNext, pending, 2);
+  assert.equal(rUndo.confirmedRemoved.length, 0);
+  assert.equal(pending.size, 0);
+
+  // Nếu thực sự xóa hẳn dòng 1 qua 2 nhịp liên tiếp -> chỉ chốt đúng dòng 1, 2 dòng kia nguyên vẹn
+  const delPoll1 = new Map(after.items.map((x) => [x.id, x]));
+  reconcileMissingItems(prevMap, delPoll1, pending, 2);
+  const delPoll2 = new Map(after.items.map((x) => [x.id, x]));
+  const r2 = reconcileMissingItems(delPoll1, delPoll2, pending, 2);
+  assert.equal(r2.confirmedRemoved.length, 1);
+  assert.equal(r2.confirmedRemoved[0].issue, 'Hư wifi');
+  assert.equal(delPoll2.size, 2);
 });
 
 test('Đọc trực tiếp tab Waiting Point (read-only) trên Google Sheet thành công', async () => {

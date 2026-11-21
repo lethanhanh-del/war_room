@@ -284,6 +284,10 @@ export function parseGvizPayload(text) {
   const picMatch = String(cols[0]?.label || '').match(/PIC[^:\n]*:\s*([^\n]+?)(?:\s+STT\s*$|$)/i);
   if (picMatch) picName = picMatch[1].trim();
 
+  const hasIssueCol = cols.some((c) => /vấn\s*đề|van\s*de/i.test(String(c?.label || '')));
+  const hasStreamCol = cols.some((c) => /dòng\s*tiền|dong\s*tien/i.test(String(c?.label || '')));
+  if (!hasIssueCol || !hasStreamCol) throw new Error('Missing Waiting Point header columns');
+
   const findCol = (regex, fallback) => {
     const idx = cols.findIndex((c) => regex.test(String(c?.label || '')));
     return idx >= 0 ? idx : fallback;
@@ -362,13 +366,14 @@ export function parseCsvText(csv) {
       const m = joined.match(/PIC[^:,]*:\s*([^,\n]+)/i);
       if (m) picName = m[1].trim();
     }
-    if (/vấn\s*đề/i.test(joined) || /dòng\s*tiền/i.test(joined)) {
+    if (/vấn\s*đề|van\s*de/i.test(joined) && /dòng\s*tiền|dong\s*tien/i.test(joined)) {
       headerIdx = i;
       break;
     }
   }
+  if (headerIdx < 0) throw new Error('Missing Waiting Point header row');
 
-  const headerRow = headerIdx >= 0 ? rows[headerIdx] : [];
+  const headerRow = rows[headerIdx];
   const findCsvCol = (regex, fallback) => {
     const idx = headerRow.findIndex((h) => regex.test(String(h || '')));
     return idx >= 0 ? idx : fallback;
@@ -382,8 +387,7 @@ export function parseCsvText(csv) {
   const iOwner = findCsvCol(/người\s*phụ\s*trách|nguoi\s*phu\s*trach/i, 5);
   const iSupporter = findCsvCol(/người\s*hỗ\s*trợ|nguoi\s*ho\s*tro/i, 6);
 
-  const start = headerIdx >= 0 ? headerIdx + 1 : 2;
-  const rawRows = rows.slice(start).map((r) => ({
+  const rawRows = rows.slice(headerIdx + 1).map((r) => ({
     stt: String(r[iStt] || '').trim(),
     stream: String(r[iStream] || '').trim(),
     group: String(r[iGroup] || '').trim(),
@@ -398,18 +402,47 @@ export function parseCsvText(csv) {
 
 export async function fetchWaitingPoints() {
   const ts = Date.now();
-  // headers=2: cố định 2 dòng tiêu đề (dòng 1 PIC, dòng 2 tên cột) để Google gviz không gộp nhầm dòng dữ liệu trống STT/Dòng tiền vào header.
-  const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&headers=2&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
+  // Ưu tiên CSV export: giữ nguyên từng dòng văn bản gốc, tuyệt đối không bị Google gviz gộp nhầm dòng dữ liệu thành tiêu đề khi xóa hàng hoặc để trống STT/Dòng tiền.
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/export?format=csv&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
   try {
-    const res = await fetch(gvizUrl, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return parseGvizPayload(await res.text());
-  } catch (gvizErr) {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/export?format=csv&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
     const res = await fetch(csvUrl, { cache: 'no-store' });
-    if (!res.ok) throw gvizErr;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return parseCsvText(await res.text());
+  } catch (csvErr) {
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&headers=2&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
+    const res = await fetch(gvizUrl, { cache: 'no-store' });
+    if (!res.ok) throw csvErr;
+    return parseGvizPayload(await res.text());
   }
+}
+
+// Xác nhận dòng thật sự biến mất qua `confirmPolls` chu kỳ liên tiếp (mặc định 2 nhịp ~3–6s)
+// để tránh lỡ xóa nhầm rồi Ctrl+Z hoặc mạng/Sheet cập nhật dở bị đánh hoàn thành oan.
+export function reconcileMissingItems(prevLiveMap, nextMap, pendingMissing, confirmPolls = 2) {
+  const confirmedRemoved = [];
+  const heldItems = [];
+
+  for (const id of [...pendingMissing.keys()]) {
+    if (!prevLiveMap.has(id) || nextMap.has(id)) pendingMissing.delete(id);
+  }
+
+  for (const [id, prevItem] of prevLiveMap.entries()) {
+    if (nextMap.has(id)) {
+      pendingMissing.delete(id);
+      continue;
+    }
+    const misses = (pendingMissing.get(id) || 0) + 1;
+    if (misses < confirmPolls) {
+      pendingMissing.set(id, misses);
+      nextMap.set(id, prevItem);
+      heldItems.push(prevItem);
+    } else {
+      pendingMissing.delete(id);
+      confirmedRemoved.push(prevItem);
+    }
+  }
+
+  return { confirmedRemoved, heldItems };
 }
 
 export function groupItemsByPerson(visibleItems) {
@@ -597,7 +630,7 @@ if (typeof document !== 'undefined') {
       audioCtx.resume().then(() => {
         if (audioCtx && audioCtx.state === 'running' && !audioUnlocked) {
           audioUnlocked = true;
-          render();
+          updateHeaderBell();
         }
       }).catch(() => {});
     } else if (audioCtx.state === 'running') {
@@ -629,10 +662,11 @@ if (typeof document !== 'undefined') {
 
   function ringBell(kind) {
     state.bellRinging = true;
+    updateHeaderBell();
     clearTimeout(bellTimer);
     bellTimer = setTimeout(() => {
       state.bellRinging = false;
-      render();
+      updateHeaderBell();
     }, 1250);
     if (!state.soundEnabled) return;
     try {
@@ -711,13 +745,17 @@ if (typeof document !== 'undefined') {
   const state = {
     isOnline: true,
     isFirstFetchDone: false,
+    isSyncing: false,
+    pendingSync: false,
     soundEnabled: true,
     bellRinging: false,
     liveItems: new Map(),
+    pendingMissing: new Map(),
     clearingItems: new Map(),
     newHighlights: new Map(),
     burnedAlerted: new Set(),
     lastBurnReminderAt: 0,
+    lastBoardStructSig: '',
     historyByDate: loadHistoryByDate(),
     showStats: false,
     selectedDate: todayKeyVN(),
@@ -861,6 +899,11 @@ if (typeof document !== 'undefined') {
   }
 
   async function syncFromSheet() {
+    if (state.isSyncing) {
+      state.pendingSync = true;
+      return;
+    }
+    state.isSyncing = true;
     try {
       const [result, shared] = await Promise.all([fetchWaitingPoints(), fetchSharedState()]);
       if (shared) applySharedState(shared);
@@ -940,14 +983,15 @@ if (typeof document !== 'undefined') {
         }
       }
 
-      const removedEntries = [];
+      let removedEntries = [];
       if (state.isFirstFetchDone) {
-        for (const [id, prevItem] of state.liveItems.entries()) {
-          if (!nextMap.has(id)) {
-            removedEntries.push(prevItem);
-            delete timerStore[id];
-          }
+        const reconciled = reconcileMissingItems(state.liveItems, nextMap, state.pendingMissing, 2);
+        removedEntries = reconciled.confirmedRemoved;
+        for (const item of removedEntries) {
+          delete timerStore[item.id];
         }
+      } else {
+        state.pendingMissing.clear();
       }
 
       saveTimerStore(timerStore);
@@ -1015,12 +1059,23 @@ if (typeof document !== 'undefined') {
         });
       }
 
-      if (!(state.showStats && document.activeElement?.id === 'wp-date-picker')) {
+      if (state.showStats) {
+        updateHeaderOnly();
+        if (removedEntries.length > 0 && document.activeElement?.id !== 'wp-date-picker') {
+          render();
+        }
+      } else {
         render();
       }
     } catch {
       state.isOnline = false;
-      render();
+      updateHeaderOnly();
+    } finally {
+      state.isSyncing = false;
+      if (state.pendingSync) {
+        state.pendingSync = false;
+        setTimeout(syncFromSheet, 250);
+      }
     }
   }
 
@@ -1125,7 +1180,7 @@ if (typeof document !== 'undefined') {
               : tk.timeRaw || 'Còn lại';
 
       return `
-        <article class="wp-node" title="${esc(`${tk.issue}\n${tk.group} · ${restMeta}${tk.timeRaw ? ` · SLA: ${tk.timeRaw}` : ''}`)}">
+        <article class="wp-node" data-task-id="${esc(tk.id)}" title="${esc(`${tk.issue}\n${tk.group} · ${restMeta}${tk.timeRaw ? ` · SLA: ${tk.timeRaw}` : ''}`)}">
           <span class="wp-dot t-${tier}" aria-hidden="true"></span>
           ${tk.isClearing ? `<div class="wp-cleared-veil"><span>${SVG.check} Đã hoàn thành</span></div>` : ''}
           <div class="wp-node-main">
@@ -1134,11 +1189,11 @@ if (typeof document !== 'undefined') {
               ${tk.group ? `<span class="wp-cat" title="${esc(tk.group)}">${esc(tk.group)}</span>` : ''}
               ${restMeta ? `<span class="wp-rest" title="${esc(restMeta)}">${esc(restMeta)}</span>` : ''}
             </div>
-            ${tk.timing.mode === 'countdown' && !tk.isClearing ? `<div class="wp-gauge t-${tier}"><i style="width:${tk.timing.pct}%"></i></div>` : ''}
+            ${tk.timing.mode === 'countdown' && !tk.isClearing ? `<div class="wp-gauge t-${tier}"><i data-task-gauge="${esc(tk.id)}" style="width:${tk.timing.pct}%"></i></div>` : ''}
           </div>
           <div class="wp-node-right t-${tier}">
-            <b>${esc(clk)}</b>
-            <span title="${esc(sub)}">${esc(sub)}</span>
+            <b data-task-clock="${esc(tk.id)}">${esc(clk)}</b>
+            <span data-task-sub="${esc(tk.id)}" title="${esc(sub)}">${esc(sub)}</span>
           </div>
         </article>
       `;
@@ -1162,9 +1217,9 @@ if (typeof document !== 'undefined') {
               </div>
             </div>
           </div>
-          <div class="wp-timeblock t-${heroTier}">
-            <b>${esc(heroClock)}</b>
-            <span>${esc(heroLabel)}</span>
+          <div class="wp-timeblock t-${heroTier}" data-hero-person="${esc(person.key)}">
+            <b data-hero-clock="${esc(person.key)}">${esc(heroClock)}</b>
+            <span data-hero-label="${esc(person.key)}">${esc(heroLabel)}</span>
           </div>
         </header>
         <div class="wp-timeline">${rowsHtml}</div>
@@ -1282,14 +1337,182 @@ if (typeof document !== 'undefined') {
     `;
   }
 
-  function render() {
+  // ---------- Persistent Shell & Delegated Events (không bao giờ huỷ nút header mỗi giây) ----------
+  let shellMounted = false;
+  const ui = {};
+
+  function mountShell() {
     const app = document.getElementById('wp-app');
-    if (!app) return;
+    if (!app || shellMounted) return;
+    shellMounted = true;
 
-    const now = Date.now();
-    const todayKey = todayKeyVN(now);
-    const todayCleared = state.historyByDate[todayKey] || [];
+    app.innerHTML = `
+      <header class="wp-head">
+        <div class="wp-brand">
+          <span class="wp-brand-badge" aria-hidden="true">WP</span>
+          <h1>Waiting Point</h1>
+        </div>
+        <div class="wp-actions">
+          <span class="wp-pill is-danger" id="wp-pill-offline" hidden>${SVG.wifiOff}<span>Mất kết nối Sheet</span></span>
+          <span class="wp-pill is-danger" id="wp-pill-burn" hidden>${SVG.alert}<span>Quá hạn</span><b class="wp-mono" id="wp-burn-cnt">0</b></span>
+          <span class="wp-pill is-zero" id="wp-pill-count">${SVG.users}<span class="wp-mono"><b id="wp-people-cnt">0</b> người · <b id="wp-active-cnt">0</b> việc</span></span>
+          <button type="button" class="wp-btn" id="wp-btn-bell"><span id="wp-bell-ico-wrap">${SVG.bell}</span><span id="wp-bell-lbl">Chuông: Bật</span></button>
+          <button type="button" class="wp-btn" id="wp-btn-stats">${SVG.history}<span>Thống kê</span><b class="wp-btn-cnt zero" id="wp-stats-cnt">0</b></button>
+          <button type="button" class="wp-btn" id="wp-btn-theme" title="Đổi giao diện sáng / tối"><span id="wp-theme-ico">${SVG.sun}</span><span id="wp-theme-lbl">Sáng</span></button>
+          <button type="button" class="wp-btn" id="wp-btn-tv" aria-pressed="false">${SVG.tv}<span id="wp-tv-lbl">TV</span></button>
+          <div class="wp-clock" id="wp-clock" aria-label="Giờ hiện tại">${fmtTimeVN(new Date())}</div>
+        </div>
+      </header>
+      <main class="wp-stage" id="wp-stage"></main>
+    `;
 
+    ui.offline = document.getElementById('wp-pill-offline');
+    ui.burnPill = document.getElementById('wp-pill-burn');
+    ui.burnCnt = document.getElementById('wp-burn-cnt');
+    ui.countPill = document.getElementById('wp-pill-count');
+    ui.peopleCnt = document.getElementById('wp-people-cnt');
+    ui.activeCnt = document.getElementById('wp-active-cnt');
+    ui.bellBtn = document.getElementById('wp-btn-bell');
+    ui.bellIco = document.getElementById('wp-bell-ico-wrap');
+    ui.bellLbl = document.getElementById('wp-bell-lbl');
+    ui.statsBtn = document.getElementById('wp-btn-stats');
+    ui.statsCnt = document.getElementById('wp-stats-cnt');
+    ui.themeBtn = document.getElementById('wp-btn-theme');
+    ui.themeIco = document.getElementById('wp-theme-ico');
+    ui.themeLbl = document.getElementById('wp-theme-lbl');
+    ui.tvBtn = document.getElementById('wp-btn-tv');
+    ui.tvLbl = document.getElementById('wp-tv-lbl');
+    ui.clock = document.getElementById('wp-clock');
+    ui.stage = document.getElementById('wp-stage');
+
+    // Gắn sự kiện ủy quyền 1 lần duy nhất lên #wp-app -> bấm nút luôn ăn ngay phát đầu tiên.
+    app.addEventListener('click', (e) => {
+      const target = e.target.closest('button');
+      if (!target || target.disabled) return;
+      const todayKey = todayKeyVN();
+
+      if (target.id === 'wp-btn-bell') {
+        const wasLocked = !audioUnlocked;
+        unlockAudio();
+        audioUnlocked = true;
+        if (wasLocked && state.soundEnabled) {
+          ringBell('test');
+          updateHeaderBell();
+          return;
+        }
+        state.soundEnabled = !state.soundEnabled;
+        if (state.soundEnabled) ringBell('test');
+        updateHeaderBell();
+        return;
+      }
+
+      if (target.id === 'wp-btn-stats') {
+        state.showStats = !state.showStats;
+        state.selectedDate = todayKey;
+        state.supporterFilter = 'all';
+        state.statsPage = 0;
+        render();
+        return;
+      }
+
+      if (target.id === 'wp-open-stats-empty') {
+        state.showStats = true;
+        state.selectedDate = todayKey;
+        state.supporterFilter = 'all';
+        state.statsPage = 0;
+        render();
+        return;
+      }
+
+      if (target.id === 'wp-close-stats') {
+        state.showStats = false;
+        render();
+        return;
+      }
+
+      if (target.id === 'wp-btn-theme') {
+        prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
+        storeSet('wr-theme', prefs.theme);
+        applyTheme();
+        updateHeaderOnly();
+        return;
+      }
+
+      if (target.id === 'wp-btn-tv') {
+        prefs.tv = !prefs.tv;
+        storeSet('wr-tv', prefs.tv ? '1' : '0');
+        applyTheme();
+        updateHeaderOnly();
+        return;
+      }
+
+      if (target.id === 'wp-prev-page') {
+        state.statsPage = Math.max(0, state.statsPage - 1);
+        render();
+        return;
+      }
+
+      if (target.id === 'wp-next-page') {
+        state.statsPage += 1;
+        render();
+        return;
+      }
+
+      const toggleKey = target.getAttribute('data-toggle-person');
+      if (toggleKey) {
+        if (state.expandedPeople.has(toggleKey)) state.expandedPeople.delete(toggleKey);
+        else state.expandedPeople.add(toggleKey);
+        render();
+        return;
+      }
+
+      const pickDate = target.getAttribute('data-pick-date');
+      if (pickDate) {
+        state.selectedDate = pickDate || todayKey;
+        state.supporterFilter = 'all';
+        state.statsPage = 0;
+        render();
+        return;
+      }
+
+      const pickSup = target.getAttribute('data-pick-sup');
+      if (pickSup) {
+        state.supporterFilter = state.supporterFilter === pickSup && pickSup !== 'all' ? 'all' : pickSup;
+        state.statsPage = 0;
+        render();
+      }
+    });
+
+    app.addEventListener('change', (e) => {
+      if (e.target && e.target.id === 'wp-date-picker' && e.target.value) {
+        state.selectedDate = e.target.value;
+        state.supporterFilter = 'all';
+        state.statsPage = 0;
+        render();
+      }
+    });
+  }
+
+  function updateHeaderBell() {
+    if (!shellMounted) return;
+    const bellLabel = !state.soundEnabled ? 'Chuông: Tắt' : !audioUnlocked ? 'Bấm bật chuông' : 'Chuông: Bật';
+    const bellCls = !state.soundEnabled
+      ? 'wp-btn is-muted'
+      : state.bellRinging
+        ? 'wp-btn is-ringing'
+        : !audioUnlocked
+          ? 'wp-btn is-attention'
+          : 'wp-btn';
+    ui.bellBtn.className = bellCls;
+    ui.bellLbl.textContent = bellLabel;
+    const desiredIcon = state.soundEnabled ? 'on' : 'off';
+    if (ui.bellIco.dataset.ico !== desiredIcon) {
+      ui.bellIco.dataset.ico = desiredIcon;
+      ui.bellIco.innerHTML = state.soundEnabled ? SVG.bell : SVG.bellOff;
+    }
+  }
+
+  function buildBoardSnapshot(now) {
     const visible = [];
     const liveIds = new Set();
     for (const item of state.liveItems.values()) {
@@ -1305,27 +1528,119 @@ if (typeof document !== 'undefined') {
         });
       }
     }
-
     const people = groupItemsByPerson(visible);
     const activeCount = visible.filter((v) => !v.isClearing).length;
     const burnCount = visible.filter((v) => !v.isClearing && v.timing.tier === 'burn').length;
+    const structSig = people
+      .map((p) => {
+        const exp = state.expandedPeople.has(p.key) ? '1' : '0';
+        const tasksSig = p.tasks
+          .map((t) => `${t.id}:${t.isClearing ? 'c' : t.timing.tier}:${(state.newHighlights.get(t.id) || 0) > now ? 'n' : 'o'}`)
+          .join(',');
+        return `${p.key}[${p.topTier}:${exp}:${tasksSig}]`;
+      })
+      .join('|');
+    return { visible, people, activeCount, burnCount, structSig };
+  }
+
+  function updateHeader(now, peopleCount, activeCount, burnCount, todayClearedCount) {
+    if (!shellMounted) return;
+    ui.offline.hidden = state.isOnline;
+    ui.burnPill.hidden = burnCount <= 0;
+    ui.burnCnt.textContent = String(burnCount);
+    ui.countPill.className = activeCount === 0 ? 'wp-pill is-zero' : 'wp-pill';
+    ui.peopleCnt.textContent = String(peopleCount);
+    ui.activeCnt.textContent = String(activeCount);
+    updateHeaderBell();
+    ui.statsBtn.className = state.showStats ? 'wp-btn is-active' : 'wp-btn';
+    ui.statsCnt.className = todayClearedCount === 0 ? 'wp-btn-cnt zero' : 'wp-btn-cnt';
+    ui.statsCnt.textContent = String(todayClearedCount);
+    ui.themeBtn.hidden = prefs.tv;
+    const themeIcon = prefs.theme === 'dark' ? 'sun' : 'moon';
+    if (ui.themeIco.dataset.ico !== themeIcon) {
+      ui.themeIco.dataset.ico = themeIcon;
+      ui.themeIco.innerHTML = prefs.theme === 'dark' ? SVG.sun : SVG.moon;
+    }
+    ui.themeLbl.textContent = prefs.theme === 'dark' ? 'Sáng' : 'Tối';
+    ui.tvBtn.className = prefs.tv ? 'wp-btn is-active' : 'wp-btn';
+    ui.tvBtn.setAttribute('aria-pressed', String(prefs.tv));
+    ui.tvLbl.textContent = prefs.tv ? 'Thường' : 'TV';
+    ui.clock.textContent = fmtTimeVN(new Date(now));
+  }
+
+  function updateHeaderOnly() {
+    mountShell();
+    const now = Date.now();
+    const todayKey = todayKeyVN(now);
+    const todayCleared = state.historyByDate[todayKey] || [];
+    const snap = buildBoardSnapshot(now);
+    updateHeader(now, snap.people.length, snap.activeCount, snap.burnCount, todayCleared.length);
+  }
+
+  function tickInPlace(now) {
+    if (!shellMounted) return;
+    ui.clock.textContent = fmtTimeVN(new Date(now));
+    if (state.showStats) return;
+
+    const snap = buildBoardSnapshot(now);
+    const todayKey = todayKeyVN(now);
+    const todayCleared = state.historyByDate[todayKey] || [];
+    updateHeader(now, snap.people.length, snap.activeCount, snap.burnCount, todayCleared.length);
+
+    // Chỉ dựng lại bảng nếu thứ tự người/task, mức cảnh báo (ok->warn->burn) hoặc nhãn MỚI thực sự thay đổi.
+    if (snap.structSig !== state.lastBoardStructSig) {
+      render();
+      return;
+    }
+
+    // Cập nhật đồng hồ đếm ngược & thanh SLA tại chỗ -> không phá DOM, không mất click.
+    for (const person of snap.people) {
+      const topTask = person.tasks.find((t) => !t.isClearing) || person.tasks[0];
+      if (topTask) {
+        const heroClockEl = ui.stage.querySelector(`[data-hero-clock="${CSS.escape(person.key)}"]`);
+        if (heroClockEl) {
+          heroClockEl.textContent = topTask.isClearing
+            ? 'Xong'
+            : topTask.timing.mode === 'elapsed'
+              ? formatClock(topTask.timing.elapsedSec)
+              : formatClock(topTask.timing.remainingSec);
+        }
+      }
+      for (const tk of person.tasks) {
+        if (tk.isClearing) continue;
+        const escId = CSS.escape(tk.id);
+        const clkEl = ui.stage.querySelector(`[data-task-clock="${escId}"]`);
+        if (clkEl) {
+          clkEl.textContent = tk.timing.mode === 'elapsed'
+            ? formatClock(tk.timing.elapsedSec)
+            : formatClock(tk.timing.remainingSec);
+        }
+        const gaugeEl = ui.stage.querySelector(`[data-task-gauge="${escId}"]`);
+        if (gaugeEl && tk.timing.mode === 'countdown') {
+          gaugeEl.style.width = `${tk.timing.pct}%`;
+        }
+      }
+    }
+  }
+
+  function render() {
+    mountShell();
+    if (!ui.stage) return;
+
+    const now = Date.now();
+    const todayKey = todayKeyVN(now);
+    const todayCleared = state.historyByDate[todayKey] || [];
+    const { people, activeCount, burnCount, structSig } = buildBoardSnapshot(now);
+
+    updateHeader(now, people.length, activeCount, burnCount, todayCleared.length);
 
     // Bảo toàn vị trí cuộn bên trong từng thẻ người
     const prevScrolls = new Map();
-    app.querySelectorAll('.wp-card').forEach((card) => {
+    ui.stage.querySelectorAll('.wp-card').forEach((card) => {
       const k = card.getAttribute('data-person-key');
       const sc = card.querySelector('.wp-timeline');
       if (k && sc) prevScrolls.set(k, sc.scrollTop);
     });
-
-    const bellLabel = !state.soundEnabled ? 'Chuông: Tắt' : !audioUnlocked ? 'Bấm bật chuông' : 'Chuông: Bật';
-    const bellCls = !state.soundEnabled
-      ? 'wp-btn is-muted'
-      : state.bellRinging
-        ? 'wp-btn is-ringing'
-        : !audioUnlocked
-          ? 'wp-btn is-attention'
-          : 'wp-btn';
 
     let stageHtml = '';
     if (state.showStats) {
@@ -1356,35 +1671,14 @@ if (typeof document !== 'undefined') {
       `;
     }
 
-    app.innerHTML = `
-      <header class="wp-head">
-        <div class="wp-brand">
-          <span class="wp-brand-badge" aria-hidden="true">WP</span>
-          <h1>Waiting Point</h1>
-        </div>
-        <div class="wp-actions">
-          ${!state.isOnline ? `<span class="wp-pill is-danger">${SVG.wifiOff}<span>Mất kết nối Sheet</span></span>` : ''}
-          ${burnCount > 0 ? `<span class="wp-pill is-danger">${SVG.alert}<span>Quá hạn</span><b class="wp-mono">${burnCount}</b></span>` : ''}
-          <span class="wp-pill ${activeCount === 0 ? 'is-zero' : ''}">${SVG.users}<span class="wp-mono"><b>${people.length}</b> người · <b>${activeCount}</b> việc</span></span>
-          <button type="button" class="${bellCls}" id="wp-btn-bell">${state.soundEnabled ? SVG.bell : SVG.bellOff}<span>${bellLabel}</span></button>
-          <button type="button" class="wp-btn ${state.showStats ? 'is-active' : ''}" id="wp-btn-stats">
-            ${SVG.history}<span>Thống kê</span><b class="wp-btn-cnt ${todayCleared.length === 0 ? 'zero' : ''}">${todayCleared.length}</b>
-          </button>
-          ${!prefs.tv ? `<button type="button" class="wp-btn" id="wp-btn-theme" title="Đổi giao diện sáng / tối">${prefs.theme === 'dark' ? SVG.sun : SVG.moon}<span>${prefs.theme === 'dark' ? 'Sáng' : 'Tối'}</span></button>` : ''}
-          <button type="button" class="wp-btn ${prefs.tv ? 'is-active' : ''}" id="wp-btn-tv" aria-pressed="${prefs.tv}">${SVG.tv}<span>${prefs.tv ? 'Thường' : 'TV'}</span></button>
-          <div class="wp-clock" aria-label="Giờ hiện tại">${fmtTimeVN(new Date(now))}</div>
-        </div>
-      </header>
-      <main class="wp-stage">${stageHtml}</main>
-    `;
+    state.lastBoardStructSig = state.showStats ? '' : structSig;
+    ui.stage.innerHTML = stageHtml;
 
-    app.querySelectorAll('.wp-card').forEach((card) => {
+    ui.stage.querySelectorAll('.wp-card').forEach((card) => {
       const k = card.getAttribute('data-person-key');
       const sc = card.querySelector('.wp-timeline');
       if (k && sc && prevScrolls.has(k)) sc.scrollTop = prevScrolls.get(k);
     });
-
-    bindEvents(todayKey);
 
     if (state.showStats) {
       statsRo?.disconnect();
@@ -1397,101 +1691,6 @@ if (typeof document !== 'undefined') {
     } else {
       statsRo?.disconnect();
     }
-  }
-
-  function bindEvents(todayKey) {
-    document.getElementById('wp-btn-bell')?.addEventListener('click', () => {
-      const wasLocked = !audioUnlocked;
-      unlockAudio();
-      audioUnlocked = true;
-      if (wasLocked && state.soundEnabled) {
-        ringBell('test');
-        render();
-        return;
-      }
-      state.soundEnabled = !state.soundEnabled;
-      if (state.soundEnabled) ringBell('test');
-      render();
-    });
-
-    const openStats = () => {
-      state.showStats = !state.showStats;
-      state.selectedDate = todayKey;
-      state.supporterFilter = 'all';
-      state.statsPage = 0;
-      render();
-    };
-    document.getElementById('wp-btn-stats')?.addEventListener('click', openStats);
-    document.getElementById('wp-open-stats-empty')?.addEventListener('click', () => {
-      state.showStats = true;
-      state.selectedDate = todayKey;
-      state.supporterFilter = 'all';
-      state.statsPage = 0;
-      render();
-    });
-    document.getElementById('wp-close-stats')?.addEventListener('click', () => {
-      state.showStats = false;
-      render();
-    });
-
-    document.getElementById('wp-btn-theme')?.addEventListener('click', () => {
-      prefs.theme = prefs.theme === 'dark' ? 'light' : 'dark';
-      storeSet('wr-theme', prefs.theme);
-      applyTheme();
-      render();
-    });
-    document.getElementById('wp-btn-tv')?.addEventListener('click', () => {
-      prefs.tv = !prefs.tv;
-      storeSet('wr-tv', prefs.tv ? '1' : '0');
-      applyTheme();
-      render();
-    });
-
-    document.querySelectorAll('[data-toggle-person]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const key = btn.getAttribute('data-toggle-person');
-        if (!key) return;
-        if (state.expandedPeople.has(key)) state.expandedPeople.delete(key);
-        else state.expandedPeople.add(key);
-        render();
-      });
-    });
-
-    document.querySelectorAll('[data-pick-date]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        state.selectedDate = btn.getAttribute('data-pick-date') || todayKey;
-        state.supporterFilter = 'all';
-        state.statsPage = 0;
-        render();
-      });
-    });
-
-    document.getElementById('wp-date-picker')?.addEventListener('change', (e) => {
-      if (e.target.value) {
-        state.selectedDate = e.target.value;
-        state.supporterFilter = 'all';
-        state.statsPage = 0;
-        render();
-      }
-    });
-
-    document.querySelectorAll('[data-pick-sup]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const k = btn.getAttribute('data-pick-sup') || 'all';
-        state.supporterFilter = state.supporterFilter === k && k !== 'all' ? 'all' : k;
-        state.statsPage = 0;
-        render();
-      });
-    });
-
-    document.getElementById('wp-prev-page')?.addEventListener('click', () => {
-      state.statsPage = Math.max(0, state.statsPage - 1);
-      render();
-    });
-    document.getElementById('wp-next-page')?.addEventListener('click', () => {
-      state.statsPage += 1;
-      render();
-    });
   }
 
   function connectLiveWs() {
@@ -1524,19 +1723,14 @@ if (typeof document !== 'undefined') {
   setInterval(() => {
     const now = Date.now();
     checkOverdueAlerts(now);
-    if (state.showStats) {
-      const clockEl = document.querySelector('.wp-clock');
-      if (clockEl) clockEl.textContent = fmtTimeVN(new Date(now));
-      return;
-    }
-    render();
+    tickInPlace(now);
   }, 1000);
 
   window.addEventListener('pointerdown', () => {
     if (!audioUnlocked) {
       unlockAudio();
       audioUnlocked = true;
-      render();
+      updateHeaderBell();
     }
   }, { once: true });
 

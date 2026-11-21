@@ -2,6 +2,10 @@
    Đồng bộ 100% token Night Ops v5 + Giao diện sáng (tùy chọn) + Màn hình TV từ public/dong-tien.css (nạp trước file này),
    kết hợp bố cục thẻ Người hỗ trợ dạng trục Timeline kiến trúc & màn hình Thống kê theo ngày. */
 
+.wp-shell [hidden] {
+  display: none !important;
+}
+
 .wp-mono {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
