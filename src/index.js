@@ -28,8 +28,12 @@ import { handleBookings } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
 import { CHAIRMAN_LINK, changePasswordPage, loginPage, userChip } from "./pages.js";
 import { json, redirect, text } from "./http.js";
+import { getStreams } from "./worksuite/index.js";
+import { handleExcel, withExcel } from "./excel/index.js";
 
-const VIEW_PAGES = new Set(["/", "/lich", "/admin"]);
+const VIEW_PAGES = new Set(["/", "/war-room", "/lich", "/admin"]);
+// Trang được chèn nút "Đặt lịch Chủ tịch" + ô người dùng: dashboard dòng tiền (/) và bảng War Room cũ (/war-room).
+const DASHBOARD_PAGES = new Set(["/", "/war-room"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -55,6 +59,17 @@ export default {
     }
 
     if (path === "/api/bookings") return handleBookings(request, env, url, user);
+    // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task nạp từ file Excel (src/excel/). ?demo=1: dữ liệu mẫu.
+    if (path === "/api/streams") {
+      if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+      const demo = url.searchParams.get("demo") === "1";
+      let data = await getStreams(env, { demo });
+      if (!demo) data = await withExcel(env, data);
+      return json(data, data.error && !data.streams.length ? 502 : 200);
+    }
+    // Nạp task từ file Excel "Nhập task" của từng dòng tiền. Task Excel không qua cache Worksuite:
+    // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
+    if (path === "/api/excel") return handleExcel(request, env, url, user, (e) => getStreams(e));
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
@@ -64,7 +79,7 @@ export default {
     const out = new Response(res.body, res);
     out.headers.set("Cache-Control", "private, no-cache");
     if (res.ok && request.method === "GET" && VIEW_PAGES.has(path)) ctx.waitUntil(log(env, request, user.username, "view", path));
-    if (path === "/" && res.ok) {
+    if (DASHBOARD_PAGES.has(path) && res.ok) {
       return new HTMLRewriter()
         .on("body", {
           element: (el) => {

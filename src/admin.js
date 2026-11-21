@@ -45,10 +45,11 @@ export async function handleAdmin(request, env, url, user) {
   return json({ error: "Không tìm thấy." }, 404);
 }
 
-// Đọc danh sách thành viên từ INITIAL_DATA trong public/index.html và tạo tài khoản cho người chưa có.
+// Đọc danh sách thành viên từ INITIAL_DATA trong public/war-room.html (bảng War Room nạp từ Excel,
+// trước đây là public/index.html) và tạo tài khoản cho người chưa có.
 // Không đổi tài khoản đã có. Người mới dùng mật khẩu mặc định và phải đổi ở lần đăng nhập đầu.
 async function syncUsers(request, env, user) {
-  const html = await (await env.ASSETS.fetch(new Request(new URL("/", request.url)))).text();
+  const html = await (await env.ASSETS.fetch(new Request(new URL("/war-room", request.url)))).text();
   const m = /const INITIAL_DATA = (\{.*\});\s*$/m.exec(html);
   if (!m) return json({ error: "Không đọc được dữ liệu dashboard (INITIAL_DATA)." }, 500);
   const tasks = JSON.parse(m[1]).tasks || [];

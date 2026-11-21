@@ -3,3 +3,13 @@
 node_modules/
 generated/
 .playwright-mcp/
+
+# Bí mật & dữ liệu chạy máy — KHÔNG commit (chứa mật khẩu Worksuite, khoá Google)
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/.gitkeep
+data/*
+!data/.gitkeep
+!data/README.md
