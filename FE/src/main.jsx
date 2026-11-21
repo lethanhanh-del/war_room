@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
+import WaitingPointApp from './waiting-point/WaitingPointApp.jsx';
 import '@fontsource/be-vietnam-pro/400.css';
 import '@fontsource/be-vietnam-pro/500.css';
 import '@fontsource/be-vietnam-pro/600.css';
@@ -11,8 +12,11 @@ import '@fontsource/jetbrains-mono/700.css';
 import './styles/tokens.css';
 import './styles.css';
 
+const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+const RootView = pathname.toLowerCase() === '/waiting-point' ? WaitingPointApp : App;
+
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <RootView />
   </React.StrictMode>
 );

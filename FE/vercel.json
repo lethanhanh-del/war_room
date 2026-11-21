@@ -9,6 +9,10 @@
       "maxDuration": 10
     }
   },
+  "rewrites": [
+    { "source": "/waiting-point", "destination": "/index.html" },
+    { "source": "/waiting-point/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",
