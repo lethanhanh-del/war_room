@@ -153,10 +153,23 @@
   border-color: var(--border);
 }
 
+.wp-btn.is-muted:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
 .wp-btn.is-attention {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--navy-100);
+}
+
+.wp-btn.is-attention:hover:not(:disabled),
+.wp-btn.is-ringing:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-surface));
 }
 
 .wp-btn.is-active {
@@ -164,6 +177,12 @@
   border-color: var(--accent);
   color: var(--on-accent);
   font-weight: 700;
+}
+
+.wp-btn.is-active:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #ffffff);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
 .wp-btn.is-ringing {
@@ -911,6 +930,12 @@
   font-weight: 700;
 }
 
+.wp-date-chip.is-active:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #ffffff);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
 .wp-date-chip b {
   font-family: var(--mono);
   font-size: 11.5px;
@@ -1022,6 +1047,12 @@
   border-color: var(--accent);
   color: var(--on-accent);
   font-weight: 700;
+}
+
+.wp-sup-chip.is-active:hover {
+  background: color-mix(in srgb, var(--accent) 88%, #ffffff);
+  border-color: var(--accent);
+  color: var(--on-accent);
 }
 
 .wp-sup-chip.is-unassigned:not(.is-active) {

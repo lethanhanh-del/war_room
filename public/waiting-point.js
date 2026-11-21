@@ -226,6 +226,7 @@ function buildItemsFromRows(rawRows, picName) {
   let resolvedPic = picName || '';
   const dupCount = new Map();
   const activeItems = [];
+  const sheetPresentRows = [];
   let incompleteCount = 0;
 
   for (const r of rawRows) {
@@ -236,6 +237,16 @@ function buildItemsFromRows(rawRows, picName) {
     }
     if (/^vấn\s*đề\s*gặp\s*phải$/i.test(r.issue) || (/^stt$/i.test(r.stt) && /^dòng\s*tiền$/i.test(r.stream))) {
       continue;
+    }
+
+    // Ghi nhận mọi dòng hiện vẫn còn tồn tại trên Sheet để đối chiếu bảng Thống kê hôm nay.
+    if (r.issue) {
+      sheetPresentRows.push({
+        group: r.group,
+        issue: r.issue,
+        owner: r.owner,
+        supporter: r.supporter,
+      });
     }
 
     // Chỉ đẩy lên màn hình khi đã nhập đủ 6 thông tin bắt buộc trên dòng:
@@ -269,8 +280,38 @@ function buildItemsFromRows(rawRows, picName) {
     picName: resolvedPic || 'Hoàng Thị Quỳnh Mai',
     totalSheetRows: rawRows.length,
     incompleteCount,
+    sheetPresentRows,
     items: activeItems,
   };
+}
+
+export function pruneTodayHistoryBySheet(dayList = [], sheetRows = []) {
+  if (!Array.isArray(dayList) || dayList.length === 0) return [];
+  if (!Array.isArray(sheetRows) || sheetRows.length === 0) return [...dayList];
+
+  const exactSigs = new Set();
+  const looseSigs = new Set();
+  for (const r of sheetRows) {
+    if (!r) continue;
+    const issue = normalizeText(r.issue);
+    if (!issue) continue;
+    const grp = normalizeText(r.group);
+    const owner = normalizeText(r.owner);
+    const sup = normalizeText(r.supporter);
+    exactSigs.add(`${grp}|${issue}|${owner}|${sup}`);
+    looseSigs.add(`${grp}|${issue}`);
+  }
+
+  return dayList.filter((rec) => {
+    const issue = normalizeText(rec?.issue);
+    if (!issue) return false;
+    const grp = normalizeText(rec?.group);
+    const owner = normalizeText(rec?.owner);
+    const sup = normalizeText(rec?.supporter);
+    if (exactSigs.has(`${grp}|${issue}|${owner}|${sup}`)) return false;
+    if ((!sup || !owner) && looseSigs.has(`${grp}|${issue}`)) return false;
+    return true;
+  });
 }
 
 export function parseGvizPayload(text) {
@@ -751,6 +792,7 @@ if (typeof document !== 'undefined') {
     bellRinging: false,
     liveItems: new Map(),
     pendingMissing: new Map(),
+    lastSheetPresentRows: [],
     clearingItems: new Map(),
     newHighlights: new Map(),
     burnedAlerted: new Set(),
@@ -852,11 +894,15 @@ if (typeof document !== 'undefined') {
           state.historyByDate[dKey] = mergeDayRecords(state.historyByDate[dKey], list);
         }
       }
-      saveHistoryByDate(state.historyByDate);
     } else if (shared.date && Array.isArray(shared.recentCleared)) {
       state.historyByDate[shared.date] = mergeDayRecords(state.historyByDate[shared.date], shared.recentCleared);
-      saveHistoryByDate(state.historyByDate);
     }
+
+    const curToday = todayKeyVN();
+    if (Array.isArray(state.historyByDate[curToday]) && state.lastSheetPresentRows.length > 0) {
+      state.historyByDate[curToday] = pruneTodayHistoryBySheet(state.historyByDate[curToday], state.lastSheetPresentRows);
+    }
+    saveHistoryByDate(state.historyByDate);
   }
 
   async function fetchSharedState() {
@@ -911,6 +957,25 @@ if (typeof document !== 'undefined') {
       const now = Date.now();
       const curToday = todayKeyVN(now);
       state.isOnline = true;
+      state.lastSheetPresentRows = Array.isArray(result.sheetPresentRows) ? result.sheetPresentRows : [];
+
+      // Đồng bộ ngược bảng Thống kê hôm nay với Sheet: dòng nào vẫn còn trên Sheet thì gỡ khỏi lịch sử hoàn thành hôm nay.
+      let prunedBySheet = false;
+      const beforeLocalLen = (state.historyByDate[curToday] || []).length;
+      if (beforeLocalLen > 0 && state.lastSheetPresentRows.length > 0) {
+        const cleaned = pruneTodayHistoryBySheet(state.historyByDate[curToday], state.lastSheetPresentRows);
+        if (cleaned.length !== beforeLocalLen) {
+          state.historyByDate[curToday] = cleaned;
+          saveHistoryByDate(state.historyByDate);
+          prunedBySheet = true;
+        }
+      }
+      const serverTodayList = shared?.historyByDate?.[curToday] || (shared?.date === curToday ? shared?.recentCleared : null) || [];
+      const serverNeedsPrune =
+        Array.isArray(serverTodayList) &&
+        serverTodayList.length > 0 &&
+        state.lastSheetPresentRows.length > 0 &&
+        pruneTodayHistoryBySheet(serverTodayList, state.lastSheetPresentRows).length !== serverTodayList.length;
 
       const timerStore = loadTimerStore();
       const sharedTimers = shared?.timers || {};
@@ -1051,17 +1116,25 @@ if (typeof document !== 'undefined') {
         showToast(`ĐÃ PHÂN CÔNG · ${first.supporter}`, `${first.group} — ${first.issue}`, 'assigned');
       }
 
-      if (hasTimerDelta || newEntries.length > 0 || removedEntries.length > 0 || Object.keys(sharedTimers).length === 0) {
+      if (
+        hasTimerDelta ||
+        newEntries.length > 0 ||
+        removedEntries.length > 0 ||
+        prunedBySheet ||
+        serverNeedsPrune ||
+        Object.keys(sharedTimers).length === 0
+      ) {
         pushSharedDelta({
           timers: deltaTimers,
           removedIds: removedEntries.map((r) => r.id),
           clearedItems: clearedPayload,
+          activeSheetRows: state.lastSheetPresentRows,
         });
       }
 
       if (state.showStats) {
         updateHeaderOnly();
-        if (removedEntries.length > 0 && document.activeElement?.id !== 'wp-date-picker') {
+        if ((removedEntries.length > 0 || prunedBySheet) && document.activeElement?.id !== 'wp-date-picker') {
           render();
         }
       } else {

@@ -4,6 +4,43 @@
 const MAX_HISTORY_DAYS = 30;
 const MAX_ITEMS_PER_DAY = 200;
 
+function norm(s) {
+  return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Loại khỏi danh sách hoàn thành trong ngày những dòng HIỆN VẪN CÒN NGUYÊN trên Google Sheet
+ * (tránh lệch giữa bảng Thống kê với Sheet khi khôi phục Ctrl+Z hoặc từng bị chốt nhầm trước đó).
+ */
+export function pruneHistoryAgainstSheetRows(dayList = [], sheetRows = []) {
+  if (!Array.isArray(dayList) || dayList.length === 0) return [];
+  if (!Array.isArray(sheetRows) || sheetRows.length === 0) return [...dayList];
+
+  const exactSigs = new Set();
+  const looseSigs = new Set();
+  for (const r of sheetRows) {
+    if (!r) continue;
+    const issue = norm(r.issue);
+    if (!issue) continue;
+    const grp = norm(r.group);
+    const owner = norm(r.owner);
+    const sup = norm(r.supporter);
+    exactSigs.add(`${grp}|${issue}|${owner}|${sup}`);
+    looseSigs.add(`${grp}|${issue}`);
+  }
+
+  return dayList.filter((rec) => {
+    const issue = norm(rec?.issue);
+    if (!issue) return false;
+    const grp = norm(rec?.group);
+    const owner = norm(rec?.owner);
+    const sup = norm(rec?.supporter);
+    if (exactSigs.has(`${grp}|${issue}|${owner}|${sup}`)) return false;
+    if ((!sup || !owner) && looseSigs.has(`${grp}|${issue}`)) return false;
+    return true;
+  });
+}
+
 export function getTodayKey(nowMs = Date.now()) {
   // Theo múi giờ Việt Nam (UTC+7) để mọi máy đồng nhất cùng ngày
   const vn = new Date(nowMs + 7 * 3600 * 1000);
@@ -179,6 +216,12 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
         clearedAt,
       });
     }
+  }
+
+  // Đối chiếu bảng thống kê hôm nay với các dòng vẫn đang tồn tại trên Sheet:
+  // dòng nào vẫn còn trên Sheet thì gỡ khỏi danh sách "Đã hoàn thành" hôm nay để luôn khớp 100%.
+  if (Array.isArray(incoming.activeSheetRows) && Array.isArray(historyByDate[today])) {
+    historyByDate[today] = pruneHistoryAgainstSheetRows(historyByDate[today], incoming.activeSheetRows);
   }
 
   const sortedDates = Object.keys(historyByDate).sort((a, b) => b.localeCompare(a)).slice(0, MAX_HISTORY_DAYS);

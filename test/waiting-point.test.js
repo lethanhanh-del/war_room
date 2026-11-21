@@ -8,6 +8,7 @@ import {
   computeTiming,
   isCompleteWaitingRow,
   reconcileMissingItems,
+  pruneTodayHistoryBySheet,
   parseGvizPayload,
   parseCsvText,
   groupItemsByPerson,
@@ -17,7 +18,7 @@ import {
   formatDateLabelVN,
   fetchWaitingPoints,
 } from '../public/waiting-point.js';
-import { emptyWaitingPointState, mergeWaitingPointState } from '../src/waiting-point-sync.js';
+import { emptyWaitingPointState, mergeWaitingPointState, pruneHistoryAgainstSheetRows } from '../src/waiting-point-sync.js';
 
 test('parseTimeSpec xử lý đủ 12 mốc dropdown và các định dạng giờ', () => {
   const presets = [
@@ -239,6 +240,38 @@ test('Xóa 1 hàng chỉ chốt đúng 1 việc (không đánh hoàn thành toà
   assert.equal(r2.confirmedRemoved.length, 1);
   assert.equal(r2.confirmedRemoved[0].issue, 'Hư wifi');
   assert.equal(delPoll2.size, 2);
+});
+
+test('Bảng thống kê tự đối chiếu với Sheet: dòng còn trên Sheet sẽ không bị tính là đã hoàn thành', () => {
+  const now = Date.UTC(2026, 10, 21, 20, 30, 0); // 03:30 ngày 22/11 giờ VN
+  const sheetRows = [
+    { group: 'Networking', issue: 'buồn ngủ quớ', owner: 'TÂN', supporter: 'Chiến' },
+    { group: 'Networking', issue: 'hiihi', owner: 'Anh', supporter: 'Chá' },
+  ];
+  const s1 = mergeWaitingPointState(
+    emptyWaitingPointState(now),
+    {
+      clearedItems: [
+        { id: '1', group: 'Networking', issue: 'hiihi', owner: 'Anh', supporter: 'Chá', clearedAt: now - 60_000 },
+        { id: '2', group: 'Networking', issue: 'buồn ngủ quớ', owner: 'TÂN', supporter: 'Chiến', clearedAt: now - 60_000 },
+        { id: '3', group: 'Networking', issue: 'Hư Người', owner: 'Tân', supporter: 'Chiến', clearedAt: now - 60_000 },
+      ],
+    },
+    now,
+  );
+  assert.equal(s1.recentCleared.length, 3);
+
+  // Client prune & Server merge với activeSheetRows đều chỉ giữ lại đúng 1 dòng đã xóa thật ("Hư Người")
+  const clientCleaned = pruneTodayHistoryBySheet(s1.recentCleared, sheetRows);
+  assert.equal(clientCleaned.length, 1);
+  assert.equal(clientCleaned[0].issue, 'Hư Người');
+
+  const helperCleaned = pruneHistoryAgainstSheetRows(s1.recentCleared, sheetRows);
+  assert.equal(helperCleaned.length, 1);
+
+  const s2 = mergeWaitingPointState(s1, { activeSheetRows: sheetRows }, now + 5000);
+  assert.equal(s2.recentCleared.length, 1);
+  assert.equal(s2.recentCleared[0].issue, 'Hư Người');
 });
 
 test('Đọc trực tiếp tab Waiting Point (read-only) trên Google Sheet thành công', async () => {
