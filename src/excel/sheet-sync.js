@@ -49,7 +49,7 @@ async function claim(env, minGapMs, now) {
 }
 
 // Dòng tiền thuộc quyền đồng bộ: do đồng bộ ghi, hoặc nạp tay từ chính file tổng (bản tải về của Google Sheet này).
-const owned = (r) => r.uploaded_by === SYNC_USER.username || /master\s*task/i.test(r.file_name || '');
+const owned = (r) => r.uploaded_by === SYNC_USER.username || /master[\s_.-]*task/i.test(r.file_name || '');
 
 /** Dữ liệu đang lưu có khớp sheet không; orphans = dòng tiền thuộc quyền đồng bộ mà sheet đã bỏ / đổi tên / hỏng tiêu đề. */
 async function diff(env, plan) {
