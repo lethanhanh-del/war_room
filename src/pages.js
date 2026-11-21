@@ -86,6 +86,7 @@ export const NAV_PAGES = [
   ["/kpi", "KPI & kết quả"],
   ["/lich-truc", "Lịch trực 24/7"],
   ["/lich", "Hẹn lịch BOD"],
+  ["/waiting-point", "Waiting Point"],
 ];
 
 const NAV_STYLE = `<style>

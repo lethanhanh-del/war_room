@@ -7,6 +7,7 @@ import { config } from './config.js';
 import { DemoStore } from './store/demo.js';
 import { SheetStore } from './store/sheets.js';
 import { WarRoomService, HttpError } from './service.js';
+import { emptyWaitingPointState, mergeWaitingPointState } from './waiting-point-sync.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 fs.mkdirSync(config.dataDir, { recursive: true });
@@ -63,13 +64,17 @@ const app = express();
 app.disable('x-powered-by');
 // Bảng War Room cũ (public/war-room.html) là file HTML độc lập có script nội tuyến.
 const LEGACY_PAGES = new Set(['/war-room', '/war-room.html']);
+const WP_PAGES = new Set(['/waiting-point', '/waiting-point.html']);
 app.use((req, res, next) => {
   const scriptSrc = LEGACY_PAGES.has(req.path) ? "; script-src 'self' 'unsafe-inline'" : '';
+  const connectSrc = WP_PAGES.has(req.path)
+    ? "connect-src 'self' https://docs.google.com https://*.googleusercontent.com"
+    : "connect-src 'self'";
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     'X-Frame-Options': 'SAMEORIGIN',
-    'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'${scriptSrc}`,
+    'Content-Security-Policy': `default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; ${connectSrc}${scriptSrc}`,
   });
   next();
 });
@@ -91,6 +96,24 @@ app.get('/api/streams', (req, res) => {
 app.get('/api/dashboard', (req, res) => {
   if (!service.model) return res.status(503).json({ error: service.lastError || 'Đang tải dữ liệu, thử lại sau vài giây' });
   res.json(service.getDashboard());
+});
+
+const wpStateFile = path.join(config.dataDir, 'waiting-point-state.json');
+function readWpState() {
+  try {
+    if (fs.existsSync(wpStateFile)) {
+      return mergeWaitingPointState(JSON.parse(fs.readFileSync(wpStateFile, 'utf8')), {}, Date.now());
+    }
+  } catch {}
+  return emptyWaitingPointState();
+}
+app.get('/api/waiting-point', (req, res) => {
+  res.set('Cache-Control', 'no-store').json(readWpState());
+});
+app.post('/api/waiting-point', (req, res) => {
+  const next = mergeWaitingPointState(readWpState(), req.body && typeof req.body === 'object' ? req.body : {});
+  try { fs.writeFileSync(wpStateFile, JSON.stringify(next), 'utf8'); } catch {}
+  res.set('Cache-Control', 'no-store').json(next);
 });
 
 app.post('/api/operator/check', operator, (req, res) => res.json({ ok: true, actor: req.actor }));

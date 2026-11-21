@@ -34,20 +34,21 @@ import {
 } from "./auth.js";
 import { handleBookings } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
-import { handleLive, LiveRoom } from "./live.js";
+import { handleLive, LiveRoom, notifyLive } from "./live.js";
 import { changePasswordPage, loginPage, navBar } from "./pages.js";
 import { json, redirect, text } from "./http.js";
 import { handleExcel, sheetOnlyBase, withExcel } from "./excel/index.js";
 import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
 import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
 import { sharedLoader } from "./excel/gsheet.js";
+import { emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
 
-const VIEW_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/admin"]);
+const VIEW_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/admin"]);
 // Trang được chèn thanh điều hướng chung (navBar) vào đầu <body>.
-const NAV_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/admin"]);
+const NAV_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/admin"]);
 // Trang không trùng tên file trong public/: đường dẫn -> file phục vụ.
 const PAGE_ASSET = { "/": "/app/", "/lich-truc": "/war-room" };
 
@@ -85,6 +86,7 @@ export default {
 
     if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
     if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
+    if (path === "/api/waiting-point") return handleWaitingPoint(request, env, ctx);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
@@ -211,4 +213,34 @@ async function changePassword(request, env, user) {
     .run();
   await log(env, request, user.username, "password_changed");
   return redirect("/", await sessionCookie(env, user.username, pwVersion));
+}
+
+// Đồng bộ trạng thái đếm ngược & thống kê theo ngày của trang Waiting Point lưu trong bảng settings (D1).
+async function handleWaitingPoint(request, env, ctx) {
+  const KEY = "waiting_point_state";
+  const readCurrent = async () => {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(KEY).first();
+    if (!row?.value) return emptyWaitingPointState();
+    try {
+      return mergeWaitingPointState(JSON.parse(row.value), {}, Date.now());
+    } catch {
+      return emptyWaitingPointState();
+    }
+  };
+
+  if (request.method === "GET") {
+    return json(await readCurrent());
+  }
+  if (request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const next = mergeWaitingPointState(await readCurrent(), body && typeof body === "object" ? body : {});
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    )
+      .bind(KEY, JSON.stringify(next))
+      .run();
+    if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+    return json(next);
+  }
+  return json({ error: "Chỉ hỗ trợ GET và POST." }, 405);
 }
