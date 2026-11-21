@@ -120,6 +120,36 @@
         </table>
       </div>
     </section>
+
+    <!-- KPI-CLOSE: ô KPI bị chốt "chưa tick" lúc 05:00 nhưng đã từng tick trước hạn (vd lỡ bỏ tick) — admin xác nhận đúng hạn. src/kpi/close.js -->
+    <section class="panel" id="kpiReviewPanel">
+      <div class="panel-head">
+        <h2 class="panel-title">KPI cần xác nhận <span id="kpiReviewCount" class="panel-sub"></span></h2>
+        <div class="row"><button id="kpiReviewReload" class="btn" type="button">Tải lại</button></div>
+      </div>
+      <div class="notice">Ô KPI bị chốt <b>chưa tick</b> lúc 05:00 nhưng lịch sử cho thấy <b>đã từng tick trước hạn</b> (thường do lỡ bỏ tick). Xem lịch sử rồi bấm <b>Xác nhận đúng hạn</b> nếu đúng là bấm nhầm: ô được tính là Hoàn thành. Mỗi lần xác nhận / huỷ đều ghi nhật ký.</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ngày KPI</th><th>Dòng tiền · Nhóm</th><th>Người thực hiện</th><th>KPI</th><th>Lịch sử ô</th><th>Hiện tại</th><th></th></tr></thead>
+          <tbody id="kpiReviewBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- KPI-CLOSE: danh sách ngày đã chốt sổ, tải Excel để đối soát (GET /api/admin/kpi-close). src/kpi/close-export.js -->
+    <section class="panel" id="kpiClosePanel">
+      <div class="panel-head">
+        <h2 class="panel-title">Chốt sổ KPI <span id="kpiCloseCount" class="panel-sub"></span></h2>
+        <div class="row"><button id="kpiCloseReload" class="btn" type="button">Tải lại</button></div>
+      </div>
+      <div class="notice">Mỗi ngày KPI được chốt lúc 05:00 hôm sau. File Excel gồm từng task: trạng thái <b>lúc chốt</b> (lưu cố định), trạng thái <b>hiện tại</b> trên Sheet, <b>kết quả</b>, lịch sử tick / bỏ tick, xác nhận của admin; kèm tab Tổng hợp và Nhật ký.</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ngày KPI</th><th>Chốt lúc</th><th>Căn cứ</th><th>Đã tick</th><th>Chưa tick</th><th>Không xác định</th><th></th></tr></thead>
+          <tbody id="kpiCloseBody"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
   <div id="toast" class="toast"></div>
 
@@ -241,6 +271,81 @@
     loadUsers();
     loadLogs();
     connect();
+  })();
+  </script>
+
+  <!-- KPI-CLOSE: khung "KPI cần xác nhận" (GET / POST / DELETE /api/admin/kpi-review) -->
+  <script>
+  (() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const hm = (iso) => { const s = new Date(Date.parse(iso) + 7 * 3600e3).toISOString(); return `${s.slice(11, 16)} ${s.slice(8, 10)}/${s.slice(5, 7)}`; };
+    const dm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+    async function call(method, body) {
+      const res = await fetch("/api/admin/kpi-review", { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+      return data;
+    }
+    async function load() {
+      const body = $("kpiReviewBody");
+      try {
+        const { items } = await call("GET");
+        const open = items.filter((it) => !it.confirmed).length;
+        $("kpiReviewCount").textContent = items.length ? `${open} chờ xác nhận · ${items.length - open} đã xác nhận` : "";
+        if (!items.length) { body.innerHTML = '<tr><td colspan="7" class="muted">Không có ô nào cần xác nhận.</td></tr>'; return; }
+        body.innerHTML = items.map((it, i) => {
+          const hist = it.history.map((h) => `${hm(h.at)} ${h.change === "tick" ? "✔ tick" : "✖ bỏ tick"}`).join("<br>") + `<br><b>${hm(it.deadline)} chốt sổ: chưa tick</b>`;
+          const act = it.confirmed
+            ? `<div>Đã xác nhận bởi <b>${esc(it.confirmed.by)}</b> lúc ${hm(it.confirmed.at)}<br><i>${esc(it.confirmed.reason)}</i></div><button class="btn" data-undo="${i}" type="button">Huỷ xác nhận</button>`
+            : `<button class="btn btn-primary" data-ok="${i}" type="button">Xác nhận đúng hạn</button>`;
+          return `<tr><td>${dm(it.day)}</td><td>${esc(it.stream)} · ${esc(it.group)}</td><td>${esc(it.person)}</td><td>${esc(it.kpi)}</td><td>${hist}</td><td>${it.nowTicked ? "✔ đã tick" : "chưa tick"}</td><td>${act}</td></tr>`;
+        }).join("");
+        body.querySelectorAll("[data-ok]").forEach((b) => b.addEventListener("click", async () => {
+          const it = items[b.dataset.ok];
+          const reason = prompt(`Lý do xác nhận đúng hạn cho "${it.kpi}" (${it.person}, ngày ${dm(it.day)}):`);
+          if (!reason || !reason.trim()) return;
+          try { await call("POST", { day: it.day, cell: it.cell, reason }); load(); } catch (e) { alert(e.message); }
+        }));
+        body.querySelectorAll("[data-undo]").forEach((b) => b.addEventListener("click", async () => {
+          const it = items[b.dataset.undo];
+          if (!confirm(`Huỷ xác nhận đúng hạn cho "${it.kpi}" (${it.person}, ngày ${dm(it.day)})?`)) return;
+          try { await call("DELETE", { day: it.day, cell: it.cell }); load(); } catch (e) { alert(e.message); }
+        }));
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="7" class="muted">${esc(e.message)}</td></tr>`;
+      }
+    }
+    $("kpiReviewReload").addEventListener("click", load);
+    load();
+  })();
+  </script>
+
+  <!-- KPI-CLOSE: khung "Chốt sổ KPI" (GET /api/admin/kpi-close, tải Excel theo ngày) -->
+  <script>
+  (() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const hm = (iso) => { const s = new Date(Date.parse(iso) + 7 * 3600e3).toISOString(); return `${s.slice(11, 16)} ${s.slice(8, 10)}/${s.slice(5, 7)}`; };
+    const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+    async function load() {
+      const body = $("kpiCloseBody");
+      try {
+        const res = await fetch("/api/admin/kpi-close");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+        $("kpiCloseCount").textContent = data.days.length ? `${data.days.length} ngày đã chốt` : "";
+        if (!data.days.length) { body.innerHTML = '<tr><td colspan="7" class="muted">Chưa có ngày nào được chốt sổ.</td></tr>'; return; }
+        body.innerHTML = data.days.map((d) => `<tr><td>${dmy(d.day)}</td><td>${hm(d.closedAt)}</td><td>${esc(d.basis)}</td><td>${d.count.D}</td><td>${d.count.K}</td><td>${d.count.U}</td>`
+          + `<td><a class="btn" href="/api/admin/kpi-close?day=${encodeURIComponent(d.day)}" download>Tải Excel</a></td></tr>`).join("");
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="7" class="muted">${esc(e.message)}</td></tr>`;
+      }
+    }
+    $("kpiCloseReload").addEventListener("click", load);
+    load();
   })();
   </script>
 </body>

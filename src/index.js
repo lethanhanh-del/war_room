@@ -40,6 +40,8 @@ import { json, redirect, text } from "./http.js";
 import { handleExcel, sheetOnlyBase, withExcel } from "./excel/index.js";
 import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.js";
 import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
+import { handleKpiReview } from "./kpi/close.js"; // KPI-CLOSE: admin xác nhận đúng hạn
+import { handleKpiCloseExport } from "./kpi/close-export.js"; // KPI-CLOSE: tải Excel chốt sổ
 import { sharedLoader } from "./excel/gsheet.js";
 import { emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
 
@@ -100,7 +102,7 @@ export default {
     // Đồng bộ task từ Google Sheet WR - MASTER TASK (src/excel/sheet-sync.js): GET trạng thái, POST đồng bộ ngay.
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
     // KPI & kết quả 5 ngày từ Google Sheet KPI (src/kpi/): trang /kpi.
-    if (path === "/api/kpi" || path === "/api/kpi/sync") return handleKpi(request, env, url, ctx);
+    if (path === "/api/kpi" || path === "/api/kpi/sync" || path === "/api/kpi/audit") return handleKpi(request, env, url, ctx); // KPI-CLOSE: + /api/kpi/audit
     // Màn hình War Room dòng tiền (app React FE/) ở trang "/": cùng dữ liệu KPI, theo định dạng của app.
     if (path === "/api/dashboard") return handleDashboard(request, env, url, ctx);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
@@ -108,6 +110,8 @@ export default {
     if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, async () => sheetOnlyBase());
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
+      if (path === "/api/admin/kpi-review") return handleKpiReview(request, env, url, user); // KPI-CLOSE
+      if (path === "/api/admin/kpi-close") return handleKpiCloseExport(request, env, url, user); // KPI-CLOSE: tải Excel chốt sổ
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
     }
 

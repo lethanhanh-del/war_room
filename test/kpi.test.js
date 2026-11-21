@@ -166,7 +166,7 @@ test('kpi-model: trạng thái theo hôm nay, đếm, ghi chú ở KPI tồn đ�
   // Hạn của KPI ngày 21 là 05:00 sáng ngày 22 giờ VN (= 22:00 UTC ngày 21), du di 10 phút
   assert.equal(isLateTick('2026-11-21', '2026-11-21T16:59:00.000Z'), false); // 23:59 ngày 21
   assert.equal(isLateTick('2026-11-21', '2026-11-21T21:59:00.000Z'), false); // 04:59 ngày 22
-  assert.equal(isLateTick('2026-11-21', '2026-11-21T22:09:00.000Z'), false); // 05:09 ngày 22: còn du di
+  assert.equal(isLateTick('2026-11-21', '2026-11-21T22:09:00.000Z'), true); // 05:09 ngày 22: trễ (KPI-CLOSE: bỏ du di 10 phút)
   assert.equal(isLateTick('2026-11-21', '2026-11-21T22:11:00.000Z'), true); // 05:11 ngày 22
   // Chưa tick: trước 05:00 sáng hôm sau là Đang làm, từ 05:00 là Không đạt
   assert.equal(statusOf({ kpi: 'a', res: '' }, '2026-11-21', '2026-11-22', Date.UTC(2026, 10, 21, 21, 30)), 'N'); // 04:30 ngày 22

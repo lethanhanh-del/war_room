@@ -15,8 +15,8 @@ export const STATUSES = ['D', 'L', 'K', 'N', 'S'];
 /** Giờ hết hạn (giờ Việt Nam) của KPI, tính vào sáng hôm sau ngày của KPI. */
 export const DUE_HOUR = 5;
 export const DUE_LABEL = '05:00';
-/** Tick trong vòng 10 phút sau giờ hết hạn vẫn tính đúng hạn (Worker đọc sheet mỗi phút, có thể thấy tick trễ một chút). */
-export const LATE_GRACE_MS = 10 * 60 * 1000;
+/** Du di sau giờ hết hạn (KPI-CLOSE: 0 — ngày đã chốt sổ dùng bản chốt, xem statusOf). */
+export const LATE_GRACE_MS = 0; // KPI-CLOSE: bỏ ân hạn, hạn đúng 05:00 (trước: 10 phút)
 
 /** Thời điểm hết hạn (ms) của KPI ngày `date`: 05:00 sáng hôm sau giờ Việt Nam = 22:00 UTC của chính ngày đó. */
 export const dueAt = (date) => Date.parse(`${date}T00:00:00Z`) + (24 + DUE_HOUR - 7) * 3600 * 1000;
@@ -38,6 +38,8 @@ export function isLateTick(date, at) {
  */
 export function statusOf(cell, date, today, now) {
   if (!cell || (!cell.kpi && !cell.res)) return null;
+  // KPI-CLOSE: ngày đã chốt sổ lúc 05:00 (src/kpi/close.js): lúc chốt chưa tick mà nay tick -> trễ hạn; chưa tick -> tồn đọng.
+  if (cell.closed) return cell.res === 'D' ? (cell.closed === 'K' ? 'L' : 'D') : 'K';
   if (cell.res === 'D') return isLateTick(date, cell.at) ? 'L' : 'D';
   if (cell.res === 'K') return 'K';
   if (date > today) return 'S';

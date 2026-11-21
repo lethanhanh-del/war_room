@@ -21,6 +21,7 @@ import { parseKpiBook } from './sheet.js';
 import { toDashboard } from './dashboard.js';
 import { stampTicks } from './ticks.js';
 import { applyPlan, parsePlan } from './plan.js';
+import { applyCloses, auditReport, closeKpi } from './close.js'; // KPI-CLOSE: chốt sổ lúc 05:00
 
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 // WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
@@ -109,6 +110,7 @@ export async function syncKpi(env, { force = false, now = Date.now(), load = fet
     } else {
       await env.DB.prepare("UPDATE kpi_sheet SET error = '', warnings = ? WHERE id = 1").bind(warnings).run();
     }
+    await closeKpi(env, id, book.streams, now, yearOf(env)); // KPI-CLOSE: ghi quan sát + chốt ngày đã qua 05:00
     return { changed, streams: book.streams.length };
   } catch (e) {
     const error = errText(e);
@@ -183,6 +185,7 @@ export async function kpiData(env, now = Date.now()) {
   let streams = [];
   let warnings = [];
   try { streams = r?.data ? JSON.parse(r.data) : []; } catch { /* dữ liệu hỏng: coi như chưa có */ }
+  await applyCloses(env, id, streams); // KPI-CLOSE: gắn kết quả chốt sổ (cell.closed) cho trình duyệt
   try { warnings = JSON.parse(r?.warnings || '[]'); } catch { /* bỏ qua */ }
   const [teams, imports] = await Promise.all([listTeams(env).catch(() => []), listImports(env, { withTasks: false }).catch(() => [])]);
   const out = attachPeople(streams, teams, imports);
@@ -205,6 +208,7 @@ export async function kpiData(env, now = Date.now()) {
 }
 
 export async function handleKpi(request, env, url, ctx) {
+  if (url.pathname === '/api/kpi/audit') return json(await auditReport(env, kpiSheetId(env))); // KPI-CLOSE: xem bản chốt + nhật ký
   if (url.pathname === '/api/kpi/sync') {
     if (request.method !== 'POST') return json({ error: 'Chỉ hỗ trợ POST.' }, 405);
     const r = await syncKpi(env, { force: true });
