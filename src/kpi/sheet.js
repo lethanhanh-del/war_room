@@ -183,6 +183,17 @@ function picAbove(rows, end) {
   return '';
 }
 
+/** Số dòng tiền ghi trong cột "Dòng tiền" của tab task: "Dòng tiền 5: Equity / IPO" -> 5; không có -> null. */
+export function streamNoOf(sheet) {
+  for (const r of (sheet.rows || []).slice(0, 40)) {
+    for (const c of r.cells || []) {
+      const m = /^dong tien\s*(\d+)\s*:/.exec(normKey(c?.v));
+      if (m) return Number(m[1]);
+    }
+  }
+  return null;
+}
+
 /** Tab task của file master: có dòng tiêu đề "Task / Đầu việc", hoặc "Nhóm công việc" + "Người phụ trách". */
 export function isTaskTab(sheet) {
   return (sheet.rows || []).slice(0, 10).some((r) => {
@@ -222,6 +233,8 @@ export function parseKpiBook(tabs, opts = {}) {
       s.kpiSheet = kpiName;
       s.name = streamNameOf(taskName);
       if (!s.pic) s.pic = picAbove(owner.rows || [], 5);
+      const no = streamNoOf(owner);
+      if (no) s.no = no;
     }
     const key = normKey(s.name);
     if (seen.has(key)) { warnings.push(`${label}: dòng tiền “${s.name}” đã có bảng KPI ở tab khác, bỏ qua tab này.`); continue; }

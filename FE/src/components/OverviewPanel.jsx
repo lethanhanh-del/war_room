@@ -128,7 +128,7 @@ export default function OverviewPanel({
         {view.flows.map((f, i) => (
           <div className="ovf" key={f.key} onClick={() => onOpenDetail({ flow: f.key, group: 'all' })} title="Bấm để xem chi tiết">
             <span className="ovf-name">
-              <em>{i + 2}</em>
+              <em>{f.no ?? i + 2}</em>
               {f.label}
             </span>
             <div className="stack">

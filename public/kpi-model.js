@@ -2,36 +2,47 @@
 //
 // Mỗi ô (1 người, 1 ngày) có KPI và kết quả trên sheet: res 'D' = Đạt (đã tick), 'K' = ghi Không đạt, '' = chưa tick /
 // chưa nhập, '?' = chữ khác. Ô Đạt có thể kèm `at` = lúc Worker thấy ô được tick (src/kpi/ticks.js).
-// Hạn của 1 KPI là hết ngày của nó (giờ Việt Nam). Trạng thái hiển thị:
-//   D Đạt                  đã tick trong ngày của KPI (hoặc không biết giờ tick)
-//   L Hoàn thành trễ hạn   đã tick, nhưng sau khi hết ngày của KPI
-//   K Không đạt            ghi Không đạt, hoặc đã qua ngày mà chưa tick (tick sau đó -> Hoàn thành trễ hạn)
-//   N Đang làm             KPI của hôm nay, chưa tick
+// Hạn của 1 KPI là 05:00 sáng hôm sau, giờ Việt Nam (KPI ngày 21 hết hạn lúc 05:00 ngày 22). Trạng thái hiển thị:
+//   D Hoàn thành           đã tick trước hạn (hoặc không biết giờ tick); trên sheet có thể ghi Đạt
+//   L Hoàn thành trễ hạn   đã tick, nhưng sau hạn
+//   K Không đạt            ghi Không đạt, hoặc quá hạn mà chưa tick (tick sau đó -> Hoàn thành trễ hạn)
+//   N Đang làm             đã tới ngày của KPI, chưa quá hạn, chưa tick
 //   S Sắp tới              ngày chưa tới
-// Đã hoàn thành = Đạt + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
+// Đã hoàn thành = Hoàn thành (đúng hạn) + Hoàn thành trễ hạn. Tồn đọng = Không đạt tính đến ngày đang xem.
 
-export const STATUS_LABEL = { D: 'Đạt', L: 'Hoàn thành trễ hạn', K: 'Không đạt', N: 'Đang làm', S: 'Sắp tới' };
+export const STATUS_LABEL = { D: 'Hoàn thành', L: 'Hoàn thành trễ hạn', K: 'Không đạt', N: 'Đang làm', S: 'Sắp tới' };
 export const STATUSES = ['D', 'L', 'K', 'N', 'S'];
-/** Tick trong vòng 10 phút sau nửa đêm vẫn tính đúng hạn (Worker đọc sheet mỗi phút, có thể thấy tick trễ một chút). */
+/** Giờ hết hạn (giờ Việt Nam) của KPI, tính vào sáng hôm sau ngày của KPI. */
+export const DUE_HOUR = 5;
+export const DUE_LABEL = '05:00';
+/** Tick trong vòng 10 phút sau giờ hết hạn vẫn tính đúng hạn (Worker đọc sheet mỗi phút, có thể thấy tick trễ một chút). */
 export const LATE_GRACE_MS = 10 * 60 * 1000;
+
+/** Thời điểm hết hạn (ms) của KPI ngày `date`: 05:00 sáng hôm sau giờ Việt Nam = 22:00 UTC của chính ngày đó. */
+export const dueAt = (date) => Date.parse(`${date}T00:00:00Z`) + (24 + DUE_HOUR - 7) * 3600 * 1000;
 const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
 /** "2026-11-23" -> "T2". */
 export const weekday = (date) => WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()] || '';
 
-/** Ô được tick lúc `at` (ISO) có trễ hạn không: sau khi hết ngày `date` của KPI, theo giờ Việt Nam. */
+/** Ô được tick lúc `at` (ISO) có trễ hạn không: sau hạn của KPI ngày `date` (05:00 sáng hôm sau, du di 10 phút). */
 export function isLateTick(date, at) {
   const t = Date.parse(at || '');
   if (!t) return false;
-  return new Date(t - LATE_GRACE_MS + 7 * 3600 * 1000).toISOString().slice(0, 10) > date;
+  return t > dueAt(date) + LATE_GRACE_MS;
 }
 
-/** Trạng thái 1 ô KPI; null = ngày đó không có KPI. */
-export function statusOf(cell, date, today) {
+/**
+ * Trạng thái 1 ô KPI; null = ngày đó không có KPI.
+ * now (ms) = giờ hiện tại để biết KPI đã quá hạn chưa; không có thì coi quá hạn khi đã sang ngày khác.
+ */
+export function statusOf(cell, date, today, now) {
   if (!cell || (!cell.kpi && !cell.res)) return null;
   if (cell.res === 'D') return isLateTick(date, cell.at) ? 'L' : 'D';
   if (cell.res === 'K') return 'K';
-  return date > today ? 'S' : date === today ? 'N' : 'K';
+  if (date > today) return 'S';
+  const overdue = now ? now >= dueAt(date) : date < today;
+  return overdue ? 'K' : 'N';
 }
 
 /**
@@ -50,7 +61,7 @@ export function buildModel(data) {
       (g.rows || []).forEach((r, ri) => {
         for (const d of days) {
           const cell = r.cells?.[d.date];
-          const status = statusOf(cell, d.date, today);
+          const status = statusOf(cell, d.date, today, data.now);
           if (!status) continue;
           const rowKey = `${s.key}/${g.key}/${ri}`;
           gItems.push({
@@ -88,7 +99,7 @@ export function count(items) {
   return c;
 }
 
-/** Số KPI đã hoàn thành của 1 kết quả count(): Đạt + Hoàn thành trễ hạn. */
+/** Số KPI đã hoàn thành của 1 kết quả count(): Hoàn thành (đúng hạn) + Hoàn thành trễ hạn. */
 export const doneOf = (c) => c.D + c.L;
 export const isDone = (it) => it.status === 'D' || it.status === 'L';
 
