@@ -1,0 +1,20 @@
+# Dependencies & build
+node_modules/
+dist/
+.vercel/
+
+# Env & secrets — KHÔNG commit
+.env
+.env.*
+!.env.example
+*service-account*.json
+sa*.json
+*-key.json
+credentials*.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
