@@ -5,42 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Quản trị – Tài khoản &amp; Nhật ký | WAR ROOM</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" />
   <style>
+    /* War Room v5 "Night Ops" (docs/STYLE_GUIDE.md): cùng token với trang Dòng tiền / KPI / War Room.
+       Lime (--accent) chỉ cho trạng thái giao diện (đang chọn, bây giờ, điều hướng); màu trạng thái có nghĩa cố định. */
     :root {
-      --bg: #f4f6f9; --surface: #fff; --surface-subtle: #f8fafc; --surface-hover: #f1f5f9;
-      --border: #e2e8f0; --border-strong: #cbd5e1;
-      --navy-950: #0c1f3a; --navy-800: #17365d; --navy-700: #1e477a; --navy-100: #e8f0fa;
-      --text-primary: #0f172a; --text-secondary: #475569; --text-muted: #64748b; --accent: #1d4ed8;
-      --success: #0f766e; --success-bg: #ecfdf5; --success-border: #a7f3d0;
-      --warning: #b45309; --warning-bg: #fffbeb; --warning-border: #fde68a;
-      --danger: #dc2626; --danger-bg: #fef2f2; --danger-border: #fecaca;
-      --font-sans: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
-      --font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+      color-scheme: dark;
+      --bg: #07090d; --surface: #0e1218; --surface-subtle: #151a23; --surface-hover: #1b222d;
+      --border: #1c232e; --border-strong: #2a3442;
+      --navy-950: #0a0d12; --navy-800: #151a23; --navy-700: #1b222d; --navy-100: color-mix(in srgb, #3da9fc 14%, #0e1218);
+      --text-primary: #f3f6fa; --text-secondary: #b6c0ce; --text-muted: #8994a6;
+      --accent: #c8ff4d; --on-accent: #0a0d12; --info: #3da9fc;
+      --success: #2ee6a6; --success-bg: color-mix(in srgb, #2ee6a6 16%, transparent); --success-border: color-mix(in srgb, #2ee6a6 60%, transparent);
+      --warning: #ffb020; --warning-bg: color-mix(in srgb, #ffb020 16%, transparent); --warning-border: color-mix(in srgb, #ffb020 60%, transparent);
+      --danger: #ff4d6d; --danger-bg: color-mix(in srgb, #ff4d6d 16%, transparent); --danger-border: color-mix(in srgb, #ff4d6d 60%, transparent);
+      --font-sans: 'Be Vietnam Pro', 'Segoe UI', Roboto, system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text-primary); background: var(--bg); }
+    body { background-image: radial-gradient(circle at 0% 0%, rgba(200, 255, 77, 0.05), transparent 40%); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
     .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-    .topbar { background: linear-gradient(135deg, var(--navy-950) 0%, var(--navy-800) 100%); color: #fff; box-shadow: 0 4px 16px rgba(12,31,58,.2); }
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); color: var(--text-primary); }
     .topbar-inner, main { max-width: 1240px; margin: 0 auto; padding: 12px 20px; }
     .topbar-inner { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
-    .brand-title { font-weight: 800; font-size: 16px; letter-spacing: .02em; }
-    .brand-sub { font-size: 12px; color: rgba(255,255,255,.72); }
+    .brand-title { font-weight: 800; font-size: 16px; letter-spacing: .03em; text-transform: uppercase; }
+    .brand-sub { font-size: 12px; color: var(--text-muted); }
     .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; border-radius: 8px; font: 600 12.5px var(--font-sans); cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); text-decoration: none; white-space: nowrap; }
     .btn:hover { background: var(--surface-hover); }
     .btn:disabled { opacity: .6; cursor: wait; }
-    .btn-primary { background: var(--navy-800); border-color: var(--navy-800); color: #fff; }
-    .btn-primary:hover { background: var(--navy-700); }
-    .btn-ghost-top { background: rgba(255,255,255,.1); border-color: rgba(255,255,255,.22); color: #fff; }
-    .btn-ghost-top:hover { background: rgba(255,255,255,.18); }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+    .btn-primary:hover { background: var(--accent); filter: brightness(1.08); }
+    .btn-ghost-top { background: var(--surface-subtle); border-color: var(--border-strong); color: var(--text-primary); }
+    .btn-ghost-top:hover { background: var(--surface-hover); }
     .btn-danger { color: var(--danger); border-color: var(--danger-border); }
     .btn-danger:hover { background: var(--danger-bg); }
     main { padding-top: 18px; padding-bottom: 40px; display: flex; flex-direction: column; gap: 16px; }
     .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
     .panel-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .panel-title { margin: 0; font-size: 15px; color: var(--navy-800); }
+    .panel-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--text-primary); }
     .panel-sub { font-size: 12px; color: var(--text-muted); font-weight: 400; }
-    .input { font: 13px var(--font-sans); padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 8px; min-width: 220px; }
+    .input { font: 13px var(--font-sans); padding: 7px 10px; border: 1px solid var(--border-strong); border-radius: 8px; min-width: 220px; background: var(--surface-subtle); color: var(--text-primary); }
     .input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
     .notice { margin: 12px 16px 0; padding: 9px 12px; border-radius: 8px; background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); font-size: 13px; }
     .online { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px; font-size: 13px; }
@@ -48,7 +56,7 @@
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-    th { background: var(--surface-subtle); color: var(--text-secondary); font-size: 12px; font-weight: 700; white-space: nowrap; position: sticky; top: 0; }
+    th { background: var(--surface-subtle); color: var(--text-muted); font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; position: sticky; top: 0; }
     tbody tr:hover { background: var(--surface-hover); }
     td.nowrap { white-space: nowrap; }
     .uname { color: var(--accent); cursor: pointer; font-weight: 700; background: none; border: 0; padding: 0; font: 700 13px var(--font-mono); }
@@ -56,10 +64,10 @@
     .pill.ok { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
     .pill.warn { color: var(--warning); background: var(--warning-bg); border-color: var(--warning-border); }
     .pill.bad { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }
-    .pill.info { color: var(--navy-800); background: var(--navy-100); border-color: #c7d7ee; }
+    .pill.info { color: var(--info); background: var(--navy-100); border-color: color-mix(in srgb, var(--info) 60%, transparent); }
     .logs-wrap { max-height: 560px; overflow: auto; }
     .muted { color: var(--text-muted); }
-    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy-950); color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
+    .toast { border: 1px solid var(--border-strong); position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--surface-subtle); color: var(--text-primary); padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
     @media (max-width: 760px) {
       .topbar-inner, main { padding-left: 16px; padding-right: 16px; }
       .input { min-width: 0; flex: 1; }

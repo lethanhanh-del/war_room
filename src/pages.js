@@ -1,19 +1,26 @@
 // Trang HTML do Worker trả về: đăng nhập, đổi mật khẩu, và phần chèn vào dashboard.
 import { esc } from "./http.js";
 
+// Style War Room v5 "Night Ops" (docs/STYLE_GUIDE.md): nền gần đen, lime cho nút chính / điều hướng.
+const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700;800&display=swap" />`;
+
 const CSS = `
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f6f9; font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; color: #0f172a; }
-  form { width: min(380px, calc(100vw - 32px)); background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; box-shadow: 0 4px 24px rgba(12, 31, 58, .08); display: flex; flex-direction: column; gap: 12px; }
-  h1 { margin: 0; font-size: 18px; color: #17365d; }
-  p { margin: 0; font-size: 13px; color: #64748b; }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: #475569; }
-  input { box-sizing: border-box; width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #cbd5e1; border-radius: 8px; font-family: inherit; }
-  input:focus { outline: 2px solid #1d4ed8; outline-offset: 1px; }
-  button { margin-top: 4px; width: 100%; padding: 10px; font-size: 15px; font-weight: 600; color: #fff; background: #17365d; border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; }
-  button:hover { background: #1e477a; }
-  .err { color: #dc2626; font-size: 13px; font-weight: 600; }
-  .info { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
-  a { color: #1d4ed8; font-size: 13px; }
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #07090d radial-gradient(circle at 0% 0%, rgba(200, 255, 77, .05), transparent 40%) fixed; font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; color: #f3f6fa; -webkit-font-smoothing: antialiased; }
+  form { width: min(380px, calc(100vw - 32px)); background: #0e1218; border: 1px solid #1c232e; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 12px; }
+  h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #c8ff4d; }
+  p { margin: 0; font-size: 13px; color: #8994a6; }
+  p b { color: #f3f6fa; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #8994a6; }
+  input { box-sizing: border-box; width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #2a3442; border-radius: 8px; font-family: inherit; background: #151a23; color: #f3f6fa; text-transform: none; letter-spacing: 0; }
+  input:focus { outline: 2px solid #c8ff4d; outline-offset: 1px; }
+  button { margin-top: 4px; width: 100%; padding: 10px; font-size: 15px; font-weight: 700; color: #0a0d12; background: #c8ff4d; border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; }
+  button:hover { filter: brightness(1.08); }
+  .err { color: #ff4d6d; font-size: 13px; font-weight: 600; }
+  .info { color: #ffb020; background: rgba(255, 176, 32, .12); border: 1px solid rgba(255, 176, 32, .5); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  a { color: #c8ff4d; font-size: 13px; }
 `;
 
 function page(title, body, status = 200) {
@@ -23,6 +30,7 @@ function page(title, body, status = 200) {
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${esc(title)}</title>
+${FONTS}
 <style>${CSS}</style>
 </head>
 <body>
@@ -73,9 +81,11 @@ export function changePasswordPage(user, { error = "", info = "", forced = false
 // Chèn vào dashboard lúc phục vụ (HTMLRewriter) để không mất khi ai đó ghi đè public/index.html.
 // Màn hình hẹp (điện thoại): nút lịch chỉ còn 📅, ô người dùng ẩn tên, để hai nút không đè nhau.
 const STYLE = `<style>
-.wr-pill{position:fixed;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;background:#17365d;color:#fff;font:500 13px 'Segoe UI',system-ui,sans-serif;box-shadow:0 6px 20px rgba(12,31,58,.3);text-decoration:none;white-space:nowrap}
-.wr-pill a,a.wr-pill{color:#fff;text-decoration:none;font-weight:600}
-.wr-pill .wr-dim{opacity:.85}
+.wr-pill{position:fixed;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#f3f6fa;font:500 13px 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;text-decoration:none;white-space:nowrap}
+.wr-pill a,a.wr-pill{color:#f3f6fa;text-decoration:none;font-weight:600}
+.wr-pill a:hover,a.wr-pill:hover{color:#c8ff4d}
+a.wr-pill:hover{border-color:#c8ff4d}
+.wr-pill .wr-dim{color:#8994a6;font-weight:500}
 .wr-cal{right:16px}
 .wr-user{left:16px}
 @media (max-width:600px){.wr-pill{padding:9px 12px;gap:6px}.wr-cal .wr-txt,.wr-user .wr-name{display:none}}

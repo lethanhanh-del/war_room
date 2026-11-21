@@ -36,7 +36,8 @@ const initials = (n) => {
 const short = (n) => String(n || '').trim().split(/\s+/).slice(-2).join(' ');
 const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
 const ORDER = { D: 0, K: 1, C: 2, S: 3 };
-const tone = (p) => (p == null ? '' : p >= 80 ? 'ok' : p >= 50 ? '' : 'bad');
+/** Màu % đạt theo style guide Night Ops: >= 100% xanh, >= 70% vàng, < 70% đỏ. */
+const tone = (p) => (p == null ? '' : p >= 100 ? 'ok' : p >= 70 ? 'mid' : 'bad');
 
 // ---------- giao diện: dùng chung lựa chọn tối / sáng / TV với trang Dòng tiền ----------
 const store = {
@@ -362,13 +363,13 @@ function tableHtml(x, { tv = false } = {}) {
     const c = count(due);
     const p = pct(c.D, c.total);
     const backlog = c.K + c.C;
-    const name = tv ? `<b>${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
+    const name = tv ? `<b title="${esc(s.name)}">${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
         <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${c.D}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
   const legend = ['D', 'K', 'C', 'S'].map((st) => `<span><i class="kd st-${st}"></i>${STATUS_LABEL[st]}</span>`).join('');
   return `<section class="k-panel k-streams" aria-labelledby="k-tbl-t"><header class="k-phead"><div><h2 id="k-tbl-t">Kết quả theo dòng tiền</h2>${tv ? '' : '<p class="hint">Mỗi ô vuông là 1 KPI của 1 người trong ngày. Bấm tên dòng tiền để xem chi tiết từng nhóm.</p>'}</div>${tv ? '' : `<div class="k-legend-row">${legend}</div>`}</header>
-      <div class="k-table" role="table" style="--days:${m.days.length}"><div class="kt-row kt-head" role="row"><div class="kt-c kt-stream" role="columnheader">Dòng tiền</div>${head}<div class="kt-c kt-sum" role="columnheader">Lũy kế đến hôm nay</div></div>${rows}</div></section>`;
+      <div class="k-table" role="table" style="--days:${m.days.length}"><div class="kt-row kt-head" role="row"><div class="kt-c kt-stream" role="columnheader">Dòng tiền</div>${head}<div class="kt-c kt-sum" role="columnheader">${tv ? 'Lũy kế' : 'Lũy kế đến hôm nay'}</div></div>${rows}</div></section>`;
 }
 
 // ----- Kế hoạch & kết quả theo nhóm -----
