@@ -182,9 +182,11 @@ export async function readSheet(id, { now = Date.now() } = {}) {
 export async function readSheets(ids, { now = Date.now(), previous = new Map() } = {}) {
   const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
   const sections = [];
-  const byStream = new Map();
+  const byNo = new Map(); // cùng dòng tiền: cùng số ("Dòng tiền 2: …") hoặc cùng tên (bỏ dấu, hoa/thường, dấu câu)
+  const byName = new Map();
   const warnings = [];
   const errors = [];
+  const failed = []; // cảnh báo sheet đọc lỗi: đưa lên đầu danh sách
   const fresh = new Map();
   for (const [i, id] of ids.entries()) {
     const label = `Google Sheet ${i + 1} (…${id.slice(-6)})`;
@@ -198,18 +200,18 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
       errors.push(error);
       book = previous.get(id);
       if (!book && i === 0) throw new Error(error);
-      warnings.push(book ? `${error} Đang giữ dữ liệu lần đọc trước.` : error);
+      failed.push(book ? `${error} Đang giữ dữ liệu lần đọc trước.` : error);
       if (!book) continue;
     }
     warnings.push(...(i ? book.warnings.map((w) => `${label}: ${w}`) : book.warnings));
     for (const sec of book.sections) {
       // Dòng của file sau đánh số tiếp sau file trước, để thứ tự task và mã task không trùng.
       const tasks = i ? sec.tasks.map((t) => ({ ...t, row: t.row + i * 100000 })) : sec.tasks;
-      const key = loose(sec.name);
-      const prev = byStream.get(key);
+      const prev = (sec.streamNo && byNo.get(sec.streamNo)) || byName.get(loose(sec.name));
       if (!prev) {
         const copy = { ...sec, tasks: [...tasks] };
-        byStream.set(key, copy);
+        if (sec.streamNo) byNo.set(sec.streamNo, copy);
+        byName.set(loose(sec.name), copy);
         sections.push(copy);
         continue;
       }
@@ -221,9 +223,12 @@ export async function readSheets(ids, { now = Date.now(), previous = new Map() }
         prev.tasks.push(code === t.code ? t : { ...t, code });
       }
       if (!prev.pic && sec.pic) prev.pic = sec.pic;
-      if (!prev.streamNo && sec.streamNo) Object.assign(prev, { streamNo: sec.streamNo, code: sec.code, title: sec.title });
+      if (!prev.streamNo && sec.streamNo) {
+        Object.assign(prev, { streamNo: sec.streamNo, code: sec.code, title: sec.title });
+        byNo.set(sec.streamNo, prev);
+      }
     }
   }
   if (!fresh.size) throw new Error(errors.join(' · '));
-  return { format: 'master', sections, warnings, fresh };
+  return { format: 'master', sections, warnings: [...failed, ...warnings], fresh };
 }

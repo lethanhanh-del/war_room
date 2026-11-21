@@ -1,15 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
 import { readXlsx } from '../src/excel/xlsx.js';
+import { DatabaseSync, fakeD1 } from './fixtures/d1.js';
 import { MASTER_HEADER, makeZip, masterFile, rosterFile, sheetXml } from './fixtures/xlsx.js';
-
-// src/live.js import "cloudflare:workers" (chỉ có trên Worker): khi chạy thử trên Node, thay bằng bản rỗng.
-register(`data:text/javascript,${encodeURIComponent(`
-export async function resolve(specifier, context, next) {
-  if (specifier === 'cloudflare:workers') return { url: 'data:text/javascript,export class DurableObject {}', shortCircuit: true };
-  return next(specifier, context);
-}`)}`);
 
 test('readXlsx: dừng đọc sheet sau hàng trăm dòng trống liên tiếp', async () => {
   const rows = [[1, MASTER_HEADER], [2, [1, 'Banking', 'Nhóm', 'Task A', 'Người A']]];
@@ -27,39 +20,7 @@ test('readXlsx: dừng đọc sheet sau hàng trăm dòng trống liên tiếp',
   assert.deepEqual(book.sheets[0].rows.map((r) => r.cells[3]?.v).filter(Boolean), ['Task / Đầu việc', 'Task A', 'Task B']);
 });
 
-// ---------- nạp file phân chia nhiệm vụ qua API, D1 giả lập bằng SQLite của Node ----------
-
-let DatabaseSync = null;
-try {
-  ({ DatabaseSync } = await import('node:sqlite'));
-} catch {
-  /* Node chưa có node:sqlite: bỏ qua phần dưới */
-}
-
-function fakeD1() {
-  const db = new DatabaseSync(':memory:');
-  const stmt = (sql, args = []) => ({
-    bind: (...a) => stmt(sql, a),
-    async run() { return { meta: { changes: Number(db.prepare(sql).run(...args).changes) } }; },
-    async first() { return db.prepare(sql).get(...args) ?? null; },
-    async all() { return { results: db.prepare(sql).all(...args) }; },
-  });
-  return {
-    prepare: (sql) => stmt(sql),
-    async batch(list) {
-      db.exec('BEGIN');
-      try {
-        const out = [];
-        for (const s of list) out.push(await s.run());
-        db.exec('COMMIT');
-        return out;
-      } catch (e) {
-        db.exec('ROLLBACK');
-        throw e;
-      }
-    },
-  };
-}
+// ---------- nạp file phân chia nhiệm vụ qua API, D1 giả lập (test/fixtures/d1.js) ----------
 
 const emptyCounts = () => ({ total: 0, done: 0, doing: 0, review: 0, waiting: 0, overdue: 0, todo: 0 });
 const WS = {

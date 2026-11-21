@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { csvSheet, NOT_PUBLIC, parseCsv, parseSheetList, readSheet, sheetId, streamSections } from '../src/excel/gsheet.js';
+import { csvSheet, DEFAULT_SHEETS, NOT_PUBLIC, parseCsv, parseSheetList, readSheet, readSheets, sheetId, sheetIds, streamSections } from '../src/excel/gsheet.js';
 import { extractWorkbook } from '../src/excel/tasks.js';
+import { DatabaseSync, fakeD1 } from './fixtures/d1.js';
 
 const NOW = Date.UTC(2026, 10, 21, 8, 0, 0); // 21/11/2026 15:00 giờ VN
 const MASTER = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0';
@@ -13,6 +14,15 @@ test('sheetId: mặc định WR - MASTER TASK, nhận link hoặc ID, "off" đ�
   assert.equal(sheetId({ EXCEL_SHEET_URL: MASTER }), MASTER);
   assert.equal(sheetId({ EXCEL_SHEET_URL: 'off' }), '');
   assert.equal(sheetId({ EXCEL_SHEET_URL: 'không phải link' }), '');
+});
+
+test('sheetIds: mặc định WR - MASTER TASK + sheet thứ 2; nhiều link / ID cách nhau bởi dấu phẩy, chấm phẩy, xuống dòng; bỏ trùng', () => {
+  assert.deepEqual(sheetIds({}), DEFAULT_SHEETS);
+  assert.equal(DEFAULT_SHEETS[0], MASTER);
+  const second = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY';
+  assert.deepEqual(sheetIds({ EXCEL_SHEET_URL: `https://docs.google.com/spreadsheets/d/${second}/edit?gid=562479862#gid=562479862,\n ${MASTER} ; ${second}` }), [second, MASTER]);
+  assert.deepEqual(sheetIds({ EXCEL_SHEET_URL: 'off' }), []);
+  assert.deepEqual(sheetIds({ EXCEL_SHEET_URL: 'không phải link' }), []);
 });
 
 test('parseSheetList: tên + gid các sheet đang hiện, giải mã ký tự thoát, bỏ trùng', () => {
@@ -68,13 +78,13 @@ test('CSV từ Google Sheet đọc bằng đúng quy tắc của "Nạp task Exc
   assert.match(book.warnings.join(' '), /Tài chính/);
 });
 
-/** Giả lập Google: url -> [nội dung, Content-Type]. */
+/** Giả lập Google: url -> [nội dung, Content-Type, mã HTTP (mặc định 200)]. */
 function fakeGoogle(routes) {
   const real = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const hit = Object.entries(routes).find(([k]) => String(url).endsWith(k));
     if (!hit) return new Response('not found', { status: 404 });
-    return new Response(hit[1][0], { headers: { 'Content-Type': hit[1][1] } });
+    return new Response(hit[1][0], { status: hit[1][2] || 200, headers: { 'Content-Type': hit[1][1] } });
   };
   return () => { globalThis.fetch = real; };
 }
@@ -131,6 +141,114 @@ test('readSheet: Sheet chưa chia sẻ công khai -> lỗi hướng dẫn chia s
   });
   try {
     await assert.rejects(readSheet('X'), { message: NOT_PUBLIC });
+  } finally {
+    restore();
+  }
+});
+
+// ---------- nhiều Google Sheet (EXCEL_SHEET_URL có nhiều link) ----------
+
+const A = 'SHEET_A_000000000000000001';
+const B = 'SHEET_B_000000000000000002';
+/** Google Sheet công khai: tabs = [[tên sheet, CSV]]. */
+const publicSheet = (id, tabs) => Object.fromEntries([
+  [`/d/${id}/htmlview`, [tabs.map(([name], i) => `items.push({name: "${name}", pageUrl: "x", gid: "${i + 1}"});`).join(' '), 'text/html']],
+  ...tabs.map(([, csv], i) => [`${id}/export?format=csv&gid=${i + 1}`, [csv, 'text/csv; charset=utf-8']]),
+]);
+const privateSheet = (id) => ({ [`/d/${id}/htmlview`]: ['', 'text/html', 401] });
+const row = (stt, stream, group, task, owner, status = 'Đang thực hiện', blocker = '') => `${stt},${stream},${group},${task},${owner},,25/11/2026,${status},P0,Biên bản,${blocker}`;
+const TABS_A = [['Dòng tiền Banking', `${HEADER}\n${row(1, 'Dòng tiền 2: Banking', 'SS1', 'Chốt hạn mức', 'Nguyễn Thế Nhiên')}`]];
+const TABS_B = [
+  ['Dòng tiền banking', `${HEADER}\n${row(1, 'Dòng tiền 2: Banking', 'H300', 'Làm việc với Delta', 'Trần Văn An', 'Vướng mắc', 'Chờ phán quyết')}`],
+  ['Dòng tiền Nợ khó đòi', `${HEADER}\n${row(1, 'Dòng tiền 3: Nợ khó đòi', 'Thu hồi', 'Gửi thông báo nợ', 'Lê Thị Bình')}`],
+];
+
+test('readSheets: gộp nhiều Google Sheet — cùng dòng tiền thì nối task (STT trùng thêm hậu tố ·S2), dòng tiền mới thêm thẻ', async () => {
+  const restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(B, TABS_B) });
+  try {
+    const book = await readSheets([A, B], { now: NOW });
+    assert.deepEqual(book.sections.map((s) => [s.code, s.name, s.tasks.map((t) => t.subject)]), [
+      ['DT02', 'Banking', ['Chốt hạn mức', 'Làm việc với Delta']],
+      ['DT03', 'Nợ khó đòi', ['Gửi thông báo nợ']],
+    ]);
+    // Sheet tổng không có cột "Mã task": id task trên dashboard theo số dòng -> dòng của sheet 2 đánh số tiếp, không trùng.
+    const [first, second] = book.sections[0].tasks;
+    assert.ok(second.row > first.row + 99999, `${first.row} / ${second.row}`);
+    assert.deepEqual([...book.fresh.keys()], [A, B]);
+    assert.deepEqual(book.warnings, []);
+  } finally {
+    restore();
+  }
+
+  // Có cột "Mã task" và 2 sheet trùng mã trong cùng dòng tiền: mã của sheet sau thêm hậu tố ·S2.
+  const withCode = (tabs) => tabs.map(([name, csv]) => [name, csv.replace(/^STT,/, 'Mã task,').replace(/\n1,/g, '\nT1,')]);
+  const again = fakeGoogle({ ...publicSheet(A, withCode(TABS_A)), ...publicSheet(B, withCode(TABS_B)) });
+  try {
+    const book = await readSheets([A, B], { now: NOW });
+    assert.deepEqual(book.sections.map((s) => s.tasks.map((t) => t.code)), [['T1', 'T1·S2'], ['T1']]);
+  } finally {
+    again();
+  }
+});
+
+test('readSheets: 1 sheet đọc lỗi — có bản trước thì dùng tạm, chưa có thì bỏ qua (sheet đầu tiên: dừng); lỗi hết thì báo lỗi', async () => {
+  let restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(B, TABS_B) });
+  try {
+    const before = await readSheets([A, B], { now: NOW });
+    restore();
+    restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...privateSheet(B) });
+
+    const skipped = await readSheets([A, B], { now: NOW });
+    assert.deepEqual(skipped.sections.map((s) => [s.name, s.tasks.length]), [['Banking', 1]]);
+    assert.deepEqual(skipped.warnings, [`Google Sheet 2 (…000002): ${NOT_PUBLIC}`]);
+    assert.deepEqual([...skipped.fresh.keys()], [A]);
+
+    const kept = await readSheets([A, B], { now: NOW, previous: new Map([[B, before.fresh.get(B)]]) });
+    assert.deepEqual(kept.sections.map((s) => [s.name, s.tasks.length]), [['Banking', 2], ['Nợ khó đòi', 1]]);
+    assert.deepEqual(kept.warnings, [`Google Sheet 2 (…000002): ${NOT_PUBLIC} Đang giữ dữ liệu lần đọc trước.`]);
+    assert.deepEqual([...kept.fresh.keys()], [A]);
+
+    // Sheet đầu tiên chưa từng đọc được: không đồng bộ lượt này, dashboard giữ nguyên.
+    await assert.rejects(readSheets([B, A], { now: NOW }), { message: `Google Sheet 1 (…000002): ${NOT_PUBLIC}` });
+    // Chỉ 1 sheet: lỗi như trước.
+    await assert.rejects(readSheets([B], { now: NOW }), { message: NOT_PUBLIC });
+
+    restore();
+    restore = fakeGoogle({ ...privateSheet(A), ...privateSheet(B) });
+    const previous = new Map([[A, before.fresh.get(A)], [B, before.fresh.get(B)]]);
+    await assert.rejects(readSheets([A, B], { now: NOW, previous }), /^Error: Google Sheet 1 \(…000001\): .* · Google Sheet 2 \(…000002\): /);
+  } finally {
+    restore();
+  }
+});
+
+test('syncSheet: nhiều Google Sheet — sheet đọc lỗi giữ task lần trước; bỏ sheet khỏi EXCEL_SHEET_URL thì gỡ dòng tiền của nó', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
+  const { ensureSchema } = await import('../src/db.js');
+  const { sheetSyncStatus, syncSheet } = await import('../src/excel/sheet-sync.js');
+  const { sheetOnlyBase, withExcel } = await import('../src/excel/index.js');
+  const env = { DB: fakeD1(), EXCEL_SHEET_URL: `https://docs.google.com/spreadsheets/d/${A}/edit, ${B}` };
+  await ensureSchema(env);
+  const streams = async () => (await withExcel(env, sheetOnlyBase(NOW))).streams.map((s) => [s.name, s.counts.total]);
+  let restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...publicSheet(B, TABS_B) });
+  try {
+    let r = await syncSheet(env, { force: true, now: NOW });
+    assert.deepEqual(r, { changed: true, total: 3 });
+    assert.deepEqual(await streams(), [['Banking', 2], ['Nợ khó đòi', 1]]);
+    assert.equal((await sheetSyncStatus(env)).sheetUrls.length, 2);
+
+    // Sheet 2 bị tắt chia sẻ: task của sheet 2 vẫn hiện (bản lần trước), kèm cảnh báo; sheet 1 vẫn đồng bộ.
+    restore();
+    restore = fakeGoogle({ ...publicSheet(A, TABS_A), ...privateSheet(B) });
+    r = await syncSheet(env, { force: true, now: NOW + 60000 });
+    assert.deepEqual(r, { changed: false, total: 3 });
+    assert.deepEqual(await streams(), [['Banking', 2], ['Nợ khó đòi', 1]]);
+    assert.match((await sheetSyncStatus(env)).warnings[0], /^Google Sheet 2 \(…000002\): .*Đang giữ dữ liệu lần đọc trước\.$/);
+
+    // Bỏ sheet 2 khỏi cấu hình: dòng tiền chỉ có ở sheet 2 bị gỡ, Banking còn task của sheet 1.
+    env.EXCEL_SHEET_URL = A;
+    r = await syncSheet(env, { force: true, now: NOW + 120000 });
+    assert.deepEqual(r, { changed: true, total: 1 });
+    assert.deepEqual(await streams(), [['Banking', 1]]);
   } finally {
     restore();
   }

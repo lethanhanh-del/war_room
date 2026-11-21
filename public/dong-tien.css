@@ -463,7 +463,41 @@ a { color: inherit; }
 .m-cell.is-overdue .m-val, .m-cell.is-overdue .m-lbl { color: var(--danger); }
 .st-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: var(--s20); align-items: start; }
 .st-col { display: flex; flex-direction: column; gap: var(--s8); min-width: 0; }
-.st-col h4 { margin: 0; color: var(--muted); font-size: var(--fs-over); line-height: var(--lh-over); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+.st-col h4, .st-block h4 { margin: 0; color: var(--muted); font-size: var(--fs-over); line-height: var(--lh-over); font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+/* chỉ số bấm được: lọc bảng task của dòng tiền */
+button.m-cell { font: inherit; color: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+button.m-cell:hover { border-color: var(--border-strong); }
+button.m-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m-cell[aria-pressed="true"]:not([data-metric="all"]) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.m-cell.is-overdue[aria-pressed="true"] { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
+.t-wrap { display: flex; flex-direction: column; gap: var(--s8); min-width: 0; }
+.t-filter { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px var(--s12); padding: 6px var(--s12); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-subtle); color: var(--text-2); font-size: var(--fs-small); line-height: var(--lh-small); }
+.t-filter b { color: var(--text); font-weight: 500; }
+.btn-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; }
+.btn-link:hover { text-decoration: underline; }
+.btn-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+
+/* điểm nghẽn / cần hỗ trợ theo nhóm công việc */
+.st-block { display: flex; flex-direction: column; gap: var(--s8); min-width: 0; }
+.st-block h4 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--s8); }
+.b-total { color: var(--muted); font-size: var(--fs-small); line-height: var(--lh-small); font-weight: 500; letter-spacing: 0; text-transform: none; }
+.b-total.is-on { color: var(--warning); }
+.b-none { margin: 0; color: var(--muted); font-size: var(--fs-small); line-height: var(--lh-small); }
+.b-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--s8); align-items: start; }
+.b-card { display: flex; flex-direction: column; gap: var(--s8); padding: var(--s12); border: 1px solid var(--warning-border); border-radius: var(--r-md); background: var(--warning-bg); min-width: 0; }
+.b-card.is-clear { padding: var(--s8) var(--s12); border-color: var(--border); background: var(--bg-subtle); }
+.b-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s8); }
+.b-name { min-width: 0; font-weight: 500; }
+.b-count { flex: none; color: var(--muted); font-size: var(--fs-small); line-height: var(--lh-small); }
+.b-count.is-on { color: var(--warning); font-weight: 500; }
+.b-list { display: flex; flex-direction: column; gap: var(--s8); margin: 0; padding: 0; list-style: none; }
+.b-list li { display: flex; flex-direction: column; gap: 4px; padding-top: var(--s8); border-top: 1px dashed var(--warning-border); }
+.b-list li:first-child { padding-top: 0; border-top: 0; }
+.b-text { color: var(--text); font-size: var(--fs-body); line-height: var(--lh-body); }
+.b-text.muted { color: var(--text-2); font-style: italic; }
+.b-meta { color: var(--text-2); font-size: var(--fs-small); line-height: var(--lh-small); }
+.b-meta .badge { vertical-align: 1px; }
+
 @media (max-width: 1400px) {
   .st-body { grid-template-columns: minmax(0, 1fr); }
   .st-head { grid-template-columns: minmax(0, 1fr) minmax(200px, 0.6fr); }
@@ -492,6 +526,7 @@ a { color: inherit; }
   .stream { padding: var(--s16); }
   .st-head { grid-template-columns: minmax(0, 1fr); }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .b-grid { grid-template-columns: minmax(0, 1fr); }
   .t-tr { grid-template-columns: 1fr auto; gap: 4px var(--s12); }
   .t-tr .c-group:empty { display: none; }
   .t-tr .c-group, .t-tr .c-subj { grid-column: 1 / -1; }

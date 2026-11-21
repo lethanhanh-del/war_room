@@ -4,7 +4,7 @@ Dashboard điều hành War Room của CT Group, chạy trên **Cloudflare Worke
 
 | Trang | Nội dung |
 |---|---|
-| `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn), bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK**; nhóm lấy từ file phân chia nhiệm vụ. Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
+| `/` | **Tiến độ dòng tiền**: mỗi dòng tiền hiện sẵn 4 chỉ số (task hiện có · đang thực hiện · đã hoàn thành · quá hạn — bấm 1 chỉ số để bảng task chỉ còn các task đó), block **Điểm nghẽn · Cần hỗ trợ** theo từng nhóm công việc, bảng nhóm (PIC, nhiệm vụ chính, nhiệm vụ từng thành viên) và bảng task (Nhóm · Nhiệm vụ · PIC · Tiến độ · Trạng thái). Task tự đồng bộ từ Google Sheet **WR - MASTER TASK** và sheet thứ 2; nhóm lấy từ file phân chia nhiệm vụ. Có giao diện tối/sáng và màn hình TV (`/?tv=1`). |
 | `/war-room` | Bảng War Room live: dữ liệu chung trên máy chủ, cập nhật thời gian thực, ai đang online (`src/live.js`) |
 | `/lich` | Hẹn lịch BOD (D1) |
 | `/admin` | Quản trị tài khoản và nhật ký (chỉ tài khoản `admin`) |
@@ -34,15 +34,17 @@ Cách đọc file (`src/excel/`):
 
 Task lưu trong D1 (bảng `excel_imports`), nhóm trong `excel_teams`; không ghi ngược lên sheet. Tính năng chỉ có trên Worker, không có trên bản Express.
 
-### Tự đồng bộ từ Google Sheet "WR - MASTER TASK"
+### Tự đồng bộ từ Google Sheet
 
-Không cần nạp tay: Worker tự đọc Google Sheet [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) mỗi phút (Cron Trigger) và mỗi 20 giây khi có người đang xem trang `/`. Sửa trên Sheet → dashboard cập nhật sau khoảng 20–60 giây, mọi màn hình tự tải lại.
+Không cần nạp tay: Worker tự đọc các Google Sheet task — [WR - MASTER TASK](https://docs.google.com/spreadsheets/d/1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0/edit) và [sheet thứ 2](https://docs.google.com/spreadsheets/d/1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY/edit) (thêm 21/11/2026) — mỗi phút (Cron Trigger) và mỗi 20 giây khi có người đang xem trang `/`. Sửa trên Sheet → dashboard cập nhật sau khoảng 20–60 giây, mọi màn hình tự tải lại.
 
 - Sheet phải chia sẻ **"Bất kỳ ai có đường liên kết" – Người xem** (Worker đọc không cần tài khoản Google). Mỗi sheet tên "Dòng tiền …" là 1 thẻ dòng tiền (kể cả sheet chưa có task), đọc theo đúng quy tắc của Nạp task Excel ở trên. Số dòng tiền lấy từ cột "Dòng tiền" (`Dòng tiền 2: Banking` → thẻ **DT02**), thẻ xếp theo số.
 - Sheet là nguồn chính (không dùng Worksuite): task nạp tay từ file tổng của cùng dòng tiền bị thay bằng dữ liệu Sheet; sheet trống hoặc hỏng dòng tiêu đề → thẻ 0 task kèm cảnh báo. File riêng của dòng tiền khác không bị đụng tới.
 - PIC của dòng tiền: ghi 1 ô `PIC phụ trách: Họ tên` phía trên dòng tiêu đề của sheet (chèn thêm 1 dòng trên bảng).
 - Trạng thái (lần đọc gần nhất, lỗi, cảnh báo như "sheet không có dòng tiêu đề hợp lệ") có trong trường `sheetSync` của `/api/streams`; `POST /api/excel/sync` đồng bộ ngay.
-- Đổi sang Sheet khác: biến `EXCEL_SHEET_URL` (link hoặc ID); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
+- Nhiều Sheet được gộp lại: cùng dòng tiền (cùng số "Dòng tiền 2: …" hoặc cùng tên) thì nối task, task của sheet sau xếp sau; dòng tiền chỉ có ở 1 sheet thì thêm thẻ. Mỗi sheet có nút **Mở Sheet n** ở góc trên trang.
+- 1 Sheet đọc lỗi (mạng, chưa / bị tắt chia sẻ) trong khi sheet khác vẫn đọc được: dùng tạm bản đọc được lần trước của sheet đó (bảng D1 `excel_sheet_cache`) và cảnh báo ở đầu trang; sheet chưa từng đọc được thì bỏ qua, kèm cảnh báo. Riêng sheet đầu tiên chưa từng đọc được, hoặc không sheet nào đọc được: không đồng bộ lượt đó, dashboard giữ nguyên dữ liệu.
+- Đổi / thêm Sheet: biến `EXCEL_SHEET_URL` (1 hoặc nhiều link / ID, cách nhau bởi dấu phẩy hoặc xuống dòng; trống = 2 sheet ở trên); `off` để tắt. Mã nguồn: `src/excel/gsheet.js` (đọc Sheet), `src/excel/sheet-sync.js` (đồng bộ).
 
 ## Cấu hình trên Cloudflare
 

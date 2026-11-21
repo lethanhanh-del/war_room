@@ -33,6 +33,8 @@
     scrolled: false, // đã cuộn theo #DT02 trên URL chưa
     timer: null,
     loading: false,
+    filters: new Map(), // id dòng tiền -> chỉ số đang lọc bảng task (METRICS), giữ qua các lần tự làm mới
+    sheetLinks: null, // các link Google Sheet đang hiện ở nút "Mở Sheet"
   };
 
   // ---------- giao diện: tối (mặc định) / sáng, và màn hình TV (chữ lớn, luôn tối) ----------
@@ -197,15 +199,39 @@
     let label;
     // Giờ đọc sheet gần nhất (đồng bộ tự động); chưa có thì lấy giờ nạp file gần nhất.
     const sheetAt = Date.parse(d.sheetSync?.checkedAt || '') || Math.max(0, ...(d.excelImports || []).map((i) => Date.parse(i.uploadedAt) || 0));
-    label = sheetAt ? `Google Sheet WR - MASTER TASK · cập nhật ${clock(sheetAt).slice(6)}` : 'Google Sheet WR - MASTER TASK';
+    label = sheetAt ? `${sheetName()} · cập nhật ${clock(sheetAt).slice(6)}` : sheetName();
     if (d.stale && d.error) state = 'stale'; // trình duyệt không tải được lần mới, đang giữ dữ liệu cũ
     else if (d.sheetSync?.error) state = 'stale';
     else if (!d.streams?.length) state = 'error';
-    const sheetUrl = safeUrl(d.sheetSync?.sheetUrl);
-    $('openSheet').hidden = !sheetUrl;
-    if (sheetUrl) $('openSheet').href = sheetUrl;
+    renderSheetLinks((d.sheetSync?.sheetUrls || [d.sheetSync?.sheetUrl]).map(safeUrl).filter(Boolean));
     el.dataset.state = state;
     $('syncText').textContent = label;
+  }
+
+  // Đồng bộ nhiều Google Sheet (EXCEL_SHEET_URL): nhãn chung và mỗi sheet 1 nút "Mở Sheet n".
+  const sheetCount = () => S.data?.sheetSync?.sheetUrls?.length || 1;
+  const sheetName = () => (sheetCount() > 1 ? `${sheetCount()} Google Sheet` : 'Google Sheet WR - MASTER TASK');
+
+  function renderSheetLinks(urls) {
+    const key = urls.join(' ');
+    if (S.sheetLinks === key) return;
+    S.sheetLinks = key;
+    const first = $('openSheet');
+    document.querySelectorAll('a[data-sheet-extra]').forEach((a) => a.remove());
+    first.hidden = !urls.length;
+    if (!urls.length) return;
+    first.href = urls[0];
+    first.querySelector('.lbl').textContent = urls.length > 1 ? 'Mở Sheet 1' : 'Mở Google Sheet';
+    let prev = first;
+    urls.slice(1).forEach((url, i) => {
+      const a = first.cloneNode(true);
+      a.removeAttribute('id');
+      a.dataset.sheetExtra = '';
+      a.href = url;
+      a.querySelector('.lbl').textContent = `Mở Sheet ${i + 2}`;
+      prev.after(a);
+      prev = a;
+    });
   }
 
   function renderNotices() {
@@ -215,10 +241,10 @@
       out.push(`<div class="notice err">${icon('alert')}<div class="grow">${esc(d.error)} Đang hiển thị dữ liệu lần tải trước.</div></div>`);
     }
     if (d.sheetSync?.error) {
-      out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Chưa đọc được Google Sheet WR - MASTER TASK.</b> ${esc(d.sheetSync.error)} Đang hiển thị dữ liệu lần đọc trước.</div></div>`);
+      out.push(`<div class="notice warn">${icon('alert')}<div class="grow"><b>Chưa đọc được ${esc(sheetName())}.</b> ${esc(d.sheetSync.error)} Đang hiển thị dữ liệu lần đọc trước.</div></div>`);
     }
     if (d.sheetSync?.warnings?.length) {
-      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý từ Google Sheet WR - MASTER TASK</b><ul>${d.sheetSync.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
+      out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý từ ${esc(sheetName())}</b><ul>${d.sheetSync.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
     }
     if (d.warnings && d.warnings.length) {
       out.push(`<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý</b><ul>${d.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>`);
@@ -292,15 +318,27 @@
     if (target) document.getElementById(sectionId(target))?.scrollIntoView({ block: 'start' });
   }
 
+  // Bấm 1 chỉ số -> bảng task của dòng tiền chỉ còn task thuộc chỉ số đó; bấm lại (hoặc "Task hiện có") -> hiện tất cả.
+  const METRICS = {
+    all: { label: 'Task hiện có', match: () => true },
+    active: { label: 'Đang thực hiện', match: (t) => t.status === 'doing' || t.status === 'waiting' || t.status === 'review' },
+    done: { label: 'Đã hoàn thành', match: (t) => t.status === 'done' },
+    overdue: { label: 'Quá hạn', match: (t) => t.status === 'overdue' },
+  };
+  const filterOf = (s) => (METRICS[S.filters.get(s.id)] ? S.filters.get(s.id) : 'all');
+
   /** 4 chỉ số: task hiện có, đang thực hiện (đang làm + đang chờ + chờ duyệt), hoàn thành, quá hạn. */
-  function metricsHtml(c) {
-    const active = c.doing + c.waiting + c.review;
-    const cell = (label, value, cls, sub) => `<div class="m-cell${cls}"><span class="m-val">${value}</span><span class="m-lbl">${label}</span>${sub ? `<span class="m-sub">${sub}</span>` : ''}</div>`;
-    return `<div class="metrics" role="group" aria-label="Chỉ số task">
-        ${cell('Task hiện có', c.total, '', c.todo ? `${c.todo} chưa bắt đầu` : '')}
-        ${cell('Đang thực hiện', active, ' is-doing', c.waiting ? `${c.waiting} đang chờ` : '')}
-        ${cell('Đã hoàn thành', c.done, ' is-done', '')}
-        ${cell('Quá hạn', c.overdue, c.overdue ? ' is-overdue' : '', '')}
+  function metricsHtml(s) {
+    const c = s.counts;
+    const on = filterOf(s);
+    const cell = (key, value, cls, sub) => `<button type="button" class="m-cell${cls}" data-metric="${key}" data-stream="${esc(s.id)}" aria-pressed="${on === key}" aria-controls="${sectionId(s)}-tasks" title="${key === 'all' ? 'Hiện tất cả task' : `Chỉ hiện task ${METRICS[key].label.toLowerCase()}`}">
+          <span class="m-val">${value}</span><span class="m-lbl">${METRICS[key].label}</span>${sub ? `<span class="m-sub">${sub}</span>` : ''}
+        </button>`;
+    return `<div class="metrics" role="group" aria-label="Chỉ số task — bấm để lọc bảng task">
+        ${cell('all', c.total, '', c.todo ? `${c.todo} chưa bắt đầu` : '')}
+        ${cell('active', c.doing + c.waiting + c.review, ' is-doing', c.waiting ? `${c.waiting} đang chờ` : '')}
+        ${cell('done', c.done, ' is-done', '')}
+        ${cell('overdue', c.overdue, c.overdue ? ' is-overdue' : '', '')}
       </div>`;
   }
 
@@ -354,8 +392,15 @@
 
   /** Bảng task: Nhóm | Nhiệm vụ | PIC | Tiến độ | Trạng thái. */
   function tasksTableHtml(s) {
-    const list = taskRows(s);
-    if (!list.length) return '<p class="d-empty">Chưa có task. Task nhập trên sheet WR - MASTER TASK sẽ tự hiện ở đây.</p>';
+    const all = taskRows(s);
+    if (!all.length) return '<p class="d-empty">Chưa có task. Task nhập trên sheet WR - MASTER TASK sẽ tự hiện ở đây.</p>';
+    const key = filterOf(s);
+    const list = all.filter(METRICS[key].match);
+    const bar = key === 'all' ? '' : `<div class="t-filter" role="status">
+        <span>Đang lọc: <b>${METRICS[key].label}</b> · ${list.length}/${all.length} task</span>
+        <button type="button" class="btn-link" data-metric="all" data-stream="${esc(s.id)}">Hiện tất cả</button>
+      </div>`;
+    if (!list.length) return `${bar}<p class="d-empty">Không có task ${METRICS[key].label.toLowerCase()}.</p>`;
     let prev = null;
     const rows = list.map((t) => {
       const g = t.group || '';
@@ -372,7 +417,35 @@
           <span class="c-st"><span class="badge ${t.status}" title="${esc(t.dueLabel || '')}">${esc(t.statusLabel)}</span></span>
         </div>`;
     }).join('');
-    return `<div class="t-tbl"><div class="t-th"><span>Nhóm</span><span>Nhiệm vụ</span><span>PIC</span><span>Tiến độ</span><span>Trạng thái</span></div>${rows}</div>`;
+    return `${bar}<div class="t-tbl"><div class="t-th"><span>Nhóm</span><span>Nhiệm vụ</span><span>PIC</span><span>Tiến độ</span><span>Trạng thái</span></div>${rows}</div>`;
+  }
+
+  /**
+   * Điểm nghẽn / cần hỗ trợ theo từng nhóm công việc (cột "Nhóm công việc" và "Điểm nghẽn / Cần hỗ trợ" trên sheet).
+   * Task chưa xong có ghi điểm nghẽn, hoặc đang ở trạng thái chờ / vướng mắc. Nhóm có điểm nghẽn xếp trước.
+   */
+  function blockersHtml(s) {
+    const list = taskRows(s);
+    if (!list.length) return '';
+    const groups = new Map();
+    for (const t of list) {
+      const g = t.group || '';
+      if (!groups.has(g)) groups.set(g, []);
+      if (t.status !== 'done' && (String(t.blocker || '').trim() || t.status === 'waiting')) groups.get(g).push(t);
+    }
+    const total = [...groups.values()].reduce((n, items) => n + items.length, 0);
+    const head = `<h4>Điểm nghẽn · Cần hỗ trợ<span class="b-total${total ? ' is-on' : ''}">${total ? `${total} việc cần gỡ` : 'Không có điểm nghẽn'}</span></h4>`;
+    if (!total) return `<div class="st-block">${head}<p class="b-none">Chưa nhóm công việc nào ghi điểm nghẽn hoặc đang chờ.</p></div>`;
+    const name = (g) => esc(g || 'Chưa ghi nhóm công việc');
+    const cards = [...groups].sort(([, a], [, b]) => (b.length > 0) - (a.length > 0)).map(([g, items]) => {
+      if (!items.length) return `<div class="b-card is-clear"><div class="b-head"><span class="b-name">${name(g)}</span><span class="b-count">Không có điểm nghẽn</span></div></div>`;
+      const li = items.map((t) => `<li>
+          <span class="b-text${t.blocker ? '' : ' muted'}">${esc(t.blocker || 'Đang chờ — chưa ghi điểm nghẽn / cần hỗ trợ trên sheet')}</span>
+          <span class="b-meta"><span class="b-task">${esc(t.subject)}</span> · ${esc(t.pic || 'Chưa giao')} · <span class="badge ${t.status}">${esc(t.statusLabel)}</span></span>
+        </li>`).join('');
+      return `<div class="b-card"><div class="b-head"><span class="b-name">${name(g)}</span><span class="b-count is-on">${items.length} điểm nghẽn</span></div><ul class="b-list">${li}</ul></div>`;
+    }).join('');
+    return `<div class="st-block">${head}<div class="b-grid">${cards}</div></div>`;
   }
 
   function streamHtml(s) {
@@ -389,11 +462,12 @@
             <span class="st-team">${icon('users')}${esc(team)}${rule}</span>
           </div>
           <div class="st-progress"><span class="pct">${pctText(s.percent)}</span><span class="bar"><i style="width:${barWidth(s.percent)}"></i></span><span class="done">${s.counts.total ? `${s.counts.done}/${s.counts.total} task hoàn thành` : 'Chưa có task'}</span></div>
-          ${metricsHtml(s.counts)}
+          ${metricsHtml(s)}
         </header>
+        ${blockersHtml(s)}
         <div class="st-body">
           <div class="st-col"><h4>Nhóm</h4>${teamsTableHtml(s)}</div>
-          <div class="st-col"><h4>Task</h4>${tasksTableHtml(s)}</div>
+          <div class="st-col"><h4>Task</h4><div class="t-wrap" id="${id}-tasks">${tasksTableHtml(s)}</div></div>
         </div>
       </section>`;
   }
@@ -433,6 +507,23 @@
   }
 
   window.addEventListener('hashchange', () => scrollToStream(decodeURIComponent(location.hash.slice(1))));
+
+  $('grid').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-metric]');
+    const s = btn && S.data?.streams?.find((x) => x.id === btn.dataset.stream);
+    if (!s) return;
+    const key = btn.dataset.metric === filterOf(s) ? 'all' : btn.dataset.metric;
+    if (key === 'all') S.filters.delete(s.id);
+    else S.filters.set(s.id, key);
+    const id = sectionId(s);
+    document.querySelectorAll(`#${id} .metrics [data-metric]`).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.metric === key)));
+    const wrap = document.getElementById(`${id}-tasks`);
+    if (!wrap) return;
+    wrap.innerHTML = tasksTableHtml(s);
+    // Màn hình hẹp: bảng task nằm dưới bảng nhóm -> cuộn tới để thấy ngay kết quả lọc.
+    const r = wrap.getBoundingClientRect();
+    if (key !== 'all' && (r.top > window.innerHeight - 120 || r.bottom < 0)) wrap.scrollIntoView({ block: 'start' });
+  });
 
   // ---------- nạp task từ file Excel ----------
   const XL = { file: null, preview: null, busy: false };
