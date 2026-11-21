@@ -608,6 +608,238 @@ export function formatDateLabelVN(iso, todayIso) {
   return `${wd} · ${ddmm}`;
 }
 
+// ---------- Xuất file Excel (.xlsx chuẩn OOXML, hỗ trợ đầy đủ tiếng Việt UTF-8, không cần thư viện ngoài) ----------
+const CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC32_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function xmlEsc(s) {
+  return String(s ?? '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function colRef(idx) {
+  let n = idx + 1;
+  let out = '';
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    out = String.fromCharCode(65 + r) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
+}
+
+function buildSheetXml(rows, colWidths = []) {
+  const colsXml = colWidths.length
+    ? `<cols>${colWidths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
+    : '';
+  const rowsXml = rows.map((row, rIdx) => {
+    const rNum = rIdx + 1;
+    const cells = row.cells.map((cell, cIdx) => {
+      const ref = `${colRef(cIdx)}${rNum}`;
+      const style = cell.s ? ` s="${cell.s}"` : '';
+      if (cell.n !== undefined && Number.isFinite(cell.n)) {
+        return `<c r="${ref}"${style}><v>${cell.n}</v></c>`;
+      }
+      return `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${xmlEsc(cell.v ?? '')}</t></is></c>`;
+    }).join('');
+    const ht = row.ht ? ` ht="${row.ht}" customHeight="1"` : '';
+    return `<row r="${rNum}"${ht}>${cells}</row>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${colsXml}<sheetData>${rowsXml}</sheetData></worksheet>`;
+}
+
+function packZipStore(entries) {
+  const enc = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const { name, content } of entries) {
+    const nameBytes = enc.encode(name);
+    const dataBytes = typeof content === 'string' ? enc.encode(content) : content;
+    const sum = crc32(dataBytes);
+    const size = dataBytes.length;
+
+    const local = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true); // UTF-8
+    lv.setUint16(8, 0, true);      // STORE
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0x5421, true);
+    lv.setUint32(14, sum, true);
+    lv.setUint32(18, size, true);
+    lv.setUint32(22, size, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+    local.set(nameBytes, 30);
+    localParts.push(local, dataBytes);
+
+    const central = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(central.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0x5421, true);
+    cv.setUint32(16, sum, true);
+    cv.setUint32(20, size, true);
+    cv.setUint32(24, size, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+    central.set(nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length + dataBytes.length;
+  }
+
+  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  const out = new Uint8Array(offset + centralSize + eocd.length);
+  let pos = 0;
+  for (const p of [...localParts, ...centralParts, eocd]) {
+    out.set(p, pos);
+    pos += p.length;
+  }
+  return out;
+}
+
+export function buildWaitingPointXlsx({ dateKey, dateLabel, supporterLabel = 'Tất cả', items = [], stats = buildDailyStats(items) }) {
+  const detailRows = [
+    { ht: 26, cells: [{ v: `THỐNG KÊ WAITING POINT — ${dateLabel || dateKey} (Lọc: ${supporterLabel})`, s: 1 }] },
+    {
+      ht: 21,
+      cells: [
+        { v: 'Tổng đã xử lý', s: 3 },
+        { n: stats.total, s: 3 },
+        { v: 'Người hỗ trợ', s: 3 },
+        { n: stats.supporterCount, s: 3 },
+        { v: 'Thời gian TB', s: 3 },
+        { v: stats.total ? formatClock(stats.avgSec) : '–', s: 3 },
+        { v: 'Nhanh nhất', s: 3 },
+        { v: stats.total ? formatClock(stats.fastestSec) : '–', s: 3 },
+      ],
+    },
+    { cells: [] },
+    {
+      ht: 24,
+      cells: [
+        { v: 'STT', s: 2 },
+        { v: 'Ngày', s: 2 },
+        { v: 'Giờ xong', s: 2 },
+        { v: 'Người hỗ trợ', s: 2 },
+        { v: 'Người phụ trách (PIC)', s: 2 },
+        { v: 'Nhóm công việc', s: 2 },
+        { v: 'Dòng tiền', s: 2 },
+        { v: 'Vấn đề đã xử lý', s: 2 },
+        { v: 'Thời lượng', s: 2 },
+        { v: 'Thời lượng (giây)', s: 2 },
+      ],
+    },
+    ...items.map((rec, i) => ({
+      ht: 20,
+      cells: [
+        { n: i + 1 },
+        { v: rec.date || dateKey || '' },
+        { v: rec.at || '' },
+        { v: rec.supporter || 'Chưa phân công' },
+        { v: rec.owner || '' },
+        { v: rec.group || '' },
+        { v: rec.stream || '' },
+        { v: rec.issue || '' },
+        { v: formatClock(rec.spentSec || 5) },
+        { n: Math.max(1, Number(rec.spentSec) || 5) },
+      ],
+    })),
+  ];
+
+  const summaryRows = [
+    { ht: 26, cells: [{ v: `TỔNG HỢP THEO NGƯỜI HỖ TRỢ — ${dateLabel || dateKey}`, s: 1 }] },
+    { cells: [] },
+    {
+      ht: 24,
+      cells: [
+        { v: 'STT', s: 2 },
+        { v: 'Người hỗ trợ', s: 2 },
+        { v: 'Số việc đã xử lý', s: 2 },
+        { v: 'Thời gian TB', s: 2 },
+        { v: 'Xử lý nhanh nhất', s: 2 },
+        { v: 'Tổng thời gian', s: 2 },
+      ],
+    },
+    ...(stats.bySupporter || []).map((s, i) => ({
+      ht: 20,
+      cells: [
+        { n: i + 1 },
+        { v: s.name },
+        { n: s.count },
+        { v: formatClock(s.avgSec) },
+        { v: formatClock(Number.isFinite(s.fastestSec) ? s.fastestSec : 0) },
+        { v: formatClock(s.totalSec) },
+      ],
+    })),
+  ];
+
+  const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="4"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="13"/><color rgb="FF0F172A"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FF1E293B"/><name val="Calibri"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF1E293B"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFECFCCB"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFCBD5E1"/></left><right style="thin"><color rgb="FFCBD5E1"/></right><top style="thin"><color rgb="FFCBD5E1"/></top><bottom style="thin"><color rgb="FFCBD5E1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs></styleSheet>`;
+
+  return packZipStore([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/workbook.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Chi tiết xử lý" sheetId="1" r:id="rId1"/><sheet name="Tổng hợp hỗ trợ" sheetId="2" r:id="rId2"/></sheets></workbook>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    },
+    { name: 'xl/styles.xml', content: stylesXml },
+    { name: 'xl/worksheets/sheet1.xml', content: buildSheetXml(detailRows, [6, 13, 10, 22, 22, 26, 28, 48, 13, 16]) },
+    { name: 'xl/worksheets/sheet2.xml', content: buildSheetXml(summaryRows, [6, 26, 18, 16, 18, 16]) },
+  ]);
+}
+
 // =========================================================================
 // BROWSER RUNTIME (chỉ chạy khi mở trong trình duyệt, an toàn cho node --test)
 // =========================================================================
@@ -631,6 +863,8 @@ if (typeof document !== 'undefined') {
     sun: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
     moon: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
     tv: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>',
+    download: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+    scroll: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>',
   };
 
   // ---------- Giao diện tối / sáng / TV dùng chung wr-theme & wr-tv với /kpi ----------
@@ -800,6 +1034,7 @@ if (typeof document !== 'undefined') {
     lastBoardStructSig: '',
     historyByDate: loadHistoryByDate(),
     showStats: false,
+    statsAutoScroll: false,
     selectedDate: todayKeyVN(),
     supporterFilter: 'all',
     statsPage: 0,
@@ -1241,6 +1476,7 @@ if (typeof document !== 'undefined') {
     const cardCls = [
       'wp-card',
       compact ? 'compact' : '',
+      person.tasks.length > 3 ? 'has-many-tasks' : '',
       person.topTier === 'burn' ? 'is-burn' : person.topTier === 'warn' ? 'is-warn' : person.isUnassigned ? 'is-unassigned' : '',
       hasNew ? 'is-new' : '',
     ].filter(Boolean).join(' ');
@@ -1328,11 +1564,6 @@ if (typeof document !== 'undefined') {
           return key === state.supporterFilter;
         });
 
-    const totalPages = Math.max(1, Math.ceil(filtered.length / state.statsPageSize));
-    const safePage = Math.min(Math.max(0, state.statsPage), totalPages - 1);
-    const start = safePage * state.statsPageSize;
-    const pageItems = filtered.slice(start, start + state.statsPageSize);
-
     const dateChips = dates.slice(0, 5).map((d) => {
       const cnt = (state.historyByDate[d] || []).length;
       return `<button type="button" class="wp-date-chip ${d === activeDate ? 'is-active' : ''}" data-pick-date="${esc(d)}"><span>${esc(formatDateLabelVN(d, todayKey))}</span><b>${cnt}</b></button>`;
@@ -1369,7 +1600,7 @@ if (typeof document !== 'undefined') {
             </tr>
           </thead>
           <tbody>
-            ${pageItems.map((rec) => `
+            ${filtered.map((rec) => `
               <tr>
                 <td class="wp-c-at">${esc(rec.at || '–')}</td>
                 <td class="wp-c-sup">
@@ -1396,13 +1627,8 @@ if (typeof document !== 'undefined') {
           <div class="wp-stats-controls">
             ${dateChips}
             <input type="date" class="wp-date-input" id="wp-date-picker" value="${esc(activeDate)}" max="${esc(todayKey)}" aria-label="Chọn ngày xem thống kê" />
-            ${totalPages > 1 ? `
-              <div class="wp-pager">
-                <button type="button" class="wp-btn" id="wp-prev-page" ${safePage <= 0 ? 'disabled' : ''}>${SVG.left}<span>Trước</span></button>
-                <span class="wp-pager-num">${safePage + 1} / ${totalPages}</span>
-                <button type="button" class="wp-btn" id="wp-next-page" ${safePage >= totalPages - 1 ? 'disabled' : ''}><span>Sau</span>${SVG.right}</button>
-              </div>
-            ` : ''}
+            <button type="button" class="wp-btn ${state.statsAutoScroll ? 'is-active' : ''}" id="wp-btn-stats-scroll" aria-pressed="${state.statsAutoScroll}" ${filtered.length === 0 ? 'disabled' : ''}>${SVG.scroll}<span>${state.statsAutoScroll ? 'Đang tự cuộn' : 'Tự cuộn'}</span></button>
+            <button type="button" class="wp-btn is-excel" id="wp-btn-export" ${filtered.length === 0 ? 'disabled' : ''} title="Xuất thống kê ngày ${esc(activeDate)} ra file Excel (.xlsx)">${SVG.download}<span>Xuất Excel</span></button>
             <button type="button" class="wp-btn" id="wp-close-stats">${SVG.x}<span>Về bảng chờ</span></button>
           </div>
         </header>
@@ -1416,7 +1642,7 @@ if (typeof document !== 'undefined') {
 
         ${supChips}
 
-        <div class="wp-table-wrap" id="wp-stats-table-wrap">${tableHtml}</div>
+        <div class="wp-table-wrap" id="wp-stats-table-wrap" data-wr-autoscroll="1">${tableHtml}</div>
       </section>
     `;
   }
@@ -1527,6 +1753,21 @@ if (typeof document !== 'undefined') {
         storeSet('wr-tv', prefs.tv ? '1' : '0');
         applyTheme();
         updateHeaderOnly();
+        return;
+      }
+
+      if (target.id === 'wp-btn-stats-scroll') {
+        if (document.getElementById('wrAuto')) {
+          window.dispatchEvent(new Event('wr:autoscroll-toggle'));
+        } else {
+          state.statsAutoScroll = !state.statsAutoScroll;
+          updateStatsScrollButton();
+        }
+        return;
+      }
+
+      if (target.id === 'wp-btn-export') {
+        exportCurrentStatsExcel(todayKey);
         return;
       }
 
@@ -1717,7 +1958,8 @@ if (typeof document !== 'undefined') {
 
     updateHeader(now, people.length, activeCount, burnCount, todayCleared.length);
 
-    // Bảo toàn vị trí cuộn bên trong từng thẻ người
+    // Bảo toàn vị trí cuộn bên trong từng thẻ người & bảng thống kê
+    const prevStatsScroll = document.getElementById('wp-stats-table-wrap')?.scrollTop || 0;
     const prevScrolls = new Map();
     ui.stage.querySelectorAll('.wp-card').forEach((card) => {
       const k = card.getAttribute('data-person-key');
@@ -1768,18 +2010,85 @@ if (typeof document !== 'undefined') {
     if (state.showStats) {
       statsRo?.disconnect();
       const wrap = document.getElementById('wp-stats-table-wrap');
-      if (wrap && typeof ResizeObserver !== 'undefined') {
-        statsRo = new ResizeObserver(() => measureStatsPageSize());
-        statsRo.observe(wrap);
+      if (wrap) {
+        if (prevStatsScroll > 0) wrap.scrollTop = prevStatsScroll;
+        const onManualStats = () => { statsManualPauseUntil = Date.now() + CARD_MANUAL_PAUSE_MS; };
+        wrap.addEventListener('wheel', onManualStats, { passive: true });
+        wrap.addEventListener('touchstart', onManualStats, { passive: true });
       }
-      requestAnimationFrame(measureStatsPageSize);
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('wr:autoscroll-check'));
+        updateStatsScrollButton();
+      });
     } else {
       statsRo?.disconnect();
-      requestAnimationFrame(syncAllCardOverflow);
+      requestAnimationFrame(() => {
+        syncAllCardOverflow();
+        window.dispatchEvent(new Event('wr:autoscroll-check'));
+      });
     }
   }
 
-  // ---------- Tự cuộn mượt trong từng thẻ người khi có nhiều task (tạm dừng khi rê chuột / tự cuộn) ----------
+  function exportCurrentStatsExcel(todayKey) {
+    const activeDate = state.selectedDate || todayKey;
+    const dayItems = Array.isArray(state.historyByDate[activeDate]) ? state.historyByDate[activeDate] : [];
+    const filtered = state.supporterFilter === 'all'
+      ? dayItems
+      : dayItems.filter((rec) => {
+          const key = String(rec.supporter || '').trim() ? normalizeText(rec.supporter) : '__unassigned__';
+          return key === state.supporterFilter;
+        });
+    if (!filtered.length) return;
+    const stats = buildDailyStats(filtered);
+    const supporterLabel = state.supporterFilter === 'all'
+      ? 'Tất cả'
+      : (stats.bySupporter[0]?.name || state.supporterFilter);
+    const bytes = buildWaitingPointXlsx({
+      dateKey: activeDate,
+      dateLabel: formatDateLabelVN(activeDate, todayKey),
+      supporterLabel,
+      items: filtered,
+      stats,
+    });
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeSup = state.supporterFilter === 'all'
+      ? ''
+      : '-' + supporterLabel.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+    a.href = url;
+    a.download = `waiting-point-thong-ke-${activeDate}${safeSup}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    showToast('ĐÃ XUẤT FILE EXCEL', `${a.download} (${filtered.length} dòng)`, 'clear');
+  }
+
+  function updateStatsScrollButton() {
+    const btn = document.getElementById('wp-btn-stats-scroll');
+    const wrap = document.getElementById('wp-stats-table-wrap');
+    if (!btn || !wrap) return;
+    const canScroll = wrap.scrollHeight - wrap.clientHeight >= 16;
+    btn.className = state.statsAutoScroll ? 'wp-btn is-active' : 'wp-btn';
+    btn.setAttribute('aria-pressed', String(state.statsAutoScroll));
+    const lbl = btn.querySelector('span');
+    if (lbl) lbl.textContent = state.statsAutoScroll ? 'Đang tự cuộn' : 'Tự cuộn';
+    btn.title = canScroll
+      ? (state.statsAutoScroll ? 'Đang tự cuộn bảng thống kê. Bấm để tắt.' : 'Tự cuộn bảng thống kê từ trên xuống dưới.')
+      : 'Danh sách hiện vừa màn hình — sẽ tự cuộn khi có nhiều dòng hơn.';
+  }
+
+  window.addEventListener('wr:autoscroll-state', (e) => {
+    state.statsAutoScroll = Boolean(e?.detail?.on);
+    updateStatsScrollButton();
+  });
+
+  let statsCarry = 0;
+  let statsHoldUntil = 0;
+  let statsManualPauseUntil = 0;
+
+  // ---------- Tự cuộn mượt trong từng thẻ người (khung cố định 3 task) ----------
   const cardScrollMeta = new Map();
   const CARD_SCROLL_SPEED = 24; // px mỗi giây — đọc thoải mái trên màn hình TV
   const CARD_HOLD_MS = 3500;
@@ -1793,6 +2102,18 @@ if (typeof document !== 'undefined') {
     return cardScrollMeta.get(key);
   }
 
+  function applyThreeTaskCap(card, sc) {
+    const nodes = sc.querySelectorAll('.wp-node');
+    if (nodes.length > 3) {
+      const scRect = sc.getBoundingClientRect();
+      const thirdRect = nodes[2].getBoundingClientRect();
+      const threeH = Math.ceil(thirdRect.bottom - scRect.top + sc.scrollTop + 8);
+      if (threeH > 120) sc.style.maxHeight = `${threeH}px`;
+    } else {
+      sc.style.maxHeight = '';
+    }
+  }
+
   function updateCardOverflowClass(card, sc) {
     const room = sc.scrollHeight - sc.clientHeight;
     card.classList.toggle('has-overflow', room > 8);
@@ -1803,7 +2124,10 @@ if (typeof document !== 'undefined') {
     if (!ui.stage || state.showStats) return;
     ui.stage.querySelectorAll('.wp-card').forEach((card) => {
       const sc = card.querySelector('.wp-timeline');
-      if (sc) updateCardOverflowClass(card, sc);
+      if (sc) {
+        applyThreeTaskCap(card, sc);
+        updateCardOverflowClass(card, sc);
+      }
     });
   }
 
@@ -1818,6 +2142,7 @@ if (typeof document !== 'undefined') {
     sc.addEventListener('wheel', onManual, { passive: true });
     sc.addEventListener('touchstart', onManual, { passive: true });
     sc.addEventListener('scroll', () => updateCardOverflowClass(card, sc), { passive: true });
+    applyThreeTaskCap(card, sc);
     updateCardOverflowClass(card, sc);
   }
 
@@ -1826,9 +2151,39 @@ if (typeof document !== 'undefined') {
     const t = performance.now();
     const dt = lastCardScrollFrame ? Math.min(t - lastCardScrollFrame, 500) : 0;
     lastCardScrollFrame = t;
-    if (reducedMotion || state.showStats || document.hidden || !ui.stage) return;
+    if (reducedMotion || document.hidden || !ui.stage) return;
 
     const now = Date.now();
+
+    // Fallback tự cuộn bảng Thống kê khi chạy độc lập (không có #wrAuto trên .wr-nav)
+    if (state.showStats) {
+      if (state.statsAutoScroll && !document.getElementById('wrAuto') && now >= statsHoldUntil && now >= statsManualPauseUntil) {
+        const wrap = document.getElementById('wp-stats-table-wrap');
+        if (wrap) {
+          const room = wrap.scrollHeight - wrap.clientHeight;
+          if (room >= 16) {
+            if (wrap.scrollTop >= room - 1) {
+              statsHoldUntil = now + CARD_HOLD_MS * 2 + 800;
+              statsCarry = 0;
+              setTimeout(() => {
+                if (!state.showStats || !state.statsAutoScroll) return;
+                wrap.scrollTo({ top: 0, behavior: 'smooth' });
+                statsHoldUntil = Date.now() + CARD_HOLD_MS;
+              }, CARD_HOLD_MS);
+            } else {
+              statsCarry += (28 * dt) / 1000;
+              const step = Math.floor(statsCarry);
+              if (step >= 1) {
+                statsCarry -= step;
+                wrap.scrollTop = Math.min(room, wrap.scrollTop + step);
+              }
+            }
+          }
+        }
+      }
+      return;
+    }
+
     const cards = ui.stage.querySelectorAll('.wp-card');
     for (const card of cards) {
       const key = card.getAttribute('data-person-key');

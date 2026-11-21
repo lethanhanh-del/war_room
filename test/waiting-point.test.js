@@ -16,6 +16,7 @@ import {
   getTaskLimitForPeopleCount,
   buildDailyStats,
   formatDateLabelVN,
+  buildWaitingPointXlsx,
   fetchWaitingPoints,
 } from '../public/waiting-point.js';
 import { emptyWaitingPointState, mergeWaitingPointState, pruneHistoryAgainstSheetRows } from '../src/waiting-point-sync.js';
@@ -311,6 +312,30 @@ test('Tự động chuyển tab: đúng thời lượng 3p/3p/5p, bật tắt t�
   assert.match(html, /data-rot-href="\/waiting-point"/);
   assert.match(html, /3 phút/);
   assert.match(html, /5 phút/);
+});
+
+test('buildWaitingPointXlsx tạo file .xlsx chuẩn OOXML ZIP với 2 sheet và giữ nguyên tiếng Việt UTF-8', () => {
+  const items = [
+    { date: '2026-11-22', at: '03:21', supporter: 'Chiến', owner: 'Tân', group: 'Networking & IT', stream: 'Dòng tiền 1: Bán 4 dự án', issue: 'Hư wifi <khẩn>', spentSec: 191 },
+    { date: '2026-11-22', at: '03:35', supporter: 'Phong', owner: 'Tuấn', group: 'Data', stream: 'Dòng tiền 2: Banking', issue: 'Thiếu file đối soát', spentSec: 85 },
+  ];
+  const bytes = buildWaitingPointXlsx({
+    dateKey: '2026-11-22',
+    dateLabel: 'Hôm nay · 22/11',
+    supporterLabel: 'Tất cả',
+    items,
+  });
+  assert.ok(bytes instanceof Uint8Array && bytes.length > 1000);
+  // Kiểm tra magic bytes PKZIP header & End-of-Central-Directory
+  assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+  assert.deepEqual([...bytes.slice(bytes.length - 22, bytes.length - 18)], [0x50, 0x4b, 0x05, 0x06]);
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /xl\/worksheets\/sheet1\.xml/);
+  assert.match(text, /xl\/worksheets\/sheet2\.xml/);
+  assert.match(text, /Dòng tiền 1: Bán 4 dự án/);
+  assert.match(text, /Networking &amp; IT/);
+  assert.match(text, /Hư wifi &lt;khẩn&gt;/);
+  assert.match(text, /Tổng hợp hỗ trợ/);
 });
 
 test('Đọc trực tiếp tab Waiting Point (read-only) trên Google Sheet thành công', async () => {

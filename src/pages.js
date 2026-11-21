@@ -177,29 +177,48 @@ const AUTO_SCROLL = `<script>(() => {
   const q = new URLSearchParams(location.search).get("tucuon");
   let on = q === "1" ? true : q === "0" ? false : store.get();
   let timer = 0, last = 0, carry = 0, holdUntil = 0, pausedUntil = 0;
-  const el = document.scrollingElement || document.documentElement;
-  const room = () => el.scrollHeight - innerHeight;
+  const docEl = document.scrollingElement || document.documentElement;
+  const getBox = () => {
+    const custom = document.querySelector("[data-wr-autoscroll]");
+    if (custom && custom.scrollHeight - custom.clientHeight >= 24) return custom;
+    return docEl;
+  };
+  const room = (box = getBox()) => (box === docEl ? box.scrollHeight - innerHeight : box.scrollHeight - box.clientHeight);
   function frame() {
     const t = performance.now();
     const dt = last ? Math.min(t - last, 1000) : 0; // trình duyệt chạy chậm lại (tab nền): vẫn giữ đúng tốc độ
     last = t;
     const now = Date.now();
     if (now < holdUntil || now < pausedUntil || document.hidden) return;
-    if (room() < 40) return; // trang chưa tải xong dữ liệu (còn ngắn): chờ, đừng coi là đã tới cuối
-    if (el.scrollTop >= room() - 1) { // tới cuối: dừng rồi về đầu trang
+    const box = getBox();
+    const r = room(box);
+    if (r < 24) return; // trang chưa tải xong dữ liệu (còn ngắn): chờ, đừng coi là đã tới cuối
+    if (box.scrollTop >= r - 1) { // tới cuối: dừng rồi về đầu
       holdUntil = now + HOLD_MS;
-      setTimeout(() => { if (!on) return; scrollTo({ top: 0, behavior: "smooth" }); holdUntil = Date.now() + HOLD_MS; }, HOLD_MS);
+      setTimeout(() => {
+        if (!on) return;
+        const curBox = getBox();
+        if (curBox === docEl) scrollTo({ top: 0, behavior: "smooth" });
+        else curBox.scrollTo({ top: 0, behavior: "smooth" });
+        holdUntil = Date.now() + HOLD_MS;
+      }, HOLD_MS);
       holdUntil = now + HOLD_MS * 2 + 1500;
       return;
     }
     carry += (SPEED * dt) / 1000;
     const step = Math.floor(carry);
-    if (step >= 1) { carry -= step; scrollBy(0, step); }
+    if (step >= 1) {
+      carry -= step;
+      if (box === docEl) scrollBy(0, step);
+      else box.scrollTop += step;
+    }
   }
   function render() {
-    btn.hidden = room() < 40;
+    const hasRoom = room() >= 24;
+    btn.hidden = !hasRoom;
     btn.setAttribute("aria-pressed", String(on));
-    btn.title = on ? "Đang tự cuộn trang. Bấm để tắt." : "Tự cuộn chậm từ đầu đến cuối trang, rồi lặp lại.";
+    btn.title = on ? "Đang tự cuộn. Bấm để tắt." : "Tự cuộn chậm từ đầu đến cuối, rồi lặp lại.";
+    dispatchEvent(new CustomEvent("wr:autoscroll-state", { detail: { on, hasRoom } }));
   }
   function set(v) {
     on = v; store.set(v); render();
@@ -212,7 +231,9 @@ const AUTO_SCROLL = `<script>(() => {
   addEventListener("touchstart", pause, { passive: true });
   addEventListener("keydown", (e) => { if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) pause(); });
   addEventListener("resize", render);
-  setInterval(render, 3000); // trang tải dữ liệu xong mới dài ra
+  addEventListener("wr:autoscroll-check", render);
+  addEventListener("wr:autoscroll-toggle", () => set(!on));
+  setInterval(render, 2000); // trang tải dữ liệu xong mới dài ra
   render();
   if (on) set(true);
 })();</script>`;
