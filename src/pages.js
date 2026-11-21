@@ -71,15 +71,19 @@ export function changePasswordPage(user, { error = "", info = "", forced = false
 }
 
 // Chèn vào dashboard lúc phục vụ (HTMLRewriter) để không mất khi ai đó ghi đè public/index.html.
-const LINK = "color:#fff;text-decoration:none;font-weight:600";
-const PILL = "position:fixed;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;background:#17365d;color:#fff;font:600 13px 'Segoe UI',system-ui,sans-serif;box-shadow:0 6px 20px rgba(12,31,58,.3)";
+// Màn hình hẹp (điện thoại): nút lịch chỉ còn 📅, ô người dùng ẩn tên, để hai nút không đè nhau.
+const STYLE = `<style>
+.wr-pill{position:fixed;bottom:16px;z-index:9999;display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;background:#17365d;color:#fff;font:500 13px 'Segoe UI',system-ui,sans-serif;box-shadow:0 6px 20px rgba(12,31,58,.3);text-decoration:none;white-space:nowrap}
+.wr-pill a,a.wr-pill{color:#fff;text-decoration:none;font-weight:600}
+.wr-pill .wr-dim{opacity:.85}
+.wr-cal{right:16px}
+.wr-user{left:16px}
+@media (max-width:600px){.wr-pill{padding:9px 12px;gap:6px}.wr-cal .wr-txt,.wr-user .wr-name{display:none}}
+</style>`;
 
-export const CHAIRMAN_LINK = `<a href="/lich" style="${PILL};right:16px;text-decoration:none">📅 Đặt lịch Chủ tịch</a>`;
+export const CHAIRMAN_LINK = `${STYLE}<a href="/lich" class="wr-pill wr-cal" title="Đặt lịch Chủ tịch">📅<span class="wr-txt"> Đặt lịch Chủ tịch</span></a>`;
 
 export function userChip(user) {
-  const links =
-    user.role === "admin"
-      ? `<a href="/admin" style="${LINK}">Quản trị</a>`
-      : `<a href="/doi-mat-khau" style="${LINK};opacity:.85">Đổi mật khẩu</a>`;
-  return `<div style="${PILL};left:16px;font-weight:500">👤 ${esc(user.fullName)} · ${links} · <a href="/logout" style="${LINK};opacity:.85">Đăng xuất</a></div>`;
+  const links = user.role === "admin" ? `<a href="/admin">Quản trị</a>` : `<a href="/doi-mat-khau" class="wr-dim">Đổi mật khẩu</a>`;
+  return `<div class="wr-pill wr-user">👤<span class="wr-name"> ${esc(user.fullName)}</span> · ${links} · <a href="/logout" class="wr-dim">Đăng xuất</a></div>`;
 }
