@@ -25,24 +25,12 @@
   };
   const icon = (name) => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
-  const FILTERS = [
-    ['all', 'Tất cả'],
-    ['doing', 'Đang làm'],
-    ['waiting', 'Đang chờ'],
-    ['review', 'Chờ duyệt'],
-    ['overdue', 'Quá hạn'],
-    ['todo', 'Chưa bắt đầu'],
-    ['done', 'Hoàn thành'],
-  ];
-  const PEOPLE_PAGE = 6;
+  const STATUS_RANK = { overdue: 0, waiting: 1, review: 2, doing: 3, todo: 4, done: 5 };
 
   const S = {
     data: null,
-    openId: null,
-    filter: 'all',
-    expanded: new Map(), // streamId -> Set(personKey)
-    showAll: false,
-    lastFocus: null,
+    scrollTo: null, // id dòng tiền cần cuộn tới sau lần tải kế tiếp (vừa nạp file)
+    scrolled: false, // đã cuộn theo #DT02 trên URL chưa
     timer: null,
     loading: false,
   };
@@ -195,20 +183,11 @@
     renderSummary(d.summary);
     renderGrid(d.streams);
     renderOthers(d.otherGroups);
-    if (S.openAfterLoad && stream(S.openAfterLoad)) {
-      // Vừa nạp file Excel: mở luôn dòng tiền vừa nạp.
-      const id = S.openAfterLoad;
-      S.openAfterLoad = null;
-      S.expanded.delete(id);
-      openDrawer(id, false);
-    } else if (S.openId) {
-      if (stream(S.openId)) renderDrawer();
-      else closeDrawer(false);
-    } else {
-      const code = decodeURIComponent(location.hash.slice(1));
-      const target = code && d.streams.find((s) => hashKey(s) === code || s.id === code);
-      if (target) openDrawer(target.id, false);
-    }
+    // Vừa nạp file, hoặc link có #DT02: cuộn tới dòng tiền đó (chỉ 1 lần, không cuộn lại mỗi lần tự làm mới).
+    const want = S.scrollTo || (!S.scrolled && decodeURIComponent(location.hash.slice(1)));
+    S.scrollTo = null;
+    S.scrolled = true;
+    if (want) scrollToStream(want);
   }
 
   function renderSync() {
@@ -305,31 +284,127 @@
     return `<span class="pic"><span class="av">${esc(pic.initials)}</span><span class="who"><span class="pic-name">${esc(pic.name)}</span><span class="pic-role" title="${esc(pic.title)}">PIC${role ? ' · ' + esc(role) : ''}</span></span></span>`;
   }
 
-  function cardHtml(s) {
-    const staff = s.people.filter((p) => !p.unassigned);
-    const avatars = staff.slice(0, 4).map((p) => `<span class="av s" title="${esc(p.name)}">${esc(p.initials)}</span>`).join('');
-    const more = staff.length > 4 ? `<span class="av s more">+${staff.length - 4}</span>` : '';
-    const open = S.openId === s.id;
+  // ---------- mỗi dòng tiền: chỉ số, nhóm, task — hiện sẵn trên trang, không cần bấm ----------
+  const sectionId = (s) => `dt-${String(hashKey(s)).replace(/[^\w-]+/g, '-')}`;
+
+  function scrollToStream(key) {
+    const target = S.data?.streams?.find((s) => s.id === key || hashKey(s) === key);
+    if (target) document.getElementById(sectionId(target))?.scrollIntoView({ block: 'start' });
+  }
+
+  /** 4 chỉ số: task hiện có, đang thực hiện (đang làm + đang chờ + chờ duyệt), hoàn thành, quá hạn. */
+  function metricsHtml(c) {
+    const active = c.doing + c.waiting + c.review;
+    const cell = (label, value, cls, sub) => `<div class="m-cell${cls}"><span class="m-val">${value}</span><span class="m-lbl">${label}</span>${sub ? `<span class="m-sub">${sub}</span>` : ''}</div>`;
+    return `<div class="metrics" role="group" aria-label="Chỉ số task">
+        ${cell('Task hiện có', c.total, '', c.todo ? `${c.todo} chưa bắt đầu` : '')}
+        ${cell('Đang thực hiện', active, ' is-doing', c.waiting ? `${c.waiting} đang chờ` : '')}
+        ${cell('Đã hoàn thành', c.done, ' is-done', '')}
+        ${cell('Quá hạn', c.overdue, c.overdue ? ' is-overdue' : '', '')}
+      </div>`;
+  }
+
+  function memberLine(m, groupTask) {
+    if (m.placeholder) return `<li class="is-pending">Chờ bổ sung nhân sự<small>${esc(m.name)}</small></li>`;
+    const role = m.role ? `<span class="tag">${esc(m.role)}</span>` : '';
+    const task = m.task && m.task !== groupTask ? `<span class="m-task">${esc(m.task)}</span>` : '';
+    return `<li><span class="nm">${esc(m.name)}</span>${role}${task}</li>`;
+  }
+
+  /** Bảng nhóm (file phân chia nhiệm vụ): Nhóm | PIC | Nhiệm vụ chính | Thành viên · nhiệm vụ từng người. */
+  function teamsTableHtml(s) {
+    const groups = s.teams?.groups || [];
+    if (!groups.length) return '<p class="d-empty">Chưa có phân chia nhóm. Nạp file phân chia nhiệm vụ (DS nhân sự War-Room) bằng nút “Nạp task Excel”.</p>';
+    const rows = groups.map((g, i) => {
+      const people = g.members.filter((m) => !m.placeholder);
+      const main = g.mainTask || (people.length === 1 ? people[0].task || '—' : 'Mỗi người một nhiệm vụ');
+      const lead = g.lead
+        ? `<span class="c-pic"><span class="nm">${esc(g.lead.name)}</span>${g.lead.title ? `<small>${esc(g.lead.title)}</small>` : ''}</span>`
+        : '<span class="c-pic none">Chưa chốt PIC</span>';
+      return `<div class="g-tr">
+          <span class="c-name">Nhóm ${i + 1}</span>
+          ${lead}
+          <span class="c-task${g.mainTask ? '' : ' muted'}">${esc(main)}</span>
+          <ul class="c-members">${g.members.map((m) => memberLine(m, g.mainTask)).join('')}</ul>
+        </div>`;
+    }).join('');
+    return `<div class="g-tbl"><div class="g-th"><span>Nhóm</span><span>PIC</span><span>Nhiệm vụ chính</span><span>Thành viên · nhiệm vụ</span></div>${rows}</div>`;
+  }
+
+  /** Task của dòng tiền, giữ thứ tự nhóm như trên sheet. */
+  function taskRows(s) {
+    const rows = [];
+    for (const p of s.people) for (const t of p.tasks) rows.push({ ...t, pic: p.unassigned ? '' : p.name });
+    const first = new Map();
+    for (const t of rows) {
+      const g = t.group || '';
+      const o = t.order ?? Infinity;
+      if (!first.has(g) || o < first.get(g)) first.set(g, o);
+    }
+    const order = (t) => (Number.isFinite(t.order) ? t.order : Infinity);
+    return rows.sort((a, b) => {
+      const ga = first.get(a.group || '');
+      const gb = first.get(b.group || '');
+      return (ga === gb ? 0 : ga < gb ? -1 : 1)
+        || String(a.group || '').localeCompare(String(b.group || ''), 'vi')
+        || (order(a) === order(b) ? 0 : order(a) < order(b) ? -1 : 1)
+        || STATUS_RANK[a.status] - STATUS_RANK[b.status];
+    });
+  }
+
+  /** Bảng task: Nhóm | Nhiệm vụ | PIC | Tiến độ | Trạng thái. */
+  function tasksTableHtml(s) {
+    const list = taskRows(s);
+    if (!list.length) return '<p class="d-empty">Chưa có task. Task nhập trên sheet WR - MASTER TASK sẽ tự hiện ở đây.</p>';
+    let prev = null;
+    const rows = list.map((t) => {
+      const g = t.group || '';
+      const startsGroup = g !== prev;
+      prev = g;
+      const subject = safeUrl(t.url) ? `<a href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.subject)}</a>` : esc(t.subject);
+      const flag = t.flags?.length ? `<span class="t-flag" title="${esc(t.flags.map((x) => x.label).join('\n'))}" aria-label="${esc(`Chưa đạt nguyên tắc War Room: ${t.flags.map((x) => x.label).join('; ')}`)}">${icon('flag')}</span>` : '';
+      const tone = t.status === 'done' ? 'success' : t.status === 'overdue' ? 'danger' : 'accent';
+      return `<div class="t-tr${t.status === 'overdue' ? ' is-overdue' : ''}${startsGroup ? ' g-start' : ''}">
+          <span class="c-group">${startsGroup ? esc(g || '—') : ''}</span>
+          <span class="c-subj">${subject}${flag}</span>
+          <span class="c-pic">${esc(t.pic || 'Chưa giao')}</span>
+          <span class="c-prog"><span class="bar tone-${tone}"><i style="width:${barWidth(t.progress)}"></i></span><span class="pct">${t.progress}%</span></span>
+          <span class="c-st"><span class="badge ${t.status}" title="${esc(t.dueLabel || '')}">${esc(t.statusLabel)}</span></span>
+        </div>`;
+    }).join('');
+    return `<div class="t-tbl"><div class="t-th"><span>Nhóm</span><span>Nhiệm vụ</span><span>PIC</span><span>Tiến độ</span><span>Trạng thái</span></div>${rows}</div>`;
+  }
+
+  function streamHtml(s) {
+    const id = sectionId(s);
     const flagged = s.excel?.flagged || 0;
-    const rule = flagged ? `<span class="st rule" title="Task trong file Excel chưa đạt nguyên tắc War Room: 1 người chịu trách nhiệm, 1 deadline trong thời hạn War Room, 1 kết quả đầu ra">${icon('flag')}${flagged} task chưa đạt chuẩn War Room</span>` : '';
-    return `<button type="button" class="card tone-${s.tone}" data-id="${esc(s.id)}" aria-haspopup="dialog" aria-expanded="${open}"
-        aria-label="${esc(`Dòng tiền ${s.name}: ${pctText(s.percent)}, ${s.counts.overdue} task quá hạn. Xem task từng người`)}">
-      <span class="card-head"><span class="titles"><span class="code">${esc(codeLabel(s))}${s.excel ? `<span class="src-tag">Excel</span>` : ''}</span><span class="name">${esc(s.name)}</span></span><span class="go">${icon('chevronRight')}</span></span>
-      ${picHtml(s.pic, false)}
-      <span class="prog"><span class="nums"><span class="pct">${pctText(s.percent)}</span><span class="done">${s.counts.total ? `${s.counts.done}/${s.counts.total} task hoàn thành` : 'Chưa có task'}</span></span><span class="bar"><i style="width:${barWidth(s.percent)}"></i></span></span>
-      <span class="stats">${statsHtml(s.counts, s.own)}${rule}</span>
-      <span class="divider"></span>
-      <span class="foot"><span class="people">${icon('users')}${s.headcount} nhân sự<span class="stack">${avatars}${more}</span></span><span class="more-link">Xem task ${icon('arrowRight')}</span></span>
-    </button>`;
+    const rule = flagged ? `<span class="st rule" title="Task chưa đạt nguyên tắc War Room: 1 người chịu trách nhiệm, 1 deadline trong thời hạn War Room, 1 kết quả đầu ra">${icon('flag')}${flagged} task chưa đạt chuẩn War Room</span>` : '';
+    const team = s.teams ? `${s.teams.groups.length} nhóm · ${s.teams.memberCount} nhân sự` : `${s.headcount} nhân sự`;
+    return `<section class="stream tone-${s.tone}" id="${id}" aria-labelledby="${id}-t">
+        <header class="st-head">
+          <div class="st-id">
+            <span class="code">${esc(codeLabel(s))}</span>
+            <h3 id="${id}-t">${esc(s.name)}</h3>
+            ${picHtml(s.pic, false)}
+            <span class="st-team">${icon('users')}${esc(team)}${rule}</span>
+          </div>
+          <div class="st-progress"><span class="pct">${pctText(s.percent)}</span><span class="bar"><i style="width:${barWidth(s.percent)}"></i></span><span class="done">${s.counts.total ? `${s.counts.done}/${s.counts.total} task hoàn thành` : 'Chưa có task'}</span></div>
+          ${metricsHtml(s.counts)}
+        </header>
+        <div class="st-body">
+          <div class="st-col"><h4>Nhóm</h4>${teamsTableHtml(s)}</div>
+          <div class="st-col"><h4>Task</h4>${tasksTableHtml(s)}</div>
+        </div>
+      </section>`;
   }
 
   function renderGrid(streams) {
     const grid = $('grid');
     if (!streams.length) {
-      grid.innerHTML = `<div class="setup" style="grid-column:1/-1"><h2>Chưa có dòng tiền nào có nhân sự</h2><p class="hint">Khi sheet của dòng tiền có task được giao, dòng tiền sẽ hiện ở đây.</p></div>`;
+      grid.innerHTML = '<div class="setup"><h2>Chưa có dòng tiền nào</h2><p class="hint">Mỗi sheet “Dòng tiền …” trong Google Sheet WR - MASTER TASK sẽ hiện thành 1 dòng tiền ở đây.</p></div>';
       return;
     }
-    grid.innerHTML = streams.map(cardHtml).join('');
+    grid.innerHTML = streams.map(streamHtml).join('');
   }
 
   function renderOthers(list) {
@@ -337,93 +412,6 @@
     if (!list || !list.length) { el.hidden = true; return; }
     el.hidden = false;
     el.innerHTML = `${icon('info')}<span>Ngoài các dòng tiền, dự án còn: ${list.map((g) => esc(`${g.name} (${g.taskCount} task)`)).join(' · ')}</span>`;
-  }
-
-  $('grid').addEventListener('click', (e) => {
-    const card = e.target.closest('.card');
-    if (card) openDrawer(card.dataset.id, true);
-  });
-
-  // ---------- drawer ----------
-  function defaultExpanded(s) {
-    const set = new Set(s.people.filter((p) => p.counts.overdue > 0 || p.counts.waiting > 0 || p.isPic || p.unassigned).map((p) => p.key));
-    if (!set.size && s.people[0]) set.add(s.people[0].key);
-    return set;
-  }
-
-  function openDrawer(id, fromUser) {
-    const s = stream(id);
-    if (!s) return;
-    if (fromUser) S.lastFocus = document.activeElement;
-    S.openId = id;
-    S.filter = 'all';
-    S.showAll = false;
-    if (!S.expanded.has(id)) S.expanded.set(id, defaultExpanded(s));
-    $('scrim').hidden = false;
-    $('drawer').hidden = false;
-    document.body.classList.add('drawer-open');
-    history.replaceState(null, '', `${location.pathname}${location.search}#${encodeURIComponent(hashKey(s))}`);
-    renderDrawer();
-    document.querySelectorAll('.card').forEach((c) => c.setAttribute('aria-expanded', String(c.dataset.id === id)));
-    $('drawer').querySelector('[data-close]')?.focus();
-  }
-
-  function closeDrawer(restoreFocus = true) {
-    const closedId = S.openId;
-    S.openId = null;
-    $('scrim').hidden = true;
-    $('drawer').hidden = true;
-    $('drawer').innerHTML = '';
-    document.body.classList.remove('drawer-open');
-    history.replaceState(null, '', `${location.pathname}${location.search}`);
-    document.querySelectorAll('.card').forEach((c) => c.setAttribute('aria-expanded', 'false'));
-    if (restoreFocus) {
-      // Thẻ có thể đã được vẽ lại sau lần tự làm mới — tìm lại theo id.
-      const target = S.lastFocus && document.contains(S.lastFocus)
-        ? S.lastFocus
-        : [...document.querySelectorAll('.card')].find((c) => c.dataset.id === closedId);
-      target?.focus();
-    }
-    S.lastFocus = null;
-  }
-
-  function taskHtml(t) {
-    const subject = safeUrl(t.url)
-      ? `<a class="subject" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.subject)}</a>`
-      : `<span class="subject">${esc(t.subject)}</span>`;
-    const tone = t.status === 'done' ? 'success' : t.status === 'overdue' ? 'danger' : 'accent';
-    let extra = '';
-    if (t.source === 'excel') {
-      const meta = [t.code, t.group, t.priority].filter(Boolean).map(esc);
-      if (t.excelStatus && t.excelStatus !== t.statusLabel) meta.push(`File ghi: ${esc(t.excelStatus)}`);
-      extra = `<span class="t-meta">${meta.join(' · ')}<span class="src-tag">Excel</span></span>`;
-    }
-    const lines = [];
-    if (t.next) lines.push(`<span class="t-line">${icon('next')}Bước tiếp theo: ${esc(t.next)}</span>`);
-    if (t.support) lines.push(`<span class="t-line">${icon('users')}Phối hợp: ${esc(t.support)}</span>`);
-    if (t.output) lines.push(`<span class="t-line muted">${icon('check')}Đầu ra cần có: ${esc(t.output)}</span>`);
-    const flags = t.flags?.length ? `<span class="flags">${t.flags.map((f) => `<span class="flag">${icon('flag')}${esc(f.label)}</span>`).join('')}</span>` : '';
-    return `<div class="t-row${t.status === 'overdue' ? ' is-overdue' : ''}">
-      <div class="t-info">${subject}${extra}<span class="due">${icon('calendar')}${esc(t.dueLabel)}</span>${t.blocker ? `<span class="blocker">${icon('alert')}${esc(t.blockerLabel || 'Lý do chờ')}: ${esc(t.blocker)}</span>` : ''}${lines.join('')}${flags}</div>
-      <span class="badge ${t.status}">${esc(t.statusLabel)}</span>
-      <span class="mini"><span class="bar tone-${tone}"><i style="width:${barWidth(t.progress)}"></i></span><span class="pct">${t.progress}%</span></span>
-    </div>`;
-  }
-
-  function memberHtml(s, p, tasks, open) {
-    const role = p.isPic ? (p.title || '') : p.title;
-    return `<div class="member${open ? ' open' : ''}${p.unassigned ? ' unassigned' : ''}">
-      <button type="button" class="m-row" data-person="${esc(p.key)}" aria-expanded="${open}">
-        <span class="chev">${icon(open ? 'chevronDown' : 'chevronRight')}</span>
-        <span class="av">${esc(p.initials)}</span>
-        <span class="info"><span class="nm">${esc(p.name)}${p.isPic ? '<span class="tag">PIC</span>' : ''}</span>${role ? `<span class="role">${esc(role)}</span>` : ''}</span>
-        ${p.counts.overdue ? `<span class="tag alert">${p.counts.overdue} quá hạn</span>` : ''}
-        ${p.counts.waiting ? `<span class="tag waiting">${p.counts.waiting} đang chờ</span>` : ''}
-        <span class="cnt">${p.counts.total} task</span>
-        <span class="mini"><span class="bar tone-${p.tone}"><i style="width:${barWidth(p.percent)}"></i></span><span class="pct">${pctText(p.percent)}</span></span>
-      </button>
-      ${open ? `<div class="tasks">${tasks.length ? tasks.map(taskHtml).join('') : '<div class="t-empty">Chưa có task trong dòng tiền này.</div>'}</div>` : ''}
-    </div>`;
   }
 
   // Nguyên tắc War Room (văn bản chỉ đạo): One owner · One deadline · One result · Strict time box · Zero waiting point · End-to-end.
@@ -444,101 +432,7 @@
     return `<div class="rules">${icon('flag')}<span><b>Chưa đạt nguyên tắc War Room${esc(range)}:</b> ${esc(list.join(' · '))}</span></div>`;
   }
 
-  function excelInfoHtml(s) {
-    const x = s.excel;
-    if (!x) return '';
-    const parts = [`${x.count} task từ file “${x.fileName}”`];
-    if (x.uploadedBy) parts.push(`nạp bởi ${x.uploadedBy}`);
-    if (x.uploadedAt) parts.push(`lúc ${clock(Date.parse(x.uploadedAt))}`);
-    if (x.asOf) parts.push(`số liệu kiểm soát ${x.asOf}`);
-    return `<div class="own src">${icon('sheet')}<span>${esc(parts.join(' · '))}</span></div>${issuesHtml(x.issues, S.data?.warRoom)}`;
-  }
-
-  function renderDrawer() {
-    const s = stream(S.openId);
-    if (!s) return;
-    const drawer = $('drawer');
-    const scrollTop = drawer.querySelector('.d-body')?.scrollTop || 0;
-    const expanded = S.expanded.get(s.id) || new Set();
-    const f = S.filter;
-    const visible = s.people
-      .map((p) => ({ p, tasks: f === 'all' ? p.tasks : p.tasks.filter((t) => t.status === f) }))
-      .filter(({ tasks }) => f === 'all' || tasks.length);
-    const shown = S.showAll ? visible : visible.slice(0, PEOPLE_PAGE);
-    const hiddenCount = visible.length - shown.length;
-    const allOpen = shown.length > 0 && shown.every(({ p }) => f !== 'all' || expanded.has(p.key));
-    const tabs = FILTERS.filter(([k]) => k === 'all' || s.counts[k] > 0)
-      .map(([k, label]) => `<button type="button" class="tab" data-filter="${k}" aria-pressed="${f === k}">${label} <span class="count">${k === 'all' ? s.counts.total : s.counts[k]}</span></button>`)
-      .join('');
-    const metaParts = [`${s.counts.done}/${s.counts.total} task hoàn thành`, `${s.headcount} nhân sự`];
-    if (s.counts.overdue) metaParts.push(`${s.counts.overdue} task quá hạn`);
-    if (s.counts.waiting) metaParts.push(`${s.counts.waiting} task đang chờ`);
-
-    drawer.innerHTML = `
-      <div class="d-head tone-${s.tone}">
-        <div class="d-top">
-          <div><div class="code">${s.code ? `${esc(s.code)} · ` : ''}Dòng tiền</div><h2 id="dTitle">${esc(s.name)}</h2></div>
-          <div class="d-actions"><button type="button" class="icon-btn" data-close aria-label="Đóng">${icon('x')}</button></div>
-        </div>
-        ${picHtml(s.pic, true)}
-        ${excelInfoHtml(s)}
-        <div class="d-prog"><span class="value">${pctText(s.percent)}</span><div class="col"><div class="bar"><i style="width:${barWidth(s.percent)}"></i></div><span class="meta">${esc(metaParts.join(' · '))}</span></div></div>
-      </div>
-      <div class="tabs" role="group" aria-label="Lọc theo trạng thái task">${tabs}</div>
-      <div class="d-body">
-        <div class="list-head"><span>${visible.length} nhân sự${f === 'all' ? ' · người có task quá hạn xếp trước' : ` có task “${esc(FILTERS.find(([k]) => k === f)[1].toLowerCase())}”`}</span>
-          ${f === 'all' && shown.length ? `<button type="button" class="linkbtn" data-toggle-all>${allOpen ? 'Thu gọn tất cả' : 'Mở tất cả'}</button>` : ''}</div>
-        <div class="members">${shown.map(({ p, tasks }) => memberHtml(s, p, tasks, f !== 'all' || expanded.has(p.key))).join('') || `<div class="no-match">${f === 'all' ? 'Dòng tiền này chưa có task. Thêm task (người phụ trách, hạn hoàn thành) vào sheet của dòng tiền trong Google Sheet WR - MASTER TASK, dashboard tự cập nhật trong vòng 1 phút.' : 'Không có task nào ở trạng thái này.'}</div>`}</div>
-        ${hiddenCount > 0 ? `<button type="button" class="show-more" data-show-all>Xem thêm ${hiddenCount} nhân sự ${icon('chevronDown')}</button>` : ''}
-      </div>`;
-    const body = drawer.querySelector('.d-body');
-    if (body) body.scrollTop = scrollTop;
-  }
-
-  $('drawer').addEventListener('click', (e) => {
-    const s = stream(S.openId);
-    if (!s) return;
-    if (e.target.closest('[data-close]')) { closeDrawer(); return; }
-    const filterBtn = e.target.closest('[data-filter]');
-    if (filterBtn) { S.filter = filterBtn.dataset.filter; S.showAll = false; renderDrawer(); $('drawer').querySelector(`[data-filter="${S.filter}"]`)?.focus(); return; }
-    if (e.target.closest('[data-show-all]')) { S.showAll = true; renderDrawer(); return; }
-    const expanded = S.expanded.get(s.id);
-    if (e.target.closest('[data-toggle-all]')) {
-      const shown = (S.showAll ? s.people : s.people.slice(0, PEOPLE_PAGE)).map((p) => p.key);
-      const allOpen = shown.every((k) => expanded.has(k));
-      shown.forEach((k) => (allOpen ? expanded.delete(k) : expanded.add(k)));
-      renderDrawer();
-      return;
-    }
-    const row = e.target.closest('[data-person]');
-    if (row && S.filter === 'all') {
-      const key = row.dataset.person;
-      if (expanded.has(key)) expanded.delete(key); else expanded.add(key);
-      renderDrawer();
-      $('drawer').querySelector(`[data-person="${CSS.escape(key)}"]`)?.focus();
-    }
-  });
-
-  $('scrim').addEventListener('click', () => closeDrawer());
-  document.addEventListener('keydown', (e) => {
-    if (!S.openId) return;
-    if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); return; }
-    if (e.key === 'Tab') {
-      // Giữ focus trong panel khi đang mở.
-      const items = [...$('drawer').querySelectorAll('a[href], button:not([disabled])')].filter((el) => el.offsetParent !== null);
-      if (!items.length) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-  });
-  window.addEventListener('hashchange', () => {
-    const code = decodeURIComponent(location.hash.slice(1));
-    const target = code && S.data?.streams?.find((s) => hashKey(s) === code || s.id === code);
-    if (target && target.id !== S.openId) openDrawer(target.id, false);
-    else if (!code && S.openId) closeDrawer(false);
-  });
+  window.addEventListener('hashchange', () => scrollToStream(decodeURIComponent(location.hash.slice(1))));
 
   // ---------- nạp task từ file Excel ----------
   const XL = { file: null, preview: null, busy: false };
@@ -566,22 +460,32 @@
     $('xlResult').innerHTML = '';
     xlStatus('');
     $('xlSubmit').disabled = true;
+    $('xlSubmit').textContent = 'Đưa lên dashboard';
   }
 
-  async function xlSend(target, preview) {
-    const q = new URLSearchParams();
-    if (preview) q.set('preview', '1');
-    if (target) q.set('target', target);
-    const res = await fetch(`/api/excel?${q}`, {
-      method: 'POST',
-      body: XL.file,
-      headers: { 'X-File-Name': encodeURIComponent(XL.file.name), 'Content-Type': 'application/octet-stream', Accept: 'application/json' },
-      credentials: 'same-origin',
-    });
+  async function xlApi(method, url, body) {
+    const init = { method, headers: { Accept: 'application/json' }, credentials: 'same-origin' };
+    if (body instanceof Blob) {
+      init.body = body;
+      init.headers['Content-Type'] = 'application/octet-stream';
+      init.headers['X-File-Name'] = encodeURIComponent(body.name || 'file.xlsx');
+    } else if (body !== undefined) {
+      init.body = JSON.stringify(body);
+      init.headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(url, init);
     if (!(res.headers.get('content-type') || '').includes('application/json')) throw new Error('Phiên đăng nhập đã hết hạn. Tải lại trang, đăng nhập rồi thử lại.');
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
+  }
+
+  /** Gửi file: xem trước (preview) hoặc lưu. */
+  function xlSend(target, preview) {
+    const q = new URLSearchParams();
+    if (preview) q.set('preview', '1');
+    if (target) q.set('target', target);
+    return xlApi('POST', `/api/excel?${q}`, XL.file);
   }
 
   function xlTableHtml(tasks) {
@@ -632,8 +536,31 @@
       </section>`;
   }
 
+  function rosterPreviewHtml(p) {
+    const groups = p.sections.reduce((n, x) => n + x.groups.length, 0);
+    const members = p.sections.reduce((n, x) => n + x.memberCount, 0);
+    const notes = [...p.warnings, ...(p.skipped.length ? [`Không gắn vào dashboard (không phải dòng tiền): ${p.skipped.join(', ')}.`] : [])];
+    const head = `<div class="xl-overview"><b>Phân chia nhiệm vụ · ${p.sections.length} dòng tiền · ${groups} nhóm · ${members} nhân sự</b><span class="hint">Mỗi “Đội trưởng / Trưởng nhóm” là PIC của 1 nhóm. Nạp file này sẽ thay toàn bộ phân chia nhóm đang có${p.existing ? ` (${p.existing} dòng tiền)` : ''}; task vẫn lấy từ sheet WR - MASTER TASK.</span></div>`;
+    const warn = notes.length ? `<div class="notice">${icon('info')}<div class="grow"><b>Lưu ý</b><ul>${notes.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div></div>` : '';
+    const secs = p.sections.map((x) => `<section class="xl-sec">
+        <div class="xl-sum">
+          <div class="xl-title">${x.code ? `<span class="code">${esc(x.code)}</span>` : ''}<b>${esc(x.raw)}</b><span class="hint">${x.groups.length} nhóm · ${x.memberCount} nhân sự</span></div>
+          <span class="xl-where">${icon('arrowRight')}${x.target.streamId ? `Thẻ “${esc(x.target.streamName)}”` : 'Tạo thẻ dòng tiền mới'}</span>
+        </div>
+        <div class="xl-table"><table>
+          <thead><tr><th>Nhóm</th><th>PIC</th><th>Nhiệm vụ chính</th><th>Thành viên</th></tr></thead>
+          <tbody>${x.groups.map((g, i) => `<tr><td class="c-code">Nhóm ${i + 1}</td><td>${esc(g.lead?.name || 'Chưa chốt PIC')}</td><td>${esc(g.mainTask || 'Mỗi người một nhiệm vụ')}</td><td>${esc(g.members.filter((m) => !m.placeholder).map((m) => m.name).join(', '))}</td></tr>`).join('')}</tbody>
+        </table></div>
+      </section>`).join('');
+    return head + warn + secs;
+  }
+
   function renderXlPreview() {
     const p = XL.preview;
+    if (p.kind === 'roster') {
+      $('xlResult').innerHTML = rosterPreviewHtml(p);
+      return;
+    }
     const single = p.sections.length === 1;
     const total = p.sections.reduce((n, s) => n + s.counts.total, 0);
     const flagged = p.sections.reduce((n, s) => n + s.tasks.filter((t) => t.flags.length).length, 0);
@@ -648,6 +575,7 @@
     try {
       XL.preview = await xlSend(target, true);
       renderXlPreview();
+      $('xlSubmit').textContent = XL.preview.kind === 'roster' ? 'Nạp phân chia nhóm' : 'Đưa lên dashboard';
       xlStatus('');
     } catch (e) {
       XL.preview = null;
@@ -670,13 +598,22 @@
 
   function renderXlList() {
     const list = S.data?.excelImports || [];
-    $('xlList').innerHTML = list.length
+    const listHtml = list.length
       ? `<div class="xl-list"><h3>Đã nạp lên dashboard</h3><ul>${list.map((i) => `<li>
           <span class="grow"><b>${esc(i.title)}</b> → ${i.attached ? `thẻ “${esc(i.streamName)}”` : 'thẻ riêng'}
             <span class="hint">${esc([`${i.count} task`, i.fileName, i.uploadedBy, i.uploadedAt && clock(Date.parse(i.uploadedAt))].filter(Boolean).join(' · '))}</span></span>
           <button type="button" class="linkbtn danger" data-xl-remove="${esc(i.key)}" data-title="${esc(i.title)}" data-count="${i.count}">Gỡ khỏi dashboard</button>
         </li>`).join('')}</ul></div>`
       : '';
+    const teams = S.data?.excelTeams || [];
+    const teamsHtml = teams.length
+      ? `<div class="xl-list"><h3>Phân chia nhóm</h3><ul><li>
+          <span class="grow"><b>${esc((teams[0].fileName || 'File phân chia').replace(/\.xlsx$/i, ''))}</b>
+            <span class="hint">${esc([`${teams.length} dòng tiền`, `${teams.reduce((n, x) => n + x.groups, 0)} nhóm`, teams[0].uploadedBy, teams[0].uploadedAt && clock(Date.parse(teams[0].uploadedAt))].filter(Boolean).join(' · '))}</span></span>
+          <button type="button" class="linkbtn danger" data-teams-remove>Gỡ phân chia nhóm</button>
+        </li></ul></div>`
+      : '';
+    $('xlList').innerHTML = teamsHtml + listHtml;
   }
 
   $('xlBtn').addEventListener('click', () => {
@@ -696,15 +633,26 @@
 
   dlg.addEventListener('click', async (e) => {
     if (e.target === dlg || e.target.closest('[data-xl-close]')) { if (!XL.busy) dlg.close(); return; }
+    if (e.target.closest('[data-teams-remove]') && !XL.busy) {
+      if (!confirm('Gỡ phân chia nhóm khỏi dashboard? Task không bị ảnh hưởng.')) return;
+      xlBusy(true, 'Đang gỡ…');
+      try {
+        const r = await xlApi('DELETE', '/api/excel/teams');
+        await load();
+        xlStatus(`Đã gỡ phân chia nhóm của ${r.removed} dòng tiền.`, 'ok');
+      } catch (err) {
+        xlStatus(`Không gỡ được: ${err.message || err}`, 'err');
+      } finally {
+        xlBusy(false);
+      }
+      return;
+    }
     const rm = e.target.closest('[data-xl-remove]');
     if (!rm || XL.busy) return;
     if (!confirm(`Gỡ ${rm.dataset.count} task Excel của “${rm.dataset.title}” khỏi dashboard?`)) return;
     xlBusy(true, 'Đang gỡ…');
     try {
-      const res = await fetch(`/api/excel?key=${encodeURIComponent(rm.dataset.xlRemove)}`, { method: 'DELETE', headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      if (S.openId === rm.dataset.xlRemove) closeDrawer(false);
+      await xlApi('DELETE', `/api/excel?key=${encodeURIComponent(rm.dataset.xlRemove)}`);
       await load();
       xlStatus(`Đã gỡ task Excel của “${rm.dataset.title}”.`, 'ok');
     } catch (err) {
@@ -720,13 +668,18 @@
     xlBusy(true, 'Đang đưa lên dashboard…');
     try {
       const r = await xlSend($('xlTarget')?.value || '', false);
+      if (r.kind === 'roster') {
+        resetXl();
+        await load();
+        xlStatus(`Đã nạp phân chia nhóm cho ${r.results.length} dòng tiền (${r.results.reduce((n, x) => n + x.groups, 0)} nhóm).`, 'ok');
+        return;
+      }
       const added = r.results.filter((x) => !x.removed);
       if (added.length === 1 && r.results.length === 1) {
-        // 1 dòng tiền: đóng hộp thoại và mở luôn dòng tiền vừa nạp.
+        // 1 dòng tiền: đóng hộp thoại và cuộn tới dòng tiền vừa nạp.
         xlBusy(false, '');
         dlg.close();
-        if (S.openId) closeDrawer(false);
-        S.openAfterLoad = added[0].key;
+        S.scrollTo = added[0].key;
         await load();
         return;
       }

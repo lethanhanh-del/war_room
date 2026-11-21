@@ -9,7 +9,7 @@
 // Nếu Google đổi định dạng trang htmlview: đọc cả file .xlsx (chậm hơn nhưng vẫn đúng).
 
 import { normKey } from '../worksuite/model.js';
-import { extractWorkbook, parseStreamTitle } from './tasks.js';
+import { extractWorkbook, parseStreamTitle, unreadableWarning } from './tasks.js';
 import { readXlsx } from './xlsx.js';
 
 const DEFAULT_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK
@@ -126,7 +126,8 @@ export function streamSections(sheets, { now = Date.now() } = {}) {
     if (!sec) {
       const st = parseStreamTitle(sheet.name);
       sec = { sheet: sheet.name, streamNo: st.no ?? null, name: st.name, pic: '', asOf: '', tasks: [], warnings: [] };
-      book.warnings.push(`Sheet “${sheet.name}” không có dòng tiêu đề hợp lệ (cần các cột “Task / Đầu việc”, “Người phụ trách”, “Hạn hoàn thành”, “Trạng thái”) — chưa đọc được task của sheet này.`);
+      const warning = unreadableWarning(sheet.name);
+      if (!book.warnings.includes(warning)) book.warnings.push(warning); // extractWorkbook có thể đã báo
     }
     const no = sec.streamNo || streamNoInCells(sheet, sec.name);
     return {

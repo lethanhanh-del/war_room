@@ -2,84 +2,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readXlsx, XlsxError } from '../src/excel/xlsx.js';
 import { cleanOwner, dueFromCell, excelStatus, extractWorkbook, isGroupOwner, parseStreamTitle, parseWorkbookFile, progressFromCell } from '../src/excel/tasks.js';
-import { makeDirectory, matchStream, mergeExcelImports, previewImport } from '../src/excel/merge.js';
+import { makeDirectory, matchStream, mergeExcelImports, mergeTeams, previewImport } from '../src/excel/merge.js';
+import { extractRoster, isRoster } from '../src/excel/roster.js';
 import { buildStreamsModel } from '../src/worksuite/model.js';
+import { D, MASTER_HEADER, PCT, enc, makeZip, masterFile, rosterFile, sheetXml } from './fixtures/xlsx.js';
 
 const NOW = Date.UTC(2026, 10, 21, 8, 0, 0); // 21/11/2026 15:00 giờ VN
 const PERIOD = { start: '2026-11-21', end: '2026-11-25' };
 
-// ---------- dựng file .xlsx giả giống file mẫu "DONG_TIEN_2_BANKING" ----------
-
-const enc = new TextEncoder();
-const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-async function deflateRaw(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-/** ZIP tối giản (không tính CRC — bộ đọc không kiểm CRC). */
-async function makeZip(files, { deflate = false } = {}) {
-  const parts = [];
-  const central = [];
-  let offset = 0;
-  for (const [name, content] of Object.entries(files)) {
-    const nameBytes = enc.encode(name);
-    const raw = enc.encode(content);
-    const data = deflate ? await deflateRaw(raw) : raw;
-    const method = deflate ? 8 : 0;
-    const local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true);
-    local.setUint16(4, 20, true);
-    local.setUint16(8, method, true);
-    local.setUint32(18, data.length, true);
-    local.setUint32(22, raw.length, true);
-    local.setUint16(26, nameBytes.length, true);
-    parts.push(new Uint8Array(local.buffer), nameBytes, data);
-    const cd = new DataView(new ArrayBuffer(46));
-    cd.setUint32(0, 0x02014b50, true);
-    cd.setUint16(4, 20, true);
-    cd.setUint16(6, 20, true);
-    cd.setUint16(10, method, true);
-    cd.setUint32(20, data.length, true);
-    cd.setUint32(24, raw.length, true);
-    cd.setUint16(28, nameBytes.length, true);
-    cd.setUint32(42, offset, true);
-    central.push(new Uint8Array(cd.buffer), nameBytes);
-    offset += 30 + nameBytes.length + data.length;
-  }
-  const cdSize = central.reduce((n, p) => n + p.length, 0);
-  const eocd = new DataView(new ArrayBuffer(22));
-  eocd.setUint32(0, 0x06054b50, true);
-  eocd.setUint16(8, Object.keys(files).length, true);
-  eocd.setUint16(10, Object.keys(files).length, true);
-  eocd.setUint32(12, cdSize, true);
-  eocd.setUint32(16, offset, true);
-  const all = [...parts, ...central, new Uint8Array(eocd.buffer)];
-  const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
-  let o = 0;
-  for (const p of all) { out.set(p, o); o += p.length; }
-  return out;
-}
-
-const col = (i) => String.fromCharCode(65 + i);
-/** Ô: chuỗi -> inlineStr; {s: n} -> shared string; {n, s} -> số có style; null -> bỏ trống. */
-function cellXml(ref, v) {
-  if (v === null || v === undefined) return '';
-  if (typeof v === 'string') return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${xmlEsc(v)}</x:t></x:is></x:c>`;
-  if (typeof v === 'number') return `<x:c r="${ref}" t="n"><x:v>${v}</x:v></x:c>`;
-  if ('shared' in v) return `<x:c r="${ref}" t="s"><x:v>${v.shared}</x:v></x:c>`;
-  return `<x:c r="${ref}" s="${v.style}" t="n"><x:v>${v.n}</x:v></x:c>`;
-}
-function sheetXml(rows) {
-  const body = rows.map(([r, cells]) => `<x:row r="${r}">${cells.map((v, i) => cellXml(`${col(i)}${r}`, v)).join('')}</x:row>`).join('');
-  return `<?xml version="1.0" encoding="utf-8"?><x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:sheetData>${body}</x:sheetData></x:worksheet>`;
-}
+// ---------- file .xlsx giả giống file mẫu "DONG_TIEN_2_BANKING" ----------
 
 const HEADER = ['STT', 'Mã task', 'Dòng tiền', 'Nội dung nhiệm vụ', 'Người phụ trách', 'Deadline', 'Trạng thái', '% thực hiện',
   'Sản phẩm / bằng chứng hoàn thành', 'Điểm nghẽn / rủi ro', 'Bước tiếp theo', 'Ưu tiên', 'Link hồ sơ', 'Hiển thị LED', 'Ghi chú kiểm soát'];
-const D = (serial) => ({ n: serial, style: 1 }); // ô ngày dd/mm/yyyy
-const PCT = (n) => ({ n, style: 2 }); // ô phần trăm
 
 // 46347 = 21/11/2026 … 46351 = 25/11/2026, 46356 = 30/11/2026
 const TASK_ROWS = [
@@ -224,35 +158,6 @@ test('extractTasks: đọc đúng file mẫu Banking', async () => {
   assert.ok(r.warnings.some((w) => /Hiển thị LED/.test(w)));
 });
 
-// File tổng "WR - MASTER TASK": mỗi sheet "Dòng tiền …" là 1 dòng tiền, có sheet danh mục ẩn.
-const MASTER_HEADER = ['STT', 'Dòng tiền', 'Nhóm công việc', 'Task / Đầu việc', 'Người phụ trách', 'Người phối hợp', 'Hạn hoàn thành', 'Trạng thái', 'Ưu tiên', 'Đầu ra cần có', 'Điểm nghẽn / Cần hỗ trợ'];
-async function masterFile() {
-  const sheets = {
-    'Dòng tiền Banking': [
-      [1, MASTER_HEADER],
-      [2, [1, 'Banking', 'SS1 – Hạn mức', 'Hoàn thiện hồ sơ trình HDBank', 'Nguyễn Thị Mai Thu', 'Huỳnh Ngọc Nhật Tài, Ban PTDA', D(46351), 'Đang thực hiện', 'P0', 'Hồ sơ tổng hợp', 'Chờ FS']],
-      [3, [2, 'Banking', 'SS1 – Hạn mức', 'Chốt điều kiện hạn mức', 'Nguyễn Thế Nhiên', '', D(46352), 'Cần hỗ trợ', 'P0', 'Biên bản làm việc', 'Phụ thuộc HDBank']],
-      ...Array.from({ length: 50 }, (_, i) => [4 + i, []]), // dòng trống có định dạng
-    ],
-    'Dòng tiền Tài chính': [[1, MASTER_HEADER], [2, [1, 'Tài chính', 'Kế hoạch', 'Tổng hợp 10 dòng tiền', 'Phạm Thanh Hùng', '', '24/11/2026', 'Hoàn tất', '', 'Báo cáo', '']]],
-    'Dòng tiền nợ khó đòi': [[1, MASTER_HEADER]],
-    'DataValidation': [[1, ['Company', 'Department']], [2, ['CTM', 'Ban Tài chính']]],
-  };
-  const names = Object.keys(sheets);
-  const files = {
-    '[Content_Types].xml': '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
-    'xl/workbook.xml': `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names
-      .map((n, i) => `<sheet name="${xmlEsc(n)}" sheetId="${i + 1}"${n === 'DataValidation' ? ' state="veryHidden"' : ''} r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`,
-    'xl/_rels/workbook.xml.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names
-      .map((n, i) => `<Relationship Id="rId${i + 1}" Type="…/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rS" Type="…/styles" Target="styles.xml"/></Relationships>`,
-    'xl/styles.xml': '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="3"><xf numFmtId="0"/><xf numFmtId="14"/><xf numFmtId="9"/></cellXfs></styleSheet>',
-  };
-  names.forEach((n, i) => {
-    files[`xl/worksheets/sheet${i + 1}.xml`] = sheetXml(sheets[n]).replace(/<x:row r="(\d+)"><\/x:row>/g, '<x:row r="$1"><x:c r="G$1" s="1"/></x:row>');
-  });
-  return makeZip(files, { deflate: true });
-}
-
 test('extractWorkbook: file tổng — mỗi sheet "Dòng tiền …" là 1 dòng tiền, bỏ qua sheet ẩn và dòng trống', async () => {
   const book = await parseWorkbookFile(await masterFile(), { now: NOW });
   assert.equal(book.format, 'master');
@@ -272,6 +177,33 @@ test('extractWorkbook: file tổng — mỗi sheet "Dòng tiền …" là 1 dòn
   assert.equal(taichinh.tasks[0].due, '2026-11-24');
   assert.equal(nokhodoi.tasks.length, 0);
   assert.ok(book.warnings.some((w) => /chưa có task: Nợ khó đòi/.test(w)));
+  // File tổng không có cột "Bước tiếp theo" / "Link hồ sơ": không đánh dấu "đang chờ chưa có bước xử lý" hay "chưa có bằng chứng"
+  assert.equal(banking.tasks[1].next, null);
+  assert.equal(taichinh.tasks[0].link, null);
+  const flags = previewImport(banking, { now: NOW, period: PERIOD, users: USERS }).tasks.flatMap((x) => x.flags.map((f) => f.key));
+  assert.ok(!flags.includes('waiting') && !flags.includes('proof'), flags.join(','));
+});
+
+test('extractWorkbook: file tổng lấy số dòng tiền từ cột "Dòng tiền" ("Dòng tiền 2: Banking" -> DT02)', async () => {
+  const book = await parseWorkbookFile(await masterFile({
+    'Dòng tiền Banking': [[1, MASTER_HEADER], [2, [1, 'Dòng tiền 2: Banking', 'H300 – DELTA', 'Lấy phán quyết của Tòa', 'Chị Thúy Hiền', '', D(46351), 'Vướng mắc', 'P0', 'Phán quyết', '']]],
+  }), { now: NOW });
+  const [banking] = book.sections;
+  assert.deepEqual([banking.title, banking.code, banking.tasks[0].group], ['Dòng tiền 2: Banking', 'DT02', 'H300 – DELTA']);
+});
+
+test('extractWorkbook: tiêu đề cột bị đổi thành "Cột 4"… vẫn đọc theo thứ tự cột của file mẫu', async () => {
+  const broken = MASTER_HEADER.map((h, i) => (i >= 1 && i <= 4 ? `Cột ${i + 1}` : h));
+  const book = await parseWorkbookFile(await masterFile({
+    'Dòng tiền nợ khó đòi': [[1, broken], [2, [1, 'Nợ khó đòi', 'HTC', 'Thúc đẩy tòa ra bản án', 'Mạc Thị Thúy Hiền', '', D(46350), 'Đang xử lý', 'P0', 'Bản án', '']]],
+    'Dòng tiền Banking': [[1, ['Ghi chú', 'tạm']]], // không còn dòng tiêu đề
+  }), { now: NOW });
+  assert.deepEqual(book.sections.map((s) => [s.name, s.tasks.length]), [['Nợ khó đòi', 1]]);
+  assert.equal(book.sections[0].tasks[0].subject, 'Thúc đẩy tòa ra bản án');
+  assert.equal(book.sections[0].tasks[0].owner, 'Mạc Thị Thúy Hiền');
+  assert.ok(book.warnings.some((w) => /dòng tiêu đề bị đổi \(B “Cột 2”/.test(w)), book.warnings.join(' | '));
+  assert.deepEqual(book.unreadable, [{ sheet: 'Dòng tiền Banking', name: 'Banking' }]);
+  assert.ok(book.warnings.some((w) => /Sheet “Dòng tiền Banking” không có dòng tiêu đề hợp lệ/.test(w)));
 });
 
 test('extractWorkbook: file tổng chưa có task nào -> báo lỗi rõ ràng', () => {
@@ -393,4 +325,60 @@ test('previewImport: số task theo trạng thái và lỗi theo nguyên tắc W
   assert.equal(p.counts.total, 6);
   assert.deepEqual(p.issues, { owner: 1, timebox: 1, waiting: 1, proof: 1 });
   assert.equal(p.tasks.find((t) => t.code === 'H01').ownerName, 'Mạc Thị Thúy Hiền');
+});
+
+// ---------- roster.js: file phân chia nhiệm vụ ----------
+
+test('extractRoster: nhóm theo Đội trưởng, PIC, nhiệm vụ chính và nhiệm vụ từng thành viên', async () => {
+  const book = await readXlsx(await rosterFile());
+  assert.equal(isRoster(book), true);
+  assert.equal(isRoster(await readXlsx(await masterFile())), false);
+  const { sections, warnings } = extractRoster(book);
+  assert.deepEqual(sections.map((s) => [s.name, s.canCreate]), [
+    ['Cố vấn, chỉ đạo', false],
+    ['Tài chính phụ trách triển khai và chịu trách nhiệm 10 dòng tiền', true],
+    ['Bán 4 dự án', true],
+    ['Banking', true],
+    ['Thu trước hạn/quá hạn', true],
+    ['IT', false],
+  ]); // "Trái phiếu" chưa có người -> bỏ
+  const by = Object.fromEntries(sections.map((s) => [s.name, s]));
+  const ban = by['Bán 4 dự án'];
+  assert.equal(ban.code, 'DT01');
+  assert.deepEqual(ban.groups.map((g) => [g.lead.name, g.mainTask, g.members.length]), [['Hoàng Thị Quỳnh Mai', 'Networking', 3], ['Ngô Thị Thu Thủy', 'Xử lý pháp lý sổ hồng', 2]]);
+  assert.equal(ban.groups[1].members[1].placeholder, true);
+  assert.equal(ban.memberCount, 4);
+  const [team] = by.Banking.groups;
+  assert.equal(by.Banking.groups.length, 1);
+  assert.equal(team.mainTask, ''); // mỗi người một nhiệm vụ
+  assert.deepEqual(team.members.map((m) => [m.name, m.role, m.task]), [
+    ['Nguyễn Thị Mai Thu', 'Đội trưởng', 'Kế hoạch kinh doanh SS1 và N20.'],
+    ['Nguyễn Thế Nhiên', 'Đội phó', 'Soát xét tất cả hồ sơ'],
+    ['Võ Trường Sơn', '', 'Tiến độ xây dựng'],
+  ]);
+  // Cùng dòng tiền ở sheet "Nhóm hỗ trợ" -> gộp vào nhóm cùng nhiệm vụ
+  assert.deepEqual(by['Thu trước hạn/quá hạn'].groups.map((g) => g.members.length), [2]);
+  assert.deepEqual(warnings, []);
+});
+
+test('mergeTeams: gắn nhóm vào thẻ cùng tên, tạo thẻ cho dòng tiền chưa có, bỏ qua nhóm hỗ trợ', async () => {
+  const { sections } = extractRoster(await readXlsx(await rosterFile()));
+  const rows = sections.map((s) => ({ ...s, fileName: 'WarRoom.xlsx', uploadedAt: '2026-11-21T09:00:00.000Z', uploadedBy: 'admin' }));
+  const ws = wsModel();
+  const out = mergeTeams(ws, rows);
+  const banking = out.streams.find((s) => s.id === 'T1');
+  assert.deepEqual([banking.code, banking.teams.groups.length, banking.pic.name], ['DT02', 1, 'Nguyễn Thị Mai Thu']);
+  assert.equal(banking.headcount, 3);
+  assert.deepEqual(out.streams.filter((s) => s.id.startsWith('team:')).map((s) => [s.code, s.name, s.pic?.name, s.counts.total]), [
+    ['DT01', 'Bán 4 dự án', 'Hoàng Thị Quỳnh Mai', 0],
+    ['DT04', 'Thu trước hạn/quá hạn', 'Hoàng Thị Hà Thu', 0],
+    ['', 'Tài chính phụ trách triển khai và chịu trách nhiệm 10 dòng tiền', 'Phạm Thanh Hùng', 0],
+  ]);
+  assert.ok(!out.streams.some((s) => /^(IT|Cố vấn)/.test(s.name)));
+  assert.equal(out.summary.streams, 5);
+  assert.equal(ws.streams.find((s) => s.id === 'T1').teams, undefined); // không sửa dữ liệu gốc
+  // Thẻ từ sheet task (tên ngắn) vẫn khớp: "Tài chính" ↔ "Tài chính phụ trách…"
+  const sheetCard = { ...ws.streams[0], id: 'xl:tai-chinh', code: '', name: 'Tài chính', fullName: 'Dòng tiền Tài chính' };
+  const out2 = mergeTeams({ ...ws, streams: [sheetCard] }, rows);
+  assert.equal(out2.streams.find((s) => s.id === 'xl:tai-chinh').teams.groups[0].lead.name, 'Phạm Thanh Hùng');
 });

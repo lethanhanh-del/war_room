@@ -160,6 +160,33 @@ function findHeader(rows) {
   return null;
 }
 
+/** Cảnh báo cho sheet "Dòng tiền …" không tìm được dòng tiêu đề (dùng chung với gsheet.js để không báo 2 lần). */
+export const unreadableWarning = (sheet) =>
+  `Sheet “${sheet}” không có dòng tiêu đề hợp lệ (cần các cột “Task / Đầu việc”, “Người phụ trách”, “Hạn hoàn thành”, “Trạng thái”) — chưa đọc được task của sheet này.`;
+
+// Thứ tự cột A–K của file mẫu WR - MASTER TASK.
+const MASTER_LAYOUT = ['stt', 'stream', 'group', 'subject', 'owner', 'support', 'due', 'status', 'priority', 'output', 'blocker'];
+const MASTER_LABEL = ['STT', 'Dòng tiền', 'Nhóm công việc', 'Task / Đầu việc', 'Người phụ trách', 'Người phối hợp', 'Hạn hoàn thành', 'Trạng thái', 'Ưu tiên', 'Đầu ra cần có', 'Điểm nghẽn / Cần hỗ trợ'];
+
+/**
+ * Sheet "Dòng tiền …" có dòng tiêu đề giống file mẫu nhưng vài ô bị đổi tên (vd Google Sheets tự đặt "Cột 4"
+ * khi ô tiêu đề của bảng bị xoá): đọc theo thứ tự cột của file mẫu nếu ít nhất 4 ô còn đúng tên ở đúng vị trí.
+ */
+function masterHeader(rows) {
+  for (const row of rows.slice(0, 40)) {
+    const wrong = [];
+    let hits = 0;
+    MASTER_LAYOUT.forEach((field, i) => {
+      const cell = row.cells[i];
+      const h = cell && typeof cell.v === 'string' ? normKey(cell.v) : '';
+      if (h && COLUMNS.find(([f]) => f === field)[1](h)) hits++;
+      else wrong.push(`${String.fromCharCode(65 + i)} “${cell?.v ?? ''}” (cần “${MASTER_LABEL[i]}”)`);
+    });
+    if (hits >= 4) return { row: row.r, map: Object.fromEntries(MASTER_LAYOUT.map((f, i) => [f, i])), wrong };
+  }
+  return null;
+}
+
 function findText(sheets, re, maxRow = 8) {
   for (const sheet of sheets) {
     for (const row of sheet.rows) {
@@ -184,6 +211,7 @@ function readRows(sheet, header, { defaultYear, label }) {
   const col = (row, field) => (map[field] === undefined ? undefined : row.cells[map[field]]);
   // File riêng 1 dòng tiền dùng cột "Dòng tiền" cho nhóm con (H300 – DELTA…); file tổng có cột "Nhóm công việc" riêng.
   const groupField = map.group !== undefined ? 'group' : 'stream';
+  const streamValues = new Set(); // file tổng: cột "Dòng tiền" của từng dòng, vd "Dòng tiền 2: Banking"
   const tasks = [];
   const warnings = [];
   const unknownStatus = new Set();
@@ -210,6 +238,7 @@ function readRows(sheet, header, { defaultYear, label }) {
     if (code) codes.add(code);
     const link = text(col(row, 'link'));
     const ownerRaw = text(col(row, 'owner'));
+    if (groupField === 'group' && map.stream !== undefined) streamValues.add(text(col(row, 'stream')));
     tasks.push({
       row: row.r,
       code,
@@ -224,30 +253,43 @@ function readRows(sheet, header, { defaultYear, label }) {
       progress: progressFromCell(col(row, 'progress')),
       output: text(col(row, 'output')),
       blocker: text(col(row, 'blocker')),
-      next: text(col(row, 'next')),
+      next: map.next === undefined ? null : text(col(row, 'next')), // null = file không có cột này
       priority: text(col(row, 'priority')).slice(0, 20),
-      link: /^https?:\/\//i.test(link) ? link : '',
+      link: map.link === undefined ? null : /^https?:\/\//i.test(link) ? link : '',
       note: text(col(row, 'note')),
     });
   }
   if (hiddenRows) warnings.push(`${label}: bỏ qua ${hiddenRows} dòng có “Hiển thị LED” = Không.`);
   if (unknownStatus.size) warnings.push(`${label}: trạng thái chưa nhận dạng được, tạm tính là “Chưa bắt đầu”: ${[...unknownStatus].map((s) => `“${s}”`).join(', ')}.`);
   if (badDue.length) warnings.push(`${label}: không đọc được hạn của ${badDue.slice(0, 5).join(', ')}${badDue.length > 5 ? '…' : ''}.`);
-  return { tasks, warnings };
+  return { tasks, warnings, streamValues: [...streamValues].filter(Boolean) };
 }
 
 function section(stream, sheet, header, extra) {
-  const no = stream?.no ?? null;
+  let no = stream?.no ?? null;
   const name = stream?.name || '';
   const year = extra.asOf ? Number(extra.asOf.slice(-4)) : extra.year;
   const label = name ? `Dòng tiền ${name}` : `Sheet “${sheet.name}”`;
-  const { tasks, warnings } = readRows(sheet, header, { defaultYear: year, label });
+  const { tasks, warnings, streamValues } = readRows(sheet, header, { defaultYear: year, label });
+  // Tên sheet "Dòng tiền Banking" không có số, nhưng cột "Dòng tiền" ghi "Dòng tiền 2: Banking" -> DT02.
+  if (!no) {
+    const key = normKey(name);
+    for (const v of streamValues) {
+      const t = parseStreamTitle(v);
+      const k = normKey(t?.name);
+      if (t?.no && (!key || !k || k === key || k.startsWith(`${key} `) || key.startsWith(`${k} `))) {
+        no = t.no;
+        break;
+      }
+    }
+  }
   for (const f of ['owner', 'due', 'status']) {
     if (header.map[f] === undefined) warnings.push(`${label}: không có cột “${{ owner: 'Người phụ trách', due: 'Hạn hoàn thành', status: 'Trạng thái' }[f]}”.`);
   }
   return {
     sheet: sheet.name,
-    title: name ? `Dòng tiền${no ? ` ${no}` : ''}: ${name}` : `Dòng tiền${no ? ` ${no}` : ''}`,
+    // "Dòng tiền 2: Banking" (file có số dòng tiền) hoặc "Dòng tiền Banking" (tên sheet trong file tổng)
+    title: name ? (no ? `Dòng tiền ${no}: ${name}` : `Dòng tiền ${name}`) : `Dòng tiền${no ? ` ${no}` : ''}`,
     streamNo: no,
     code: no ? `DT${pad(no)}` : '',
     name,
@@ -262,16 +304,25 @@ function section(stream, sheet, header, extra) {
  * Đọc cả file: trả về 1 phần (section) cho mỗi dòng tiền có trong file.
  * @param book  kết quả readXlsx()
  * @param opts  { fileName, now }
- * @returns {{ format: 'master' | 'single', sections: object[], warnings: string[] }}
+ * @returns {{ format: 'master' | 'single', sections: object[], unreadable?: {sheet, name}[], warnings: string[] }}
  *   section: { sheet, title, streamNo, code, name, pic, asOf, tasks, warnings }
+ *   unreadable: sheet "Dòng tiền …" không tìm được dòng tiêu đề (đã có cảnh báo unreadableWarning)
  */
 export function extractWorkbook(book, opts = {}) {
   const year = new Date((opts.now ?? Date.now()) + 7 * 3600000).getUTCFullYear();
   const tables = [];
+  const unreadable = []; // sheet "Dòng tiền …" không tìm được dòng tiêu đề
+  const notes = [];
   for (const sheet of book.sheets) {
     if (sheet.hidden) continue;
-    const header = findHeader(sheet.rows);
-    if (header) tables.push({ sheet, header, stream: parseStreamTitle(sheet.name) });
+    const stream = parseStreamTitle(sheet.name);
+    let header = findHeader(sheet.rows);
+    if (!header && stream?.name) {
+      header = masterHeader(sheet.rows);
+      if (header) notes.push(`Sheet “${sheet.name}”: dòng tiêu đề bị đổi (${header.wrong.join(', ')}) — đang đọc theo thứ tự cột của file mẫu, nên sửa lại dòng tiêu đề.`);
+      else unreadable.push({ sheet: sheet.name, name: stream.name });
+    }
+    if (header) tables.push({ sheet, header, stream });
   }
   if (!tables.length) {
     throw new Error('Không tìm thấy bảng task trong file. Cần 1 dòng tiêu đề có cột “Task / Đầu việc” (hoặc “Nội dung nhiệm vụ”) và “Người phụ trách” / “Hạn hoàn thành” / “Trạng thái”.');
@@ -286,11 +337,15 @@ export function extractWorkbook(book, opts = {}) {
       const asOf = findText([above], AS_OF_RE, t.header.row);
       return section(t.stream, t.sheet, t.header, { year, pic: pic ? cleanOwner(pic[1]) : '', asOf: asOf ? asOf[1] : '' });
     });
-    const warnings = sections.flatMap((s) => s.warnings);
+    const warnings = [...notes, ...sections.flatMap((s) => s.warnings)];
+    for (const u of unreadable) warnings.push(unreadableWarning(u.sheet));
     const empty = sections.filter((s) => !s.tasks.length).map((s) => s.name);
-    if (empty.length === sections.length) throw new Error(`File chưa có task nào: các sheet ${sections.map((s) => `“${s.sheet}”`).join(', ')} mới chỉ có dòng tiêu đề.`);
+    if (empty.length === sections.length) {
+      const lost = unreadable.length ? ` Sheet ${unreadable.map((u) => `“${u.sheet}”`).join(', ')} không thấy dòng tiêu đề.` : '';
+      throw new Error(`File chưa có task nào: các sheet ${sections.map((s) => `“${s.sheet}”`).join(', ')} mới chỉ có dòng tiêu đề.${lost}`);
+    }
     if (empty.length) warnings.push(`Sheet chưa có task: ${empty.join(', ')}.`);
-    return { format: 'master', sections, warnings };
+    return { format: 'master', sections, unreadable, warnings };
   }
 
   // Dạng 2 — file riêng 1 dòng tiền: ưu tiên sheet "…NHAP…TASK…".

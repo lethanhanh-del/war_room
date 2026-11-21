@@ -100,14 +100,16 @@ export function toDashboardTask(t, ctx) {
     flags.push({ key: 'timebox', label: `Hạn ${ddmm(t.due)} vượt thời hạn War Room (${ddmm(end)})` });
   }
   if (!t.output) flags.push({ key: 'result', label: FLAG_LABEL.result });
-  if (c.status === 'waiting' && !t.next) flags.push({ key: 'waiting', label: FLAG_LABEL.waiting });
-  if (done && !t.link) flags.push({ key: 'proof', label: FLAG_LABEL.proof });
+  // Chỉ kiểm khi file có cột "Bước tiếp theo" / "Link hồ sơ" (null = file không có cột đó, vd file tổng WR - MASTER TASK).
+  if (c.status === 'waiting' && t.next === '') flags.push({ key: 'waiting', label: FLAG_LABEL.waiting });
+  if (done && t.link === '') flags.push({ key: 'proof', label: FLAG_LABEL.proof });
 
   const label = String(t.status || '').trim();
   return {
     owner,
     task: {
       id: `xl:${ctx.key}:${t.code || t.row}`,
+      order: t.row,
       subject: t.subject,
       status: c.status,
       // Giữ nguyên chữ trong file ("Vướng mắc", "Chờ hồ sơ"…), trừ khi đã quá hạn theo deadline.
@@ -118,14 +120,14 @@ export function toDashboardTask(t, ctx) {
       dueMs: c.due?.ms ?? null,
       blocker: done ? '' : t.blocker,
       blockerLabel: 'Điểm nghẽn',
-      next: done ? '' : t.next,
+      next: done ? '' : t.next || '',
       support: t.support || '',
       output: t.output,
       note: t.note,
       code: t.code,
       group: t.group,
       priority: t.priority,
-      url: t.link,
+      url: t.link || '',
       source: 'excel',
       flags,
     },
@@ -252,4 +254,39 @@ export function mergeExcelImports(data, imports, opts = {}) {
   extra.sort((a, b) => a.no - b.no);
   const all = streams.concat(extra.map((e) => e.s));
   return { ...data, streams: all, summary: buildSummary(all), excelImports: list };
+}
+
+// ---------- phân chia nhóm (file phân chia nhiệm vụ, src/excel/roster.js) ----------
+
+const picOf = (m) => (m ? { name: m.name, title: [m.title, m.department].filter(Boolean).join(' · '), designation: m.title, department: m.department, initials: initials(m.name) } : null);
+const isLocal = (s) => /^(xl|team):/.test(String(s.id));
+const codeNo = (s) => Number(String(s.code || '').replace(/\D/g, '')) || 99;
+
+/**
+ * Gắn nhóm / PIC / nhiệm vụ từng thành viên vào thẻ dòng tiền cùng tên. Dòng tiền chưa có thẻ (vd Worksuite chưa kết nối,
+ * sheet task chưa có task) thì tạo thẻ mới để vẫn thấy ai phụ trách. Không sửa đối tượng đầu vào.
+ * @param rows [{ key, name, code, raw, canCreate, groups, memberCount, fileName, uploadedAt, uploadedBy, uploadedByName }]
+ */
+export function mergeTeams(data, rows) {
+  if (!rows || !rows.length) return data;
+  const streams = [...(data.streams || [])];
+  const list = [];
+  for (const row of rows) {
+    const match = matchStream(streams, row);
+    const lead = row.groups.map((g) => g.lead).find(Boolean);
+    const teams = { groups: row.groups, memberCount: row.memberCount, fileName: row.fileName, uploadedAt: row.uploadedAt, uploadedBy: row.uploadedByName || row.uploadedBy };
+    if (match) {
+      const i = streams.indexOf(match);
+      streams[i] = { ...match, code: match.code || row.code, pic: match.pic || picOf(lead), headcount: Math.max(match.headcount || 0, row.memberCount), teams };
+    } else if (row.canCreate) {
+      streams.push({
+        id: `team:${row.key}`, code: row.code, name: row.name, fullName: row.raw, url: '', own: null, pic: picOf(lead),
+        ...streamTotals([]), headcount: row.memberCount, people: [], source: 'excel', teams,
+      });
+    } else continue;
+    list.push({ key: row.key, name: row.raw, groups: row.groups.length, members: row.memberCount, attached: Boolean(match), fileName: row.fileName, uploadedAt: row.uploadedAt, uploadedBy: row.uploadedByName || row.uploadedBy });
+  }
+  // Thẻ Worksuite giữ thứ tự gốc; thẻ từ Excel xếp theo số dòng tiền (DT01, DT02…).
+  const all = streams.filter((x) => !isLocal(x)).concat(streams.filter(isLocal).sort((a, b) => codeNo(a) - codeNo(b) || a.name.localeCompare(b.name, 'vi')));
+  return { ...data, streams: all, summary: buildSummary(all), excelTeams: list };
 }

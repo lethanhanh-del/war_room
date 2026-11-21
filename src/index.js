@@ -83,7 +83,7 @@ export default {
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
     // Nạp task từ file Excel (file tổng WR - MASTER TASK hoặc file 1 dòng tiền). Task Excel không qua cache Worksuite:
     // mọi màn hình (kể cả TV) thấy thay đổi ở lần tải /api/streams kế tiếp.
-    if (path === "/api/excel") return handleExcel(request, env, url, user, (e) => getStreams(e));
+    if (path === "/api/excel" || path === "/api/excel/teams") return handleExcel(request, env, url, user, (e) => getStreams(e));
     if (path.startsWith("/api/admin/") || path === "/admin" || path === "/admin.html") {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);

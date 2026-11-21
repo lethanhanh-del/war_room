@@ -7,6 +7,10 @@
 //                                             sheet trống -> gỡ task Excel cũ của dòng tiền đó. File 1 dòng tiền: target =
 //                                             id thẻ Worksuite | "new" (thẻ riêng) | bỏ trống = tự nhận theo tên
 //   DELETE /api/excel?key=…                   gỡ task Excel của 1 dòng tiền
+//   DELETE /api/excel/teams                   gỡ phân chia nhóm
+// File phân chia nhiệm vụ (sheet "DS nhân sự War-Room": Dòng tiền · Thành viên · Đội trưởng/Đội phó · Nhiệm vụ thực hiện)
+// cũng nạp qua POST /api/excel: tự nhận ra, lưu vào bảng excel_teams (nhóm, PIC, nhiệm vụ từng thành viên) và thay toàn bộ
+// phân chia cũ. Task vẫn lấy từ Google Sheet WR - MASTER TASK (sheet-sync.js).
 // Header X-File-Name: tên file (encodeURIComponent). Header này cũng buộc trình duyệt gửi preflight khi gọi
 // từ trang khác, nên trang lạ không thể tự gửi file bằng phiên đăng nhập của người dùng.
 //
@@ -17,8 +21,10 @@ import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
 import { normKey } from '../worksuite/model.js';
-import { matchStream, mergeExcelImports, previewImport } from './merge.js';
-import { parseWorkbookFile } from './tasks.js';
+import { matchStream, mergeExcelImports, mergeTeams, previewImport } from './merge.js';
+import { extractRoster, isRoster } from './roster.js';
+import { extractWorkbook } from './tasks.js';
+import { readXlsx } from './xlsx.js';
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 const MAX_JSON_BYTES = 1500000;
@@ -33,7 +39,7 @@ export function warRoomPeriod(env = {}) {
 let ready = false;
 export async function ensureTable(env) {
   if (ready) return;
-  await env.DB.prepare(
+  await env.DB.batch([env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS excel_imports (
       stream_key TEXT PRIMARY KEY,
       title TEXT NOT NULL,
@@ -48,7 +54,22 @@ export async function ensureTable(env) {
       uploaded_by_name TEXT NOT NULL DEFAULT '',
       uploaded_at TEXT NOT NULL
     )`
-  ).run();
+  ), env.DB.prepare(
+    // Phân chia nhóm theo dòng tiền (file phân chia nhiệm vụ): groups = [{ lead, mainTask, members }]
+    `CREATE TABLE IF NOT EXISTS excel_teams (
+      team_key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      code TEXT NOT NULL DEFAULT '',
+      raw TEXT NOT NULL DEFAULT '',
+      can_create INTEGER NOT NULL DEFAULT 0,
+      groups TEXT NOT NULL,
+      member_count INTEGER NOT NULL DEFAULT 0,
+      file_name TEXT NOT NULL DEFAULT '',
+      uploaded_by TEXT NOT NULL DEFAULT '',
+      uploaded_by_name TEXT NOT NULL DEFAULT '',
+      uploaded_at TEXT NOT NULL
+    )`
+  )]);
   ready = true;
 }
 
@@ -79,6 +100,19 @@ export async function listImports(env, { withTasks = true } = {}) {
   });
 }
 
+export async function listTeams(env) {
+  await ensureTable(env);
+  const { results } = await env.DB.prepare('SELECT * FROM excel_teams ORDER BY code, name').all();
+  return results.map((r) => {
+    let groups = [];
+    try { groups = JSON.parse(r.groups); } catch { groups = []; }
+    return {
+      key: r.team_key, name: r.name, code: r.code, raw: r.raw, canCreate: Boolean(r.can_create), groups, memberCount: r.member_count,
+      fileName: r.file_name, uploadedBy: r.uploaded_by, uploadedByName: r.uploaded_by_name, uploadedAt: r.uploaded_at,
+    };
+  });
+}
+
 async function loadUsers(env) {
   try {
     const { results } = await env.DB.prepare('SELECT full_name, title, department FROM users').all();
@@ -88,13 +122,14 @@ async function loadUsers(env) {
   }
 }
 
-/** Gắn task Excel vào kết quả /api/streams. Lỗi D1 không làm hỏng dashboard: chỉ thêm 1 cảnh báo. */
+/** Gắn task Excel và phân chia nhóm vào kết quả /api/streams. Lỗi D1 không làm hỏng dashboard: chỉ thêm 1 cảnh báo. */
 export async function withExcel(env, data, now = Date.now()) {
   try {
-    const imports = await listImports(env);
-    if (!imports.length) return data;
-    const users = await loadUsers(env);
-    return { ...mergeExcelImports(data, imports, { now, period: warRoomPeriod(env), users }), warRoom: warRoomPeriod(env) };
+    const [imports, teams] = await Promise.all([listImports(env), listTeams(env)]);
+    let out = data;
+    if (imports.length) out = { ...mergeExcelImports(out, imports, { now, period: warRoomPeriod(env), users: await loadUsers(env) }), warRoom: warRoomPeriod(env) };
+    if (teams.length) out = mergeTeams(out, teams);
+    return out;
   } catch (e) {
     return { ...data, warnings: [...(data.warnings || []), `Không đọc được task nạp từ Excel: ${e?.message || e}`] };
   }
@@ -111,6 +146,14 @@ function cleanFileName(raw) {
  */
 export async function handleExcel(request, env, url, user, getWorksuite) {
   await ensureTable(env);
+
+  if (url.pathname === '/api/excel/teams') {
+    if (request.method !== 'DELETE') return json({ error: 'Phương thức không được hỗ trợ.' }, 405);
+    const { meta } = await env.DB.prepare('DELETE FROM excel_teams').run();
+    await log(env, request, user.username, 'excel_teams_remove', `gỡ phân chia nhóm của ${meta?.changes || 0} dòng tiền`);
+    await notifyLive(env, { scope: 'streams' });
+    return json({ ok: true, removed: meta?.changes || 0 });
+  }
 
   if (request.method === 'GET') {
     return json({ imports: await listImports(env, { withTasks: false }), warRoom: warRoomPeriod(env) });
@@ -137,7 +180,10 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
   const now = Date.now();
   let book;
   try {
-    book = await parseWorkbookFile(bytes, { fileName, now });
+    const raw = await readXlsx(bytes);
+    // File phân chia nhiệm vụ (DS nhân sự War-Room): nhóm, PIC, nhiệm vụ từng thành viên.
+    if (isRoster(raw)) return await handleRoster(request, env, url, user, getWorksuite, { book: raw, fileName, now });
+    book = extractWorkbook(raw, { fileName, now });
   } catch (e) {
     return json({ error: `Không đọc được file: ${e?.message || e}` }, 400);
   }
@@ -183,6 +229,51 @@ export async function handleExcel(request, env, url, user, getWorksuite) {
   await log(env, request, user.username, 'excel_import', importSummary(fileName, saved));
   await notifyLive(env, { scope: 'streams' });
   return json({ ok: true, total: saved.total, results: saved.results });
+}
+
+/** Nạp file phân chia nhiệm vụ: xem trước, hoặc thay toàn bộ phân chia nhóm cũ. */
+async function handleRoster(request, env, url, user, getWorksuite, { book, fileName, now }) {
+  const roster = extractRoster(book);
+  // So với các thẻ đang hiện trên dashboard (Worksuite + task từ Google Sheet / file), không chỉ Worksuite.
+  const ws = await getWorksuite(env).catch(() => null);
+  const shown = await withExcel(env, ws || { mode: 'unconfigured', streams: [], summary: null, otherGroups: [], warnings: [] }, now);
+  const streams = (shown.streams || []).filter((s) => !String(s.id).startsWith('team:'));
+  const sections = [];
+  const skipped = [];
+  for (const sec of roster.sections) {
+    const match = matchStream(streams, sec);
+    if (match || sec.canCreate) sections.push({ ...sec, match });
+    else skipped.push(sec.raw);
+  }
+  if (!sections.length) return json({ error: 'File phân chia không có dòng tiền nào khớp với dashboard.' }, 400);
+
+  if (url.searchParams.get('preview') === '1') {
+    return json({
+      preview: true,
+      kind: 'roster',
+      fileName,
+      warnings: roster.warnings,
+      skipped,
+      existing: (await listTeams(env)).length,
+      sections: sections.map(({ match, ...sec }) => ({ ...sec, target: { streamId: match?.id || '', streamName: match ? match.fullName || match.name : '' } })),
+    });
+  }
+
+  const at = new Date(now).toISOString();
+  const statements = [env.DB.prepare('DELETE FROM excel_teams')];
+  for (const sec of sections) {
+    statements.push(
+      env.DB.prepare(
+        `INSERT INTO excel_teams (team_key, name, code, raw, can_create, groups, member_count, file_name, uploaded_by, uploaded_by_name, uploaded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(sec.key, sec.name, sec.code, sec.raw, sec.canCreate ? 1 : 0, JSON.stringify(sec.groups), sec.memberCount, fileName, user.username, user.fullName || '', at)
+    );
+  }
+  await env.DB.batch(statements);
+  const results = sections.map((sec) => ({ key: `team:${sec.key}`, title: sec.raw, groups: sec.groups.length, members: sec.memberCount, streamName: sec.match ? sec.match.fullName || sec.match.name : sec.raw, streamId: sec.match?.id || `team:${sec.key}` }));
+  await log(env, request, user.username, 'excel_teams', `${fileName} · ${results.map((r) => `${r.title}: ${r.groups} nhóm`).join('; ')}`.slice(0, 1000));
+  await notifyLive(env, { scope: 'streams' });
+  return json({ ok: true, kind: 'roster', results });
 }
 
 export const importSummary = (fileName, saved) =>

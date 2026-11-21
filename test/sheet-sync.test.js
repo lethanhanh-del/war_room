@@ -96,7 +96,8 @@ test('readSheet: mỗi sheet "Dòng tiền …" là 1 thẻ theo thứ tự file
       ['Dòng tiền Banking', 'DT02', 'Dòng tiền 2: Banking', 1],
       ['Dòng tiền nợ khó đòi', '', 'Dòng tiền: Nợ khó đòi', 0],
     ]);
-    assert.match(book.warnings.join('\n'), /Sheet “Dòng tiền nợ khó đòi” không có dòng tiêu đề hợp lệ/);
+    // Tiêu đề B–E bị đổi thành "Cột 2…5" nhưng các cột còn lại đúng file mẫu: đọc theo thứ tự cột A–K và cảnh báo để sửa.
+    assert.match(book.warnings.join('\n'), /Sheet “Dòng tiền nợ khó đòi”: dòng tiêu đề bị đổi \(B “Cột 2”/);
   } finally {
     restore();
   }

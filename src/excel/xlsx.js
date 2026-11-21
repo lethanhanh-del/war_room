@@ -2,9 +2,15 @@
 // Chạy được trên Cloudflare Worker lẫn Node ≥ 22. Chỉ đọc giá trị ô (kể cả kết quả công thức đã lưu),
 // không tính lại công thức, không đọc định dạng ngoài kiểu số (ngày / phần trăm).
 //
+// Worker gói Free chỉ có ~10 ms CPU mỗi request, nên bộ đọc giải nén TỪNG ĐOẠN và dừng sớm khi đủ:
+//   - không đọc sheet ẩn (vd sheet danh mục "DataValidation" hàng chục nghìn dòng);
+//   - mỗi sheet dừng khi đã qua EMPTY_RUN_LIMIT dòng trống liên tiếp (Excel Online / Google Sheets để sẵn
+//     hàng nghìn dòng chỉ có định dạng);
+//   - bảng chuỗi dùng chung (sharedStrings) chỉ đọc tới chuỗi cuối cùng mà các ô cần.
+//
 //   const book = await readXlsx(bytes);
-//   book.sheets -> [{ name, rows: [{ r: 8, cells: [ {v, kind}, … ] }] }]
-//   cell.v: string | number | boolean | null;  cell.kind: 'date' | 'pct' | undefined (chỉ với ô số)
+//   book.sheets -> [{ name, hidden, rows: [{ r: 8, cells: [ {v, kind}, … ] }] }]
+//   cell.v: string | number | boolean;  cell.kind: 'date' | 'pct' | undefined (chỉ với ô số)
 
 export class XlsxError extends Error {
   constructor(message) {
@@ -14,6 +20,8 @@ export class XlsxError extends Error {
 }
 
 const MAX_ENTRY_BYTES = 30 * 1024 * 1024; // giới hạn mỗi file XML sau giải nén (chống file "bom")
+export const EMPTY_RUN_LIMIT = 300; // số dòng trống liên tiếp (sau dòng có dữ liệu cuối) thì dừng đọc sheet
+const MAX_VALUE_ROWS = 5000; // số dòng có dữ liệu tối đa đọc mỗi sheet
 
 // ---------- ZIP ----------
 
@@ -47,46 +55,54 @@ function zipEntries(bytes) {
   return entries;
 }
 
-async function inflateRaw(data) {
-  const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
-  const chunks = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    if (total > MAX_ENTRY_BYTES) {
-      await reader.cancel();
-      throw new XlsxError('File Excel quá lớn sau khi giải nén.');
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let o = 0;
-  for (const c of chunks) { out.set(c, o); o += c.length; }
-  return out;
-}
-
-async function readEntry(bytes, entry) {
+/** Giải nén 1 mục ZIP thành các đoạn chữ UTF-8. Người đọc dừng vòng lặp thì phần còn lại không bị giải nén. */
+async function* entryText(bytes, entry) {
   if (entry.compSize === 0xffffffff || entry.size > MAX_ENTRY_BYTES) throw new XlsxError('File Excel quá lớn.');
   const p = entry.local;
   if (p + 30 > bytes.length || u32(bytes, p) !== 0x04034b50) throw new XlsxError('File Excel bị hỏng (dữ liệu ZIP không hợp lệ).');
   const start = p + 30 + u16(bytes, p + 26) + u16(bytes, p + 28);
   const data = bytes.subarray(start, start + entry.compSize);
-  let raw;
-  if (entry.method === 0) raw = data;
-  else if (entry.method === 8) {
-    try { raw = await inflateRaw(data); } catch (e) {
-      if (e instanceof XlsxError) throw e;
-      throw new XlsxError('File Excel bị hỏng (không giải nén được).');
+  const decoder = new TextDecoder();
+  if (entry.method === 0) {
+    yield decoder.decode(data);
+    return;
+  }
+  if (entry.method !== 8) throw new XlsxError(`File Excel dùng kiểu nén không hỗ trợ (${entry.method}).`);
+  const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  let total = 0;
+  let finished = false;
+  try {
+    for (;;) {
+      let r;
+      try {
+        r = await reader.read();
+      } catch {
+        throw new XlsxError('File Excel bị hỏng (không giải nén được).');
+      }
+      if (r.done) { finished = true; break; }
+      total += r.value.length;
+      if (total > MAX_ENTRY_BYTES) throw new XlsxError('File Excel quá lớn sau khi giải nén.');
+      const text = decoder.decode(r.value, { stream: true });
+      if (text) yield text;
     }
-  } else throw new XlsxError(`File Excel dùng kiểu nén không hỗ trợ (${entry.method}).`);
-  return new TextDecoder().decode(raw).replace(/^﻿/, '');
+    const tail = decoder.decode();
+    if (tail) yield tail;
+  } finally {
+    if (!finished) reader.cancel().catch(() => {});
+  }
+}
+
+async function readAll(bytes, entry) {
+  let out = '';
+  for await (const chunk of entryText(bytes, entry)) out += chunk;
+  return out.replace(/^﻿/, '');
 }
 
 // ---------- XML ----------
 
 const P = '(?:[\\w.-]+:)?'; // tiền tố namespace tuỳ ý: <x:c>, <c>, …
+const elementRe = (tag) => new RegExp(`<${P}${tag}\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/${P}${tag}>)`, 'g');
+const HAS_VALUE = new RegExp(`<${P}(?:v|is)\\b`);
 
 function decodeXml(s) {
   return String(s).replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => {
@@ -107,11 +123,31 @@ function attr(attrs, name) {
 }
 
 function elements(xml, tag) {
-  const re = new RegExp(`<${P}${tag}\\b([^>]*?)(?:\\/>|>([\\s\\S]*?)<\\/${P}${tag}>)`, 'g');
+  const re = elementRe(tag);
   const out = [];
   let m;
   while ((m = re.exec(xml))) out.push({ attrs: m[1], body: m[2] ?? '' });
   return out;
+}
+
+/**
+ * Đọc lần lượt các phần tử <tag> trong luồng chữ (các phần tử không lồng nhau, vd <row>, <si>).
+ * onElement(attrs, body) trả về false để dừng — phần còn lại của file không được giải nén.
+ */
+async function scanElements(chunks, tag, onElement) {
+  const re = elementRe(tag);
+  let buf = '';
+  for await (const chunk of chunks) {
+    buf += chunk;
+    re.lastIndex = 0;
+    let consumed = 0;
+    let m;
+    while ((m = re.exec(buf))) {
+      consumed = re.lastIndex;
+      if (onElement(m[1], m[2] ?? '') === false) return;
+    }
+    if (consumed) buf = buf.slice(consumed);
+  }
 }
 
 /** Ghép tất cả <t> trong 1 chuỗi (bỏ phần phiên âm <rPh>). */
@@ -150,49 +186,59 @@ function numberKinds(stylesXml) {
   });
 }
 
-const HAS_VALUE = new RegExp(`<${P}(?:v|is)\\b`);
+/** Các ô của 1 dòng. Ô chuỗi dùng chung tạm giữ chỉ số ({ s }) và được thay bằng chữ sau khi đọc sharedStrings. */
+function parseCells(body, kinds, shared) {
+  const cells = [];
+  let nextCol = 0;
+  for (const c of elements(body, 'c')) {
+    const ref = attr(c.attrs, 'r');
+    const idx = ref ? colIndex(ref) : nextCol;
+    nextCol = idx + 1;
+    const t = attr(c.attrs, 't') || 'n';
+    if (t === 'inlineStr') {
+      const is = elements(c.body, 'is')[0];
+      const v = is ? textOf(is.body) : '';
+      if (v !== '') cells[idx] = { v };
+      continue;
+    }
+    const vEl = elements(c.body, 'v')[0];
+    if (!vEl) continue;
+    const raw = decodeXml(vEl.body);
+    if (raw === '') continue;
+    if (t === 's') {
+      const s = Number(raw);
+      if (Number.isInteger(s) && s >= 0) {
+        cells[idx] = { s };
+        if (s > shared.max) shared.max = s;
+      }
+    } else if (t === 'str' || t === 'e') cells[idx] = { v: raw };
+    else if (t === 'd') cells[idx] = { v: raw, kind: 'date' };
+    else if (t === 'b') cells[idx] = { v: raw === '1' };
+    else {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) cells[idx] = { v: raw };
+      else {
+        const kind = kinds[Number(attr(c.attrs, 's') || 0)];
+        cells[idx] = kind ? { v: n, kind } : { v: n };
+      }
+    }
+  }
+  return cells;
+}
 
-function parseSheet(xml, shared, kinds) {
-  const dataBlock = new RegExp(`<${P}sheetData\\b[^>]*>([\\s\\S]*?)<\\/${P}sheetData>`).exec(xml);
-  if (!dataBlock) return [];
+async function parseSheet(chunks, kinds, shared) {
   const rows = [];
   let nextRow = 1;
-  for (const row of elements(dataBlock[1], 'row')) {
-    const r = Number(attr(row.attrs, 'r')) || nextRow;
+  let lastValue = 0;
+  await scanElements(chunks, 'row', (attrs, body) => {
+    const r = Number(attr(attrs, 'r')) || nextRow;
     nextRow = r + 1;
-    // Excel Online để sẵn hàng nghìn dòng chỉ có định dạng, không có giá trị: bỏ qua nhanh.
-    if (!HAS_VALUE.test(row.body)) continue;
-    const cells = [];
-    let nextCol = 0;
-    for (const c of elements(row.body, 'c')) {
-      const ref = attr(c.attrs, 'r');
-      const idx = ref ? colIndex(ref) : nextCol;
-      nextCol = idx + 1;
-      const t = attr(c.attrs, 't') || 'n';
-      let v = null;
-      let kind;
-      if (t === 'inlineStr') {
-        const is = elements(c.body, 'is')[0];
-        v = is ? textOf(is.body) : '';
-      } else {
-        const vEl = elements(c.body, 'v')[0];
-        const raw = vEl ? decodeXml(vEl.body) : null;
-        if (raw === null) v = null;
-        else if (t === 's') v = shared[Number(raw)] ?? '';
-        else if (t === 'str' || t === 'e' || t === 'd') v = raw;
-        else if (t === 'b') v = raw === '1';
-        else {
-          const n = Number(raw);
-          v = Number.isFinite(n) ? n : raw;
-          if (typeof v === 'number') kind = kinds[Number(attr(c.attrs, 's') || 0)];
-        }
-        if (t === 'd') kind = 'date';
-      }
-      if (v === null || v === '') continue;
-      cells[idx] = kind ? { v, kind } : { v };
-    }
+    if (!HAS_VALUE.test(body)) return !(lastValue > 0 && r - lastValue > EMPTY_RUN_LIMIT);
+    lastValue = r;
+    const cells = parseCells(body, kinds, shared);
     if (cells.length) rows.push({ r, cells });
-  }
+    return rows.length < MAX_VALUE_ROWS;
+  });
   return rows;
 }
 
@@ -216,43 +262,54 @@ function resolveTarget(target) {
 export async function readXlsx(input, { includeHidden = false } = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const entries = zipEntries(bytes);
-  const read = async (name) => {
+  const text = async (name) => {
     const e = entries.get(name);
-    return e ? readEntry(bytes, e) : null;
+    return e ? readAll(bytes, e) : null;
+  };
+  const stream = (name) => {
+    const e = entries.get(name);
+    return e ? entryText(bytes, e) : null;
   };
 
-  const workbook = await read('xl/workbook.xml');
+  const workbook = await text('xl/workbook.xml');
   if (!workbook) throw new XlsxError('File không phải bảng tính Excel (thiếu xl/workbook.xml).');
-  const relsXml = (await read('xl/_rels/workbook.xml.rels')) || '';
+  const relsXml = (await text('xl/_rels/workbook.xml.rels')) || '';
   const rels = new Map();
   for (const rel of elements(relsXml, 'Relationship')) rels.set(attr(rel.attrs, 'Id'), resolveTarget(attr(rel.attrs, 'Target')));
-
   const sharedName = [...rels.values()].find((t) => /sharedStrings\.xml$/i.test(t)) || 'xl/sharedStrings.xml';
-  const sharedXml = await read(sharedName);
-  // Chỉ giải mã chuỗi khi có ô dùng tới (file Excel Online có hàng chục nghìn chuỗi của sheet danh mục ẩn).
-  const rawShared = sharedXml ? elements(sharedXml, 'si').map((si) => si.body) : [];
-  const decoded = new Map();
-  const shared = new Proxy([], {
-    get(_, prop) {
-      const i = typeof prop === 'string' && /^\d+$/.test(prop) ? Number(prop) : -1;
-      if (i < 0 || i >= rawShared.length) return undefined;
-      if (!decoded.has(i)) decoded.set(i, textOf(rawShared[i]));
-      return decoded.get(i);
-    },
-  });
   const stylesName = [...rels.values()].find((t) => /styles\.xml$/i.test(t)) || 'xl/styles.xml';
-  const kinds = numberKinds(await read(stylesName));
+  const kinds = numberKinds(await text(stylesName));
 
+  const shared = { max: -1 };
   const sheets = [];
   for (const s of elements(workbook, 'sheet')) {
     const hidden = /hidden/i.test(attr(s.attrs, 'state') || ''); // hidden | veryHidden
     if (hidden && !includeHidden) continue;
     const rid = /(?:^|\s)[\w.-]+:id\s*=\s*"([^"]*)"/.exec(s.attrs)?.[1];
-    const path = rels.get(rid);
-    const xml = path ? await read(path) : null;
-    if (!xml) continue;
-    sheets.push({ name: attr(s.attrs, 'name') || '', hidden, rows: parseSheet(xml, shared, kinds) });
+    const chunks = rels.has(rid) ? stream(rels.get(rid)) : null;
+    if (!chunks) continue;
+    sheets.push({ name: attr(s.attrs, 'name') || '', hidden, rows: await parseSheet(chunks, kinds, shared) });
   }
   if (!sheets.length) throw new XlsxError('File Excel không có sheet nào đọc được.');
+
+  // Thay chỉ số chuỗi dùng chung bằng chữ — chỉ giải nén sharedStrings tới chuỗi lớn nhất cần dùng.
+  if (shared.max >= 0) {
+    const raw = [];
+    const chunks = stream(sharedName);
+    if (chunks) await scanElements(chunks, 'si', (attrs, body) => { raw.push(body); return raw.length <= shared.max; });
+    const decoded = new Map();
+    for (const sheet of sheets) {
+      for (const row of sheet.rows) {
+        for (let i = 0; i < row.cells.length; i++) {
+          const cell = row.cells[i];
+          if (!cell || cell.s === undefined) continue;
+          if (!decoded.has(cell.s)) decoded.set(cell.s, raw[cell.s] === undefined ? '' : textOf(raw[cell.s]));
+          const v = decoded.get(cell.s);
+          row.cells[i] = v === '' ? undefined : { v };
+        }
+      }
+      sheet.rows = sheet.rows.filter((row) => row.cells.some(Boolean));
+    }
+  }
   return { sheets };
 }

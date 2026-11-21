@@ -62,7 +62,7 @@
     <div class="section-head">
       <div>
         <h2 id="gridTitle">Dòng tiền chính</h2>
-        <p class="hint">Bấm vào một dòng tiền để xem task và tiến độ của từng người</p>
+        <p class="hint">Mỗi dòng tiền: chỉ số task, các nhóm (PIC, nhiệm vụ của từng thành viên) và bảng task — cập nhật tự động từ Google Sheet WR - MASTER TASK</p>
       </div>
       <ul class="legend" aria-label="Chú thích màu thanh tiến độ">
         <li><span class="swatch"></span>Không có task trễ</li>
@@ -72,21 +72,19 @@
       </ul>
     </div>
 
-    <section class="grid" id="grid" aria-label="Các dòng tiền">
+    <section class="grid streams" id="grid" aria-label="Các dòng tiền">
       <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
     </section>
 
     <p class="unstaffed" id="unstaffed" hidden></p>
   </div>
 
-  <div class="scrim" id="scrim" hidden></div>
-  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden></aside>
 
   <dialog class="xl" id="xlDlg" aria-labelledby="xlTitle">
     <div class="xl-head">
       <div>
         <h2 id="xlTitle">Nạp task từ file Excel</h2>
-        <p class="hint">Dùng file tổng “WR - MASTER TASK” (mỗi sheet “Dòng tiền …” là 1 dòng tiền) hoặc file “Nhập task” của 1 dòng tiền. Nạp lại sẽ thay toàn bộ task Excel cũ của các dòng tiền có trong file.</p>
+        <p class="hint">Task tự đồng bộ từ Google Sheet WR - MASTER TASK. Ở đây có thể nạp <b>file phân chia nhiệm vụ</b> (DS nhân sự War-Room: nhóm, PIC, nhiệm vụ từng thành viên), hoặc nạp tay file task .xlsx khi cần.</p>
       </div>
       <button type="button" class="icon-btn" data-xl-close aria-label="Đóng"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
