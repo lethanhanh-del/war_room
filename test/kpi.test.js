@@ -302,9 +302,9 @@ test('toDashboard: dữ liệu /api/kpi -> định dạng app React (FE/): nhóm
   assert.deepEqual([data2.group, data2.placeholder, data2.days.map((x) => x.task)], ['Data', true, [null, null]]);
 });
 
-test('navBar: 4 trang + tài khoản, đánh dấu trang đang mở', async () => {
+test('navBar: 5 trang + tài khoản, đánh dấu trang đang mở', async () => {
   const { navBar, NAV_PAGES } = await import('../src/pages.js');
-  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/', '/kpi', '/lich-truc', '/lich']);
+  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/', '/kpi', '/lich-truc', '/lich', '/waiting-point']);
   const html = navBar({ role: 'user', fullName: 'Võ <Đào>' }, '/kpi');
   assert.match(html, /<a class="wr-link" href="\/kpi" aria-current="page">KPI & kết quả<\/a>/);
   assert.equal((html.match(/aria-current="page"/g) || []).length, 1);
