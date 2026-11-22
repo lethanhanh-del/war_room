@@ -434,7 +434,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       : `<p class="kmp-empty">${emptyText}</p>`;
   const hasBacklog = tasks.some((it) => it.status === 'K');
   const isIdleCard = !tasks.length;
-  return `< article class="km-person-card${hasBacklog ? ' has-backlog' : ''}${isIdleCard ? ' is-idle-card' : ''}" >
+  return `<article class="km-person-card${hasBacklog ? ' has-backlog' : ''}${isIdleCard ? ' is-idle-card' : ''}">
       <header class="kpc-head">
         <span class="km-who">
           <span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span>
@@ -444,8 +444,8 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
           </span>
         </span>
         <span class="kmp-stats">${badges.join('')}</span>
-      </header >
-      ${ taskHtml }
+      </header>
+      ${taskHtml}
       ${folderHtml}
     </article>`;
   }
@@ -548,7 +548,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
 
   const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
   const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện task ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
-  return `< section class="k-panel k-members" id = "k-groups" aria - labelledby="k-mem-t" ><header class="k-phead"><div><h2 id="k-mem-t">Theo dõi Dòng tiền · Thành viên &amp; Task · ${esc(viewScope)}</h2>
+  return `<section class="k-panel k-members" id="k-groups" aria-labelledby="k-mem-t"><header class="k-phead"><div><h2 id="k-mem-t">Theo dõi Dòng tiền · Thành viên &amp; Task · ${esc(viewScope)}</h2>
       <p class="hint">${esc(scope)} · ${people.size} người (${groupCount} nhóm). Tổng chỉ số tính ${esc(range)}.${filterNote}</p></div></header>
       <ul class="km-legend">
         <li class="st-D"><i class="kd st-D"></i><span><b>Hoàn thành</b>: đã tick ô Kết quả đúng hạn.</span></li>
@@ -556,7 +556,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick sau ${DUE_LABEL} sáng hôm sau (áp dụng từ 22/11).</span></li>
         <li class="st-K"><i class="kd st-K"></i><span><b>Không đạt / Tồn đọng</b>: quá hạn mà chưa tick.</span></li>
       </ul>
-      ${ blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>' }</section > `;
+      ${blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>'}</section>`;
 }
 
 // ----- Màn hình TV: danh sách Không đạt và Hoàn thành trễ hạn -----
