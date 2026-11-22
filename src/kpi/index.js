@@ -27,8 +27,10 @@ import { applyCloses, auditReport, closeKpi } from './close.js'; // KPI-CLOSE: c
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 // WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
 const DEFAULT_PLAN_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY';
-export const KPI_SYNC_EVERY_MS = 20000;
-const FORCE_EVERY_MS = 5000;
+export const KPI_SYNC_EVERY_MS = 5000;
+const FORCE_EVERY_MS = 1500;
+const PLAN_CACHE_MS = 5 * 60 * 1000;
+const planCache = new Map();
 
 /** ID Google Sheet KPI; '' = tắt. */
 /** ID file phân chia nhiệm vụ có danh sách dòng tiền đánh số (plan.js); '' = không xếp theo danh sách. */
@@ -85,7 +87,7 @@ export async function syncKpi(env, { force = false, now = Date.now(), load } = {
   const id = kpiSheetId(env);
   if (!id) return { off: true };
   const closeId = sourceKeyOf(id);
-  const loader = load || ((ref) => fetchAnySourceTabs(ref, env));
+  const loader = load || ((ref) => fetchAnySourceTabs(ref, env, { force }));
   await ensureTable(env);
   if (!(await claim(env, force ? FORCE_EVERY_MS : KPI_SYNC_EVERY_MS, now))) return { skipped: true };
   try {
@@ -94,7 +96,14 @@ export async function syncKpi(env, { force = false, now = Date.now(), load } = {
     const planId = planSheetId(env);
     if (planId) {
       try {
-        const plan = parsePlan(await loader(planId));
+        const cachedPlan = !force ? planCache.get(planId) : null;
+        let plan;
+        if (cachedPlan && now - cachedPlan.at < PLAN_CACHE_MS) {
+          plan = cachedPlan.plan;
+        } else {
+          plan = parsePlan(await loader(planId));
+          if (plan.length) planCache.set(planId, { at: now, plan });
+        }
         if (!plan.length) book.warnings.push('File phân chia nhiệm vụ chưa có cột “STT dòng tiền”: dòng tiền xếp theo thứ tự tab.');
         const r = applyPlan(book.streams, plan);
         book.streams = r.streams;
@@ -226,7 +235,7 @@ export async function handleKpi(request, env, url, ctx) {
     return json(r, r.error ? 502 : 200);
   }
   if (request.method !== 'GET') return json({ error: 'Chỉ hỗ trợ GET.' }, 405);
-  await freshen(env, ctx);
+  await freshen(env, ctx, url.searchParams.get('force') === '1');
   return json(await kpiData(env));
 }
 

@@ -15,16 +15,18 @@ export const DEFAULT_SHAREPOINT_MASTER_URL =
 const FETCH_TIMEOUT_MS = 15000;
 const TOKEN_SKEW_MS = 120 * 1000;
 const ITEM_CACHE_MS = 10 * 60 * 1000;
-const SINGLE_SHEET_CACHE_MS = 5000;
+const SINGLE_SHEET_CACHE_MS = 2000;
 const BATCH_MAX = 20;
 
 let tokenCache = { key: '', token: '', exp: 0 };
 const itemCache = new Map();
+const tabsCache = new Map();
 const singleSheetCache = new Map();
 
 export function resetSharePointCache() {
   tokenCache = { key: '', token: '', exp: 0 };
   itemCache.clear();
+  tabsCache.clear();
   singleSheetCache.clear();
 }
 
@@ -155,10 +157,26 @@ export async function resolveSharePointItem(env, shareUrl, now = Date.now()) {
 /**
  * Đọc toàn bộ các sheet đang hiện của file Excel trên SharePoint bằng 1 lệnh Graph $batch,
  * trả về đúng định dạng [{ name, hidden: false, rows }] như fetchSheetTabs() / readXlsx().
+ * Kiểm tra cTag/eTag siêu nhẹ trước: nếu file chưa đổi kể từ lần đọc trước thì trả luôn bản đệm (0 lệnh $batch).
  */
-export async function fetchSharePointTabs(env, shareUrl, now = Date.now()) {
+export async function fetchSharePointTabs(env, shareUrl, now = Date.now(), { force = false } = {}) {
   const token = await getGraphToken(env, now);
   const { driveId, itemId } = await resolveSharePointItem(env, shareUrl, now);
+
+  let versionTag = '';
+  if (!force) {
+    try {
+      const meta = await graphJson(
+        token,
+        `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}?$select=eTag,cTag`,
+      );
+      versionTag = `${meta?.cTag || ''}|${meta?.eTag || ''}`;
+      const prev = tabsCache.get(shareUrl);
+      if (versionTag && prev && prev.versionTag === versionTag) {
+        return prev.tabs;
+      }
+    } catch { /* bỏ qua kiểm tra eTag, đọc trực tiếp */ }
+  }
 
   const wsData = await graphJson(
     token,
@@ -197,7 +215,9 @@ export async function fetchSharePointTabs(env, shareUrl, now = Date.now()) {
     }
   }
 
-  return visible.map((w, idx) => csvSheet(w.name, textByIdx.get(idx) || []));
+  const tabs = visible.map((w, idx) => csvSheet(w.name, textByIdx.get(idx) || []));
+  if (versionTag) tabsCache.set(shareUrl, { versionTag, tabs });
+  return tabs;
 }
 
 /**

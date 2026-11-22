@@ -231,13 +231,12 @@ let wpCsvCache = { at: 0, csv: "", source: "" };
 
 async function fetchWaitingPointCsv(env) {
   const now = Date.now();
-  if (wpCsvCache.csv && now - wpCsvCache.at < 5000) {
-    return { csv: wpCsvCache.csv, source: wpCsvCache.source };
-  }
   if (isSharePointConfigured(env)) {
     const csv = await fetchSharePointSheetCsv(env, sharePointMasterUrl(env), WP_STATUS_SHEET_NAME, now);
-    wpCsvCache = { at: now, csv, source: "sharepoint" };
     return { csv, source: "sharepoint" };
+  }
+  if (wpCsvCache.csv && now - wpCsvCache.at < 2000) {
+    return { csv: wpCsvCache.csv, source: wpCsvCache.source };
   }
   const urls = [
     `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(WP_STATUS_SHEET_NAME)}&_t=${now}`,

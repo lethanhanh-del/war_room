@@ -10,7 +10,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? String(u) : '');
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1';
-const POLL_MS = 30000;
+const POLL_MS = 6000;
 
 const ICON = {
   check: '<path d="M20 6 9 17l-5-5"/>',
@@ -106,32 +106,42 @@ const isSpecialTab = (tab) => tab === 'support' || tab === 'liquidation';
 const TAB_NAME = { all: 'Tất cả', cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Nhóm thanh lý' };
 const streamBadgeNo = (s, fallback = '') => (s.no ? String(s.no) : s.kind === 'support' ? '9' : s.kind === 'liquidation' ? '8' : fallback);
 
-async function load() {
+let lastDataSig = '';
+async function load({ force = false } = {}) {
   if (S.loading) return;
   S.loading = true;
   clearTimeout(S.timer);
+  const btn = $('refreshBtn');
+  const lbl = $('refreshLabel');
+  if (force && btn) { btn.disabled = true; if (lbl) lbl.textContent = 'Đang đồng bộ…'; }
   try {
     let data;
     if (DEMO) data = (await import('./kpi-demo.js')).DEMO;
     else {
-      const res = await fetch('/api/kpi', { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      const res = await fetch(force ? '/api/kpi?force=1' : '/api/kpi', { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!(res.headers.get('Content-Type') || '').includes('application/json')) { location.reload(); return; } // hết phiên đăng nhập
       data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     }
+    const nextSig = JSON.stringify([data.today, data.days, data.streams, data.source?.error, data.source?.warnings, data.source?.off]);
+    const dataChanged = !S.model || force || nextSig !== lastDataSig;
+    lastDataSig = nextSig;
     S.data = data;
     S.model = buildModel(data);
     S.stale = false;
     normalizeFilter();
-    render();
+    if (dataChanged) render();
+    else renderSync();
   } catch (e) {
     S.stale = true;
     if (!S.model) renderFatal(e.message || String(e)); else renderSync();
   } finally {
     S.loading = false;
-    if (!DEMO) S.timer = setTimeout(load, POLL_MS);
+    if (btn) { btn.disabled = false; if (lbl) lbl.textContent = 'Cập nhật ngay'; }
+    if (!DEMO) S.timer = setTimeout(() => load(), POLL_MS);
   }
 }
+$('refreshBtn')?.addEventListener('click', () => load({ force: true }));
 
 function normalizeFilter() {
   const m = S.model;

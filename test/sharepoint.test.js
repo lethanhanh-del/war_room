@@ -78,6 +78,9 @@ test('fetchSharePointTabs + fetchSharePointSheetCsv: đọc nhiều tab qua Grap
         parentReference: { driveId: 'DRIVE1' },
       }), { status: 200 });
     }
+    if (u.includes('$select=eTag,cTag')) {
+      return new Response(JSON.stringify({ eTag: '"E1"', cTag: '"C1"' }), { status: 200 });
+    }
     if (u.includes('/workbook/worksheets?')) {
       return new Response(JSON.stringify({
         value: [
@@ -156,6 +159,11 @@ test('fetchSharePointTabs + fetchSharePointSheetCsv: đọc nhiều tab qua Grap
     const csv = await fetchSharePointSheetCsv(env, DEFAULT_SHAREPOINT_MASTER_URL, 'Điểm nghẽn', 11000);
     assert.match(csv, /Chờ duyệt/);
     assert.match(csv, /DAIT/);
+    // Gọi lại fetchSharePointTabs khi cTag/eTag không đổi -> bỏ qua $batch (dùng bản đệm siêu nhanh)
+    const batchBefore = calls.filter((u) => u.endsWith('/$batch')).length;
+    const tabs2 = await fetchSharePointTabs(env, DEFAULT_SHAREPOINT_MASTER_URL, 12000);
+    assert.equal(tabs2.length, 3);
+    assert.equal(calls.filter((u) => u.endsWith('/$batch')).length, batchBefore);
     // Token chỉ xin 1 lần duy nhất nhờ cache
     assert.equal(calls.filter((u) => u.includes('/oauth2/v2.0/token')).length, 1);
   } finally {

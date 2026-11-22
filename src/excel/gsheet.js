@@ -177,8 +177,8 @@ export async function fetchSheetTabs(id) {
 }
 
 /** Đọc 1 nguồn (Excel SharePoint hoặc Google Sheet) về cùng cấu trúc [{ name, hidden, rows }]. */
-export async function fetchAnySourceTabs(id, env = {}) {
-  if (isSharePointSource(id)) return fetchSharePointTabs(env, id);
+export async function fetchAnySourceTabs(id, env = {}, opts = {}) {
+  if (isSharePointSource(id)) return fetchSharePointTabs(env, id, Date.now(), opts);
   return fetchSheetTabs(id);
 }
 
