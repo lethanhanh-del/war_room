@@ -494,7 +494,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
     ].filter(Boolean).join('');
 
     const meterHtml = unapproved
-      ? `<div class="kpc-meter" aria-hidden="true"><i class="m-bad" style="width:100%"></i></div>`
+      ? `<div class="kpc-meter" aria-hidden="true"><i class="m-review" style="width:100%"></i></div>`
       : `<div class="kpc-meter" aria-hidden="true">${okW ? `<i class="m-ok" style="width:${okW}%"></i>` : ''}${lateW ? `<i class="m-late" style="width:${lateW}%"></i>` : ''}${badW ? `<i class="m-bad" style="width:${badW}%"></i>` : ''}</div>`;
 
     const bodyHtml = tasks.length
@@ -641,7 +641,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         <li class="st-N"><i class="kd st-N"></i><span><b>Đang làm</b>: KPI hôm nay chưa tick (hạn ${DUE_LABEL} sáng hôm sau).</span></li>
         <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick sau ${DUE_LABEL} sáng hôm sau (áp dụng từ 22/11).</span></li>
         <li class="st-K"><i class="kd st-K"></i><span><b>Không đạt / Tồn đọng</b>: quá hạn mà chưa tick.</span></li>
-        ${hasUnapproved ? `<li class="st-U"><i class="kd st-U"></i><span><b>${UNAPPROVED_LABEL}</b>: ô E1 trên sheet chưa tick duyệt, toàn bộ task &amp; viền dòng tiền cảnh báo đỏ.</span></li>` : ''}
+        ${hasUnapproved ? `<li class="st-U"><i class="kd st-U"></i><span><b>${UNAPPROVED_LABEL}</b>: ô E1 trên sheet chưa tick duyệt.</span></li>` : ''}
       </ul>
       ${blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>'}</section>`;
 }
@@ -691,7 +691,7 @@ function tableHtml(x, { tv = false } = {}) {
       const c = count(list);
       let label = '—';
       let cls = 'muted';
-      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · Chưa BOD duyệt`; cls = 'bad'; }
+      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · Chưa BOD duyệt`; cls = 'review'; }
       else if (c.total && d.date > today) { label = tv ? '' : `${c.total} KPI sắp tới`; }
       else if (c.total) {
         const done = doneOf(c);
@@ -711,8 +711,8 @@ function tableHtml(x, { tv = false } = {}) {
     const no = streamBadgeNo(s);
     const name = tv ? `<b title="${esc(s.name)}">${no ? `${no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${no ? `<span class="k-code">${esc(no)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     const bodSmall = unapproved ? `<span class="kt-bod-tag">${icon('alert')}${UNAPPROVED_LABEL}</span>` : '';
-    return `<div class="kt-row${unapproved ? ' is-unapproved' : ''}" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${bodSmall}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
-        <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${unapproved ? 'bad' : tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${unapproved ? 'bad' : tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
+    return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${bodSmall}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
+        <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
   const legend = STATUSES.map((st) => `<span><i class="kd st-${st}"></i>${STATUS_LABEL[st]}</span>`).join('');
   const isSp = isSpecialTab(f.tab);
