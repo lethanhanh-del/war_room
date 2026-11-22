@@ -159,11 +159,14 @@ test('fetchSharePointTabs + fetchSharePointSheetCsv: đọc nhiều tab qua Grap
     const csv = await fetchSharePointSheetCsv(env, DEFAULT_SHAREPOINT_MASTER_URL, 'Điểm nghẽn', 11000);
     assert.match(csv, /Chờ duyệt/);
     assert.match(csv, /DAIT/);
-    // Gọi lại fetchSharePointTabs khi cTag/eTag không đổi -> bỏ qua $batch (dùng bản đệm siêu nhanh)
+    // Gọi lại fetchSharePointTabs: dùng lại danh sách worksheet đã đệm (chỉ 1 lần gọi /worksheets),
+    // nhưng LUÔN gọi $batch đọc dữ liệu trực tiếp (không bị trễ theo cTag).
+    const wsBefore = calls.filter((u) => u.includes('/workbook/worksheets?')).length;
     const batchBefore = calls.filter((u) => u.endsWith('/$batch')).length;
     const tabs2 = await fetchSharePointTabs(env, DEFAULT_SHAREPOINT_MASTER_URL, 12000);
     assert.equal(tabs2.length, 3);
-    assert.equal(calls.filter((u) => u.endsWith('/$batch')).length, batchBefore);
+    assert.equal(calls.filter((u) => u.includes('/workbook/worksheets?')).length, wsBefore);
+    assert.equal(calls.filter((u) => u.endsWith('/$batch')).length, batchBefore + 1);
     // Token chỉ xin 1 lần duy nhất nhờ cache
     assert.equal(calls.filter((u) => u.includes('/oauth2/v2.0/token')).length, 1);
   } finally {

@@ -10,7 +10,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const safeUrl = (u) => (/^https?:\/\//i.test(String(u || '')) ? String(u) : '');
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo') === '1';
-const POLL_MS = 6000;
+const POLL_MS = 4000;
 
 const ICON = {
   check: '<path d="M20 6 9 17l-5-5"/>',
@@ -108,9 +108,14 @@ const TAB_NAME = { all: 'Tất cả', cashflow: 'Dòng tiền', support: 'Nhóm 
 const streamBadgeNo = (s, fallback = '') => (s.no ? String(s.no) : s.kind === 'support' ? '9' : s.kind === 'liquidation' ? '8' : fallback);
 
 let lastDataSig = '';
+let pendingReload = false;
 async function load({ force = false } = {}) {
-  if (S.loading) return;
+  if (S.loading) {
+    pendingReload = true;
+    return;
+  }
   S.loading = true;
+  pendingReload = false;
   clearTimeout(S.timer);
   const btn = $('refreshBtn');
   const lbl = $('refreshLabel');
@@ -139,7 +144,12 @@ async function load({ force = false } = {}) {
   } finally {
     S.loading = false;
     if (btn) { btn.disabled = false; if (lbl) lbl.textContent = 'Cập nhật ngay'; }
-    if (!DEMO) S.timer = setTimeout(() => load(), POLL_MS);
+    if (pendingReload) {
+      pendingReload = false;
+      load();
+    } else if (!DEMO) {
+      S.timer = setTimeout(() => load(), POLL_MS);
+    }
   }
 }
 $('refreshBtn')?.addEventListener('click', () => load({ force: true }));

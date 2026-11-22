@@ -27,8 +27,8 @@ import { applyCloses, auditReport, closeKpi } from './close.js'; // KPI-CLOSE: c
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 // WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
 const DEFAULT_PLAN_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY';
-export const KPI_SYNC_EVERY_MS = 5000;
-const FORCE_EVERY_MS = 1500;
+export const KPI_SYNC_EVERY_MS = 3000;
+const FORCE_EVERY_MS = 1000;
 const PLAN_CACHE_MS = 5 * 60 * 1000;
 const planCache = new Map();
 

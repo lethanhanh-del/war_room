@@ -15,18 +15,19 @@ export const DEFAULT_SHAREPOINT_MASTER_URL =
 const FETCH_TIMEOUT_MS = 15000;
 const TOKEN_SKEW_MS = 120 * 1000;
 const ITEM_CACHE_MS = 10 * 60 * 1000;
-const SINGLE_SHEET_CACHE_MS = 2000;
+const WORKSHEETS_CACHE_MS = 60 * 1000;
+const SINGLE_SHEET_CACHE_MS = 1500;
 const BATCH_MAX = 20;
 
 let tokenCache = { key: '', token: '', exp: 0 };
 const itemCache = new Map();
-const tabsCache = new Map();
+const worksheetsCache = new Map();
 const singleSheetCache = new Map();
 
 export function resetSharePointCache() {
   tokenCache = { key: '', token: '', exp: 0 };
   itemCache.clear();
-  tabsCache.clear();
+  worksheetsCache.clear();
   singleSheetCache.clear();
 }
 
@@ -154,29 +155,9 @@ export async function resolveSharePointItem(env, shareUrl, now = Date.now()) {
   return meta;
 }
 
-/**
- * Đọc toàn bộ các sheet đang hiện của file Excel trên SharePoint bằng 1 lệnh Graph $batch,
- * trả về đúng định dạng [{ name, hidden: false, rows }] như fetchSheetTabs() / readXlsx().
- * Kiểm tra cTag/eTag siêu nhẹ trước: nếu file chưa đổi kể từ lần đọc trước thì trả luôn bản đệm (0 lệnh $batch).
- */
-export async function fetchSharePointTabs(env, shareUrl, now = Date.now(), { force = false } = {}) {
-  const token = await getGraphToken(env, now);
-  const { driveId, itemId } = await resolveSharePointItem(env, shareUrl, now);
-
-  let versionTag = '';
-  if (!force) {
-    try {
-      const meta = await graphJson(
-        token,
-        `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}?$select=eTag,cTag`,
-      );
-      versionTag = `${meta?.cTag || ''}|${meta?.eTag || ''}`;
-      const prev = tabsCache.get(shareUrl);
-      if (versionTag && prev && prev.versionTag === versionTag) {
-        return prev.tabs;
-      }
-    } catch { /* bỏ qua kiểm tra eTag, đọc trực tiếp */ }
-  }
+async function listVisibleWorksheets(token, driveId, itemId, shareUrl, now, force = false) {
+  const cached = !force ? worksheetsCache.get(shareUrl) : null;
+  if (cached && now - cached.at < WORKSHEETS_CACHE_MS) return cached.visible;
 
   const wsData = await graphJson(
     token,
@@ -189,35 +170,64 @@ export async function fetchSharePointTabs(env, shareUrl, now = Date.now(), { for
   if (!visible.length) {
     throw new Error('File Excel SharePoint không có sheet nào đang hiện.');
   }
+  worksheetsCache.set(shareUrl, { at: now, visible });
+  return visible;
+}
 
-  const textByIdx = new Map();
-  for (let start = 0; start < visible.length; start += BATCH_MAX) {
-    const chunk = visible.slice(start, start + BATCH_MAX);
-    const batchBody = {
-      requests: chunk.map((w, idx) => ({
-        id: String(start + idx),
-        method: 'GET',
-        url: `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/workbook/worksheets('${encodeURIComponent(w.id).replace(/'/g, "''")}')/usedRange(valuesOnly=true)?$select=text`,
-      })),
-    };
-    const batch = await graphJson(token, '/$batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(batchBody),
-    });
-    for (const r of batch?.responses || []) {
-      if (r.status >= 200 && r.status < 300 && Array.isArray(r.body?.text)) {
-        textByIdx.set(Number(r.id), r.body.text);
-      } else if (r.status === 404) {
-        // Sheet trống hoàn toàn (chưa có usedRange)
-        textByIdx.set(Number(r.id), []);
+/**
+ * Đọc trực tiếp dữ liệu mới nhất của toàn bộ các sheet đang hiện trên SharePoint bằng 1 lệnh Graph $batch duy nhất
+ * (KHÔNG phụ thuộc cTag để cập nhật realtime ngay khi Excel Online lưu ô), trả về đúng định dạng [{ name, hidden: false, rows }].
+ */
+export async function fetchSharePointTabs(env, shareUrl, now = Date.now(), { force = false } = {}) {
+  const token = await getGraphToken(env, now);
+  const { driveId, itemId } = await resolveSharePointItem(env, shareUrl, now);
+
+  const readAll = async (visible) => {
+    const textByIdx = new Map();
+    let missingSheet = false;
+    for (let start = 0; start < visible.length; start += BATCH_MAX) {
+      const chunk = visible.slice(start, start + BATCH_MAX);
+      const batchBody = {
+        requests: chunk.map((w, idx) => ({
+          id: String(start + idx),
+          method: 'GET',
+          url: `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/workbook/worksheets('${encodeURIComponent(w.id).replace(/'/g, "''")}')/usedRange(valuesOnly=true)?$select=text`,
+        })),
+      };
+      const batch = await graphJson(token, '/$batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(batchBody),
+      });
+      for (const r of batch?.responses || []) {
+        if (r.status >= 200 && r.status < 300 && Array.isArray(r.body?.text)) {
+          textByIdx.set(Number(r.id), r.body.text);
+        } else if (r.status === 404) {
+          const code = String(r.body?.error?.code || '');
+          if (/ItemNotFound/i.test(code)) missingSheet = true;
+          textByIdx.set(Number(r.id), []);
+        }
       }
     }
+    return { textByIdx, missingSheet };
+  };
+
+  let visible = await listVisibleWorksheets(token, driveId, itemId, shareUrl, now, force);
+  let { textByIdx, missingSheet } = await readAll(visible);
+  // Nếu có tab vừa bị đổi/xóa trong khi danh sách tab đang được đệm -> đọc lại danh sách tab rồi lấy lại 1 lượt.
+  if (missingSheet && !force) {
+    visible = await listVisibleWorksheets(token, driveId, itemId, shareUrl, now, true);
+    ({ textByIdx } = await readAll(visible));
   }
 
-  const tabs = visible.map((w, idx) => csvSheet(w.name, textByIdx.get(idx) || []));
-  if (versionTag) tabsCache.set(shareUrl, { versionTag, tabs });
-  return tabs;
+  return visible.map((w, idx) => {
+    const rows = textByIdx.get(idx) || [];
+    // Cập nhật luôn bộ đệm CSV cho tab Điểm nghẽn (nếu có) để trang Waiting Point dùng chung.
+    if (/điểm\s*nghẽn|diem\s*nghen/i.test(w.name)) {
+      singleSheetCache.set(`${shareUrl}|${w.name}`, { at: now, csv: rowsToCsv(rows) });
+    }
+    return csvSheet(w.name, rows);
+  });
 }
 
 /**
