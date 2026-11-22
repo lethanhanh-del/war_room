@@ -369,6 +369,8 @@ function pageHtml() {
 const AP_VIEW = { '': 'Nhóm chưa được duyệt', A: 'Nhóm BOD đã duyệt', R: `Nhóm ${APPROVAL_LABEL.R}`, N: `Nhóm ${APPROVAL_LABEL.N}` };
 const AP_COUNT = { '': 'chưa duyệt', A: 'đã duyệt', R: 'cần trình lại', N: 'chưa trình BOD' };
 const apSeg = (c) => `<span class="kt-seg" aria-hidden="true">${APPROVAL_ORDER.filter((k) => c[k]).map((k) => `<i class="ap-${k}" style="flex-grow:${c[k]}"></i>`).join('')}</span>`;
+// Nhãn ô số: "12 đội BOD đã duyệt" · "8 đội cần điều chỉnh, bổ sung và trình lại" · "3 đội chưa trình BOD" (chữ đầu viết thường, trừ "BOD").
+const apTileLabel = (code) => { const l = APPROVAL_LABEL[code]; return l.startsWith('BOD') ? l : l.charAt(0).toLocaleLowerCase('vi') + l.slice(1); };
 function approvalHtml(x) {
   const groups = x.streams.flatMap((s) => s.groups.map((g) => ({ s, g })));
   if (!groups.length) return '';
@@ -378,7 +380,7 @@ function approvalHtml(x) {
   if (S.apFilter && !c[S.apFilter]) S.apFilter = '';
   const af = S.apFilter;
   const match = (g) => (af ? g.approval.code === af : g.approval.code !== 'A');
-  const stat = (code) => `<button type="button" class="ka-stat ap-${code}${c[code] ? '' : ' is-zero'}" data-ap-filter="${code}" aria-pressed="${af === code}"${c[code] ? '' : ' disabled'} title="${af === code ? 'Bấm lần nữa để bỏ lọc' : `Chỉ xem nhóm ${APPROVAL_LABEL[code]}`}"><i class="kt-dot ap-${code}"></i><b>${c[code]}</b><small>${esc(APPROVAL_LABEL[code])}</small></button>`;
+  const stat = (code) => `<button type="button" class="ka-stat ap-${code}${c[code] ? '' : ' is-zero'}" data-ap-filter="${code}" aria-pressed="${af === code}"${c[code] ? '' : ' disabled'} title="${af === code ? 'Bấm lần nữa để bỏ lọc' : `Chỉ xem nhóm ${APPROVAL_LABEL[code]}`}"><i class="kt-dot ap-${code}"></i><b>${c[code]}</b><small>đội ${esc(apTileLabel(code))}</small></button>`;
   let shown = 0;
   let shownStreams = 0;
   const full = []; // dòng tiền đã duyệt đủ: không có trong danh sách "chưa được duyệt"
