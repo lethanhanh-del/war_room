@@ -217,13 +217,23 @@ export function parseTimeSpec(rawInput) {
     if (secs > 0) return { kind: 'duration', durationSec: secs, raw };
   }
 
-  const anyNum = lower.match(/(\d+(?:\.\d+)?)/);
-  if (anyNum) {
-    const val = parseFloat(anyNum[1]);
-    if (/ngày|ngay|\bd\b/.test(lower)) return { kind: 'duration', durationSec: Math.round(val * 86400), raw };
-    if (/giờ|gio|tiếng|tieng|\bh\b/.test(lower)) return { kind: 'duration', durationSec: Math.round(val * 3600), raw };
-    if (/giây|giay|\bs\b/.test(lower)) return { kind: 'duration', durationSec: Math.round(val), raw };
-    if (val > 0) return { kind: 'duration', durationSec: Math.round(val * 60), raw };
+  // Chuỗi có số kèm đơn vị thời gian rõ ràng (VD: "khoảng 15 phút", "2-3 giờ", "tầm 2 ngày")
+  const unitNum = lower.match(/(\d+(?:\.\d+)?)\s*(ngày|ngay|days|day|d|giờ|gio|tiếng|tieng|hr|hrs|h|g|phút|phut|mins|min|p|m|giây|giay|secs|sec|s)(?!\p{L})/u);
+  if (unitNum) {
+    const val = parseFloat(unitNum[1]);
+    const u = unitNum[2];
+    if (val > 0) {
+      if (/^(?:ngày|ngay|days|day|d)$/.test(u)) return { kind: 'duration', durationSec: Math.round(val * 86400), raw };
+      if (/^(?:giờ|gio|tiếng|tieng|hr|hrs|h|g)$/.test(u)) return { kind: 'duration', durationSec: Math.round(val * 3600), raw };
+      if (/^(?:giây|giay|secs|sec|s)$/.test(u)) return { kind: 'duration', durationSec: Math.round(val), raw };
+      return { kind: 'duration', durationSec: Math.round(val * 60), raw };
+    }
+  }
+
+  // Nhập chữ tự do ở ô Thời gian xử lý (VD: "Chưa xác định vì phụ thuộc Ban PTDA", "Chờ duyệt bước 2")
+  // -> vẫn hợp lệ để lên màn hình và hiển thị "Đang xử lý", không đếm thời gian.
+  if (/[\p{L}\d]/u.test(raw)) {
+    return { kind: 'processing', raw };
   }
 
   return { kind: 'none', raw };

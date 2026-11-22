@@ -55,7 +55,7 @@ export function countWaitingPointPeopleFromCsv(csv) {
 
   const hasValidTime = (raw) => {
     const s = String(raw || '').trim();
-    return Boolean(s && /\d/.test(s));
+    return Boolean(s && /[\p{L}\d]/u.test(s));
   };
 
   const people = new Set();

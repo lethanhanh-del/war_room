@@ -68,6 +68,9 @@ test('Ô Thời gian xử lý nhập ngày / mốc ngày thì chuyển sang tr�
     'Nộp 21/11; có kết quả 22/11; được duyệt 23/11',
     'Trình 21/11, chi tiền 22/11',
     '21/11 (xác nhận hạn mức, gửi thử 400 tin)',
+    'Chưa xác định vì phụ thuộc Ban PTDA',
+    'Chưa rõ',
+    'Chờ duyệt bước 2',
   ];
   const now = 1_700_000_000_000;
 
@@ -147,7 +150,8 @@ test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột th
   assert.equal(isCompleteWaitingRow({ ...full, group: '' }), false);
   assert.equal(isCompleteWaitingRow({ ...full, issue: '' }), false);
   assert.equal(isCompleteWaitingRow({ ...full, timeRaw: '' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: 'chưa rõ' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: '---' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: 'Chưa xác định vì phụ thuộc Ban PTDA' }), true);
   assert.equal(isCompleteWaitingRow({ ...full, owner: '' }), false);
   assert.equal(isCompleteWaitingRow({ ...full, supporter: '' }), false);
 
@@ -411,7 +415,7 @@ test('Tự động chuyển tab: chỉ còn KPI (3p) ↔ Waiting Point (10s/ngư
     'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
     '1,Dòng tiền 1: Bán 4 dự án,Networking,Hư wifi,15 phút,Thành Anh,Chiến',
     '2,Dòng tiền 1: Bán 4 dự án,Data,Thiếu file,10 phút,Mai,Chiến',
-    '3,Dòng tiền 2: Banking,H300,Thiếu hồ sơ,20 phút,Thu,Tuấn',
+    '3,Dòng tiền 2: Banking,H300,Thiếu hồ sơ,Chưa xác định vì phụ thuộc Ban PTDA,Thu,Tuấn',
   ].join('\n');
   assert.deepEqual(countWaitingPointPeopleFromCsv(activeCsv), { peopleCount: 2, itemCount: 3, sec: 20 });
 
