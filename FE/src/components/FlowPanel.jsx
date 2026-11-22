@@ -103,7 +103,10 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
                         <div className={`nm ${it.placeholder ? 'muted' : ''}`}>
                           {it.kpi || (it.placeholder ? 'Chưa có dòng KPI' : it.group)}
                         </div>
-                        <div className="pic">{it.pic}</div>
+                        <div className="pic">
+                          {it.pic}
+                          {it.taskPic && <span className="task-pic"> · PIC: {it.taskPic}</span>}
+                        </div>
                         {compact && !weekMode && dayTask?.task && <div className="tsk" title={dayTask.task}>{dayTask.task}</div>}
                         {it.note && !compact && <div className="note" title={it.note}>⚠ {it.note}</div>}
                       </td>

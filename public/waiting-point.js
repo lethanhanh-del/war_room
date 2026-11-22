@@ -8,7 +8,7 @@ export const WP_CONFIG = {
   SHEET_ID: '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0',
   SHEET_NAME: 'Điểm nghẽn',
   SHEET_GID: '2043772221',
-  POLL_INTERVAL_MS: 3000,
+  POLL_INTERVAL_MS: 5000,
   WARNING_THRESHOLD_SEC: 300,
   CLEAR_ANIMATION_MS: 1200,
   NEW_HIGHLIGHT_MS: 9000,
@@ -525,6 +525,17 @@ export function parseCsvText(csv) {
 
 export async function fetchWaitingPoints() {
   const ts = Date.now();
+  // Khi chạy trên trình duyệt trong hệ thống War Room: ưu tiên đọc qua API server (/api/waiting-point/sheet)
+  // để tự động lấy trực tiếp từ Excel SharePoint (Microsoft Graph) mà không lộ token ra trình duyệt.
+  if (typeof window !== 'undefined' && /^https?:$/i.test(window.location?.protocol || '')) {
+    try {
+      const apiRes = await fetch(`/api/waiting-point/sheet?_t=${ts}`, { cache: 'no-store' });
+      const ct = apiRes.headers.get('Content-Type') || '';
+      if (apiRes.ok && ct.includes('text/csv')) {
+        return parseCsvText(await apiRes.text());
+      }
+    } catch { /* dự phòng Google Sheet nếu chạy độc lập */ }
+  }
   const sheetParam = encodeURIComponent(WP_CONFIG.SHEET_NAME);
   // Ưu tiên đọc CSV trực tiếp theo đúng tên sheet "Điểm nghẽn", dự phòng theo gid và gviz JSON.
   const namedCsvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${sheetParam}&_t=${ts}`;

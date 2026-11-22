@@ -225,11 +225,19 @@ function renderSync() {
   const el = $('sync');
   const at = Date.parse(src.checkedAt || '');
   const hhmm = at ? new Date(at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' }) : '';
-  $('syncText').textContent = DEMO ? 'Dữ liệu minh họa' : hhmm ? `Google Sheet KPI · cập nhật ${hhmm}` : 'Google Sheet KPI';
+  const isSp = src.provider === 'sharepoint';
+  const srcLabel = isSp ? 'Excel SharePoint' : 'Google Sheet KPI';
+  $('syncText').textContent = DEMO ? 'Dữ liệu minh họa' : hhmm ? `${srcLabel} · cập nhật ${hhmm}` : srcLabel;
   el.dataset.state = S.stale || src.error ? 'stale' : S.model?.items.length || DEMO ? 'live' : 'error';
   const url = safeUrl(src.sheetUrl);
-  $('openSheet').hidden = !url;
-  if (url) $('openSheet').href = url;
+  const openBtn = $('openSheet');
+  openBtn.hidden = !url;
+  if (url) {
+    openBtn.href = url;
+    const svg = openBtn.querySelector('svg');
+    openBtn.textContent = isSp ? ' Mở Excel SharePoint' : ' Mở Google Sheet KPI';
+    if (svg) openBtn.prepend(svg);
+  }
   const m = S.model;
   if (m && m.days.length) {
     const i = m.days.findIndex((d) => d.date === m.today);
@@ -402,10 +410,11 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
     ? `<span class="kl-date${isCarryOver ? ' is-back' : ''}" title="${isCarryOver ? `Tồn đọng từ ngày ${esc(it.label)}` : `Ngày ${esc(it.label)}`}">${esc(it.label)}</span>`
     : '';
   const extra = [
+    it.taskPic ? `<span class="kl-pic" title="PIC chịu trách nhiệm: ${esc(it.taskPic)}">PIC: ${esc(it.taskPic)}</span>` : '',
     notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : '',
     lateNote(it),
   ].filter(Boolean).join('');
-  return `<li class="kmt-item st-${it.status}" title="${esc(it.kpi)}">
+  return `<li class="kmt-item st-${it.status}" title="${esc(it.taskPic ? `${it.kpi} · PIC: ${it.taskPic}` : it.kpi)}">
       <span class="kmt-ic">${icon(STATUS_ICON[it.status])}</span>
       <span class="kmt-body"><span class="kmt-title">${dateTag}<b class="kl-kpi">${esc(it.kpi)}</b></span>${extra}</span>
       ${chip(it.status)}
@@ -453,6 +462,12 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
     const badW = Math.round(((p.backlog || 0) / denom) * 100);
     const rate = p.total ? pct(p.done, p.total) : null;
 
+    const cardPics = [...new Set(tasks.map((it) => it.taskPic).filter(Boolean))];
+    const footLeft = [
+      cardPics.length ? `<span class="kpc-foot-pic" title="PIC chịu trách nhiệm: ${esc(cardPics.join(', '))}">PIC: ${esc(cardPics.join(', '))}</span>` : '',
+      folderHtml || (!cardPics.length ? `<span>${tasks.length} đầu việc</span>` : ''),
+    ].filter(Boolean).join('');
+
     const bodyHtml = tasks.length
       ? `<div class="kpc-meter" aria-hidden="true">${okW ? `<i class="m-ok" style="width:${okW}%"></i>` : ''}${lateW ? `<i class="m-late" style="width:${lateW}%"></i>` : ''}${badW ? `<i class="m-bad" style="width:${badW}%"></i>` : ''}</div>
          <div class="kpc-scroll-wrap">
@@ -461,7 +476,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
            </div>
          </div>
          <footer class="kpc-foot">
-           <div class="kpc-foot-l">${folderHtml || `<span>${tasks.length} đầu việc</span>`}</div>
+           <div class="kpc-foot-l">${footLeft}</div>
            <span class="kpc-scroll-hint" data-scroll-hint hidden><i class="kpc-scroll-ic" aria-hidden="true">↓</i> <span data-scroll-label>Tự cuộn</span> · <b>${tasks.length}</b> việc</span>
          </footer>`
       : `<div class="kpc-idle-body"><p class="kmp-empty">${emptyText}</p>${folderHtml}</div>`;
@@ -604,8 +619,7 @@ function picOf(x, it) { return x.groupOf.get(`${ it.streamKey }/${it.groupKey}`)
 function failItems(x, list, notes, withDate) {
   if (!list.length) return `<p class="k-none ok">${icon('check')}Không có KPI không đạt</p>`;
   return `<ul class="k-fails">${list.map((it) => {
-    const pic = picOf(x, it);
-    const who = pic && pic !== it.person ? `${it.person} · PIC nhóm ${pic}` : it.person ? `PIC ${it.person}` : '';
+    const who = it.person ? (it.taskPic ? `${it.person} · PIC: ${it.taskPic}` : it.person) : '';
     return `<li class="k-fail"><div class="kf-top">${withDate ? `<span class="kl-date">${esc(it.label)}</span>` : ''}<b>${esc(it.group)}</b>${chip('K')}</div>
       <p class="kf-meta">${esc(it.stream)}${who ? ` · ${esc(who)}` : ''}</p>
       <p class="kf-kpi">KPI: ${esc(it.kpi)}</p>${notes.has(it.id) ? `<p class="kf-note">Vướng mắc: ${esc(it.note)}</p>` : ''}</li>`;
@@ -614,7 +628,7 @@ function failItems(x, list, notes, withDate) {
 
 function lateItems(list) {
   if (!list.length) return `<p class="k-none ok">${icon('check')}Không có KPI hoàn thành trễ hạn</p>`;
-  return `<ul class="k-pends">${list.map((it) => `<li class="k-pend">${icon('clock')}<div class="kp-body"><b><span class="kl-date">${esc(it.label)}</span>${esc(it.group)}</b><span>${esc(it.stream)} · KPI: ${esc(it.kpi)}</span></div><span class="kp-who">${esc(it.person)}</span></li>`).join('')}</ul>`;
+  return `<ul class="k-pends">${list.map((it) => `<li class="k-pend">${icon('clock')}<div class="kp-body"><b><span class="kl-date">${esc(it.label)}</span>${esc(it.group)}</b><span>${esc(it.stream)} · KPI: ${esc(it.kpi)}</span></div><span class="kp-who">${esc(it.person)}${it.taskPic ? ` · PIC: ${esc(it.taskPic)}` : ''}</span></li>`).join('')}</ul>`;
 }
 
 function actScope(x) {
@@ -648,7 +662,7 @@ function tableHtml(x, { tv = false } = {}) {
         label = tv ? `${done}/${c.total}` : `${done}/${c.total} xong${c.L ? ` · ${c.L} trễ` : ''}`;
         cls = c.K ? 'bad' : c.L ? 'warn' : done === c.total ? 'ok' : 'muted';
       }
-      return `<div class="kt-c kt-day${d.date === hl ? ' is-hl' : ''}" role="cell"><span class="k-dots">${list.map((it) => `<i class="kd st-${it.status}" title="${esc(`${it.group} · ${it.person}: ${it.kpi} (${STATUS_LABEL[it.status]})`)}"></i>`).join('')}</span>${label ? `<span class="kt-lab ${cls}">${esc(label)}</span>` : ''}</div>`;
+      return `<div class="kt-c kt-day${d.date === hl ? ' is-hl' : ''}" role="cell"><span class="k-dots">${list.map((it) => `<i class="kd st-${it.status}" title="${esc(`${it.group} · ${it.person}${it.taskPic ? ` (PIC: ${it.taskPic})` : ''}: ${it.kpi} (${STATUS_LABEL[it.status]})`)}"></i>`).join('')}</span>${label ? `<span class="kt-lab ${cls}">${esc(label)}</span>` : ''}</div>`;
     }).join('');
     const due = upTo(s.items, ref);
     const c = count(due);

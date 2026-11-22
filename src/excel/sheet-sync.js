@@ -17,7 +17,8 @@
 import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
-import { SHEET_FILE_NAME, readSheets, sheetIds } from './gsheet.js';
+import { SHEET_FILE_NAME, readSheets, sharedLoader, sheetIds } from './gsheet.js';
+import { sourceUrlOf } from './sharepoint.js';
 import { ensureTable as ensureImportsTable, importSummary, planImport, saveImport, sheetOnlyBase } from './index.js';
 import { matchStream } from './merge.js';
 
@@ -145,7 +146,8 @@ export async function syncSheet(env, { force = false, now = Date.now(), load } =
   if (!(await claim(env, force ? FORCE_EVERY_MS : SYNC_EVERY_MS, now))) return { skipped: true };
   try {
     const cache = await cachedBooks(env);
-    const book = await readSheets(ids, { now, load, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
+    const loader = load || sharedLoader(env);
+    const book = await readSheets(ids, { now, load: loader, previous: new Map([...cache].map(([id, c]) => [id, c.book])) });
     const total = book.sections.reduce((n, s) => n + s.tasks.length, 0);
     let changed = false;
     let notes = book.warnings;
@@ -184,7 +186,7 @@ export async function syncSheet(env, { force = false, now = Date.now(), load } =
 export async function sheetSyncStatus(env) {
   const ids = sheetIds(env);
   if (!ids.length) return null;
-  const urls = ids.map((id) => `https://docs.google.com/spreadsheets/d/${id}/edit`);
+  const urls = ids.map((id) => sourceUrlOf(id));
   const status = { sheetUrl: urls[0], sheetUrls: urls, checkedAt: '', changedAt: '', error: '', warnings: [], total: 0, sheets: 0 };
   try {
     await ensureTable(env);

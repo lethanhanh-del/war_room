@@ -76,6 +76,7 @@ export function buildModel(data) {
             label: d.label,
             kpi: cell.kpi || 'Chưa ghi nội dung KPI',
             person: r.person || g.pic?.name || '',
+            taskPic: r.taskPic || '',
             status,
             doneAt: cell.res === 'D' ? cell.at || '' : '',
             unknown: cell.res === '?',
