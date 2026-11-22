@@ -10,7 +10,7 @@
 
 import { log } from '../db.js';
 import { json } from '../http.js';
-import { activeConfirms, cellKey, ensureTables, findTask, obsMaps, readTime, tasksOfDay } from './close.js';
+import { LATE_TRACKING_START, activeConfirms, cellKey, ensureTables, findTask, obsMaps, readTime, tasksOfDay } from './close.js';
 import { writeXlsx } from './xlsx-write.js';
 
 const AT_CLOSE = { D: 'Đã tick', K: 'Chưa tick', U: 'Không xác định (tính đã tick)' };
@@ -31,8 +31,8 @@ const vn = (iso) => {
 };
 const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
 
-/** Trạng thái cuối giống public/kpi-model.js › statusOf cho ngày đã chốt. */
-const resultOf = (closed, ticked) => (ticked ? (closed === 'K' ? 'L' : 'D') : 'K');
+/** Trạng thái cuối giống public/kpi-model.js › statusOf cho ngày đã chốt (chỉ tính trễ hạn từ LATE_TRACKING_START). */
+const resultOf = (closed, ticked, day) => (ticked ? (closed === 'K' && (!day || day >= LATE_TRACKING_START) ? 'L' : 'D') : 'K');
 
 /**
  * Dòng đối soát của 1 ngày (hàm thuần, để test).
@@ -56,7 +56,7 @@ export function reconcileRows(close, streams, cellLog, labels, confirms) {
     const ok = hit && hit.v === 'K' ? confirms.get(`${day}|${key}`) : null;
     const closed = ok ? 'D' : hit ? hit.v : 'K';
     const ticked = c.res === 'D';
-    const status = resultOf(closed, ticked);
+    const status = resultOf(closed, ticked, day);
     const notes = [];
     if (!hit) notes.push('Thêm vào Sheet sau khi chốt');
     if (hit && hit.v === 'D' && !ticked) notes.push('Đã tick lúc chốt, nay bị bỏ tick');

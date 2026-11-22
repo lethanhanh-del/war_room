@@ -43,7 +43,7 @@ import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
 import { handleKpiReview } from "./kpi/close.js"; // KPI-CLOSE: admin xác nhận đúng hạn
 import { handleKpiCloseExport } from "./kpi/close-export.js"; // KPI-CLOSE: tải Excel chốt sổ
 import { sharedLoader } from "./excel/gsheet.js";
-import { emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
+import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
@@ -72,10 +72,10 @@ export default {
 
     const user = await readSession(env, request, adminHash);
     if (!user) return loginPage();
-    if (path === "/login") return redirect("/");
+    if (path === "/login") return redirect("/kpi");
     if (path === "/logout") {
       await log(env, request, user.username, "logout");
-      return redirect("/", clearCookie());
+      return redirect("/kpi", clearCookie());
     }
     if (path === "/doi-mat-khau") return changePassword(request, env, user);
     if (user.mustChange) {
@@ -89,6 +89,7 @@ export default {
     if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
     if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
     if (path === "/api/waiting-point") return handleWaitingPoint(request, env, ctx);
+    if (path === "/api/waiting-point/status") return handleWaitingPointStatus(request);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
@@ -186,7 +187,7 @@ async function login(request, env, adminHash) {
     await env.DB.prepare("UPDATE users SET last_login_at = ? WHERE username = ?").bind(new Date().toISOString(), username).run();
   }
   await log(env, request, username, "login");
-  return redirect(mustChange ? "/doi-mat-khau" : "/", await sessionCookie(env, username, pwVersion));
+  return redirect(mustChange ? "/doi-mat-khau" : "/kpi", await sessionCookie(env, username, pwVersion));
 }
 
 async function changePassword(request, env, user) {
@@ -216,7 +217,29 @@ async function changePassword(request, env, user) {
     .bind(await hashPassword(next), pwVersion, user.username)
     .run();
   await log(env, request, user.username, "password_changed");
-  return redirect("/", await sessionCookie(env, user.username, pwVersion));
+  return redirect("/kpi", await sessionCookie(env, user.username, pwVersion));
+}
+
+const WP_STATUS_SHEET_ID = "1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0";
+const WP_STATUS_GID = "2043772221";
+let wpStatusCache = { at: 0, data: null };
+
+async function handleWaitingPointStatus(request) {
+  if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+  const now = Date.now();
+  if (wpStatusCache.data && now - wpStatusCache.at < 5000) {
+    return json(wpStatusCache.data);
+  }
+  try {
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/export?format=csv&gid=${WP_STATUS_GID}&_t=${now}`;
+    const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = countWaitingPointPeopleFromCsv(await res.text());
+    wpStatusCache = { at: now, data };
+    return json(data);
+  } catch {
+    return json(wpStatusCache.data || { peopleCount: 0, itemCount: 0, sec: 0, error: true });
+  }
 }
 
 // Đồng bộ trạng thái đếm ngược & thống kê theo ngày của trang Waiting Point lưu trong bảng settings (D1).

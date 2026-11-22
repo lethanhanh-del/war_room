@@ -126,8 +126,8 @@ export default function OverviewPanel({
 
       <div className="ov-flows">
         {view.flows.map((f, i) => (
-          <div className="ovf" key={f.key} onClick={() => onOpenDetail({ flow: f.key, group: 'all' })} title="Bấm để xem chi tiết">
-            <span className="ovf-name">
+          <div className="ovf" key={f.key} onClick={() => onOpenDetail({ flow: f.key, group: 'all' })} title={`${f.label} — Bấm để xem chi tiết`}>
+            <span className="ovf-name" title={f.label}>
               <em>{f.no ?? i + 2}</em>
               {f.label}
             </span>
@@ -172,7 +172,6 @@ export default function OverviewPanel({
 function HotList({ view, onOpen }) {
   const late = flattenTasks(view).filter((t) => t.task.status === 'late');
   const ref = useAutoScroll([late.length]);
-  const short = (l) => l.replace(/^dòng tiền\s*/i, '');
   return (
     <div className="hot">
       <div className="hot-head">
@@ -185,7 +184,7 @@ function HotList({ view, onOpen }) {
             <div className="hot-item" key={`${flow.key}-${item.row}-${task.date}`} onClick={onOpen} title={task.task || ''}>
               <div style={{ minWidth: 0 }}>
                 <div className="nm">{task.task || item.kpi || item.group}</div>
-                <div className="pic">{item.pic} · {item.kpi || item.group} · {short(flow.label)}</div>
+                <div className="pic">{item.pic} · {item.kpi || item.group} · {flow.label}</div>
               </div>
               <b>{fmtDay(task.date, false)}</b>
             </div>

@@ -12,7 +12,8 @@
     "deploy": "wrangler deploy",
     "build:fe": "FORCE_FE_BUILD=1 node scripts/build-fe.mjs",
     "test": "node --test test/*.test.js",
-    "setup-sheet": "node --env-file-if-exists=.env scripts/setup-sheet.js"
+    "setup-sheet": "node --env-file-if-exists=.env scripts/setup-sheet.js",
+    "create-user": "node scripts/create-user.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

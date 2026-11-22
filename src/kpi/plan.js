@@ -12,18 +12,33 @@ import { normKey } from '../worksuite/model.js';
 
 const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+const stripDtKey = (s) => normKey(s).replace(/^dong tien\s*[:\-–]?\s*/, '');
+const looseCore = (s) => stripDtKey(s).replace(/[^a-z0-9]+/g, '');
 
 /**
- * "Dòng tiền bán 4 dự án" -> "Bán 4 dự án"; "1. Cổ phiếu – Equity 2. IPO / niêm yết" -> "Cổ phiếu – Equity · IPO / niêm yết";
- * "Các gói tài trợ – Tài chính 57: Tổ chức Ban…" -> tên "Các gói tài trợ – Tài chính 57", mô tả "Tổ chức Ban…".
+ * Chuẩn hóa tên dòng tiền từ file phân chia nhiệm vụ, giữ ĐẦY ĐỦ chữ "Dòng tiền …" (không viết tắt hay bỏ chữ):
+ * "Dòng tiền bán 4 dự án" -> "Dòng tiền bán 4 dự án"; "Trái phiếu" -> "Dòng tiền trái phiếu";
+ * "1. Cổ phiếu – Equity 2. IPO / niêm yết" -> "Dòng tiền Equity / IPO";
+ * "Các gói tài trợ – Tài chính 57: Tổ chức Ban…" -> tên "Dòng tiền Tài chính 57", mô tả "Tổ chức Ban…";
+ * "Thanh lý" -> "Nhóm thanh lý".
  */
 export function planName(raw) {
-  let t = clean(raw).replace(/^dòng tiền\s*[:\-–]?\s*/i, '');
+  let t = clean(raw);
   let desc = '';
   const colon = t.indexOf(':');
   if (colon > 0) { desc = t.slice(colon + 1).trim(); t = t.slice(0, colon).trim(); }
   if (/^\d+\.\s/.test(t)) t = t.split(/\s*\d+\.\s+/).filter(Boolean).join(' · ');
-  return { name: t ? t.charAt(0).toLocaleUpperCase('vi') + t.slice(1) : clean(raw), desc };
+  const nk = normKey(t);
+  if (nk === 'thanh ly' || nk === 'nhom thanh ly') return { name: 'Nhóm thanh lý', desc };
+  if (nk.includes('tai chinh 57')) return { name: 'Dòng tiền Tài chính 57', desc };
+  if (nk.includes('equity') && nk.includes('ipo')) return { name: 'Dòng tiền Equity / IPO', desc };
+  if (/^dong tien\b/.test(nk)) {
+    const rest = t.replace(/^dòng tiền\s*[:\-–]?\s*/i, '').trim();
+    return { name: rest ? `Dòng tiền ${rest}` : 'Dòng tiền', desc };
+  }
+  if (/^nhom\b/.test(nk)) return { name: t.charAt(0).toLocaleUpperCase('vi') + t.slice(1), desc };
+  const lower = t === t.toLocaleUpperCase('vi') ? t.toLocaleLowerCase('vi') : t.charAt(0).toLocaleLowerCase('vi') + t.slice(1);
+  return { name: t ? `Dòng tiền ${lower}` : clean(raw), desc };
 }
 
 /** Các tab của file phân chia nhiệm vụ -> [{ no, name, desc, raw }] theo số thứ tự; không có cột "STT dòng tiền" -> []. */
@@ -63,15 +78,15 @@ export function applyPlan(streams, plan) {
   const cash = streams.filter((s) => s.kind !== 'support' && s.kind !== 'liquidation');
   const used = new Set();
   const usedLiq = new Set();
-  const tokens = (s) => normKey(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+  const tokens = (s) => stripDtKey(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
   const pick = (p) => {
     let i = cash.findIndex((s, k) => !used.has(k) && s.no === p.no);
     if (i < 0) {
-      const keys = [loose(p.name), loose(p.raw.replace(/^dòng tiền/i, ''))];
-      i = cash.findIndex((s, k) => !used.has(k) && !s.no && keys.includes(loose(s.name)));
+      const keys = [looseCore(p.name), looseCore(p.raw)];
+      i = cash.findIndex((s, k) => !used.has(k) && !s.no && keys.includes(looseCore(s.name)));
     }
     if (i < 0) {
-      const hay = `${normKey(p.name)} ${normKey(p.raw)}`;
+      const hay = `${stripDtKey(p.name)} ${stripDtKey(p.raw)}`;
       const hits = cash
         .map((s, k) => ({ s, k, toks: tokens(s.name) }))
         .filter(({ s, k, toks }) => !used.has(k) && !s.no && toks.length >= 2 && toks.every((t) => hay.includes(t)));
@@ -89,7 +104,8 @@ export function applyPlan(streams, plan) {
     }
     const i = pick(p);
     const base = i >= 0 ? cash[i] : { sheet: '', pic: '', days: [], groups: [] };
-    return { ...base, no: p.no, name: p.name, desc: p.desc, sourceName: i >= 0 ? cash[i].name : '' };
+    // Ưu tiên tên đầy đủ từ tab KPI chính thức (VD "Dòng tiền thu trước hạn quá hạn", "Dòng tiền Equity / IPO", "Dòng tiền Tài chính 57").
+    return { ...base, no: p.no, name: i >= 0 ? cash[i].name : p.name, desc: p.desc, sourceName: i >= 0 ? cash[i].name : '' };
   });
   for (const [k, s] of liquidation.entries()) if (!usedLiq.has(k)) out.push({ ...s, kind: 'liquidation' });
   for (const s of support) out.push({ ...s, kind: 'support' });

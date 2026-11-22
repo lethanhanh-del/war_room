@@ -363,7 +363,7 @@ function heroHtml(x) {
       <p class="hint">${failStreams.length ? `Quá hạn (${DUE_LABEL} sáng hôm sau) mà chưa hoàn thành, ở ${failStreams.length} dòng tiền: ${esc(failStreams.join(', '))}` : uc.total ? 'Không có KPI tồn đọng' : 'Chưa có KPI'}</p></article>`;
   const card4 = `<article class="k-card k-big st-L${uc.L ? '' : ' is-zero'}"><p class="k-over">Hoàn thành trễ hạn ${esc(until)}</p>
       <p class="k-num-xl">${uc.L} <span>KPI</span></p>
-      <p class="hint">${uc.L ? `Đã hoàn thành, nhưng tick kết quả sau ${DUE_LABEL} sáng hôm sau ngày của KPI` : uc.total ? 'Không có KPI hoàn thành trễ hạn' : 'Chưa có KPI'}</p></article>`;
+      <p class="hint">${uc.L ? `Đã hoàn thành, nhưng tick kết quả sau ${DUE_LABEL} sáng hôm sau ngày của KPI (áp dụng từ 22/11)` : uc.total ? 'Không có KPI hoàn thành trễ hạn (áp dụng từ 22/11)' : 'Chưa có KPI'}</p></article>`;
   return `<section class="k-hero" aria-label="Chỉ số chính">${card1}${card2}${card3}${card4}</section>`;
 }
 
@@ -415,8 +415,9 @@ function membersHtml(x) {
       `${sum.groups} nhóm`,
       `${sum.people.size} người`,
     ].join(' · ');
+    const badgeNum = s.no ? String(s.no) : isSpecial ? '' : String(si + 1);
     const head = `<header class="km-stream">
-        <div class="kms-id">${s.code ? `<span class="kms-code">${esc(s.code)}</span>` : `<span class="kms-code is-none">${si + 1}</span>`}
+        <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
           <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
         <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
@@ -425,7 +426,7 @@ function membersHtml(x) {
       : isSpecial
         ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
         : `<p class="k-none">Chưa có nhóm nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
-    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="${isSpecial ? '' : 'Dòng tiền '}${esc(s.name)}">${head}${body}</section>`;
+    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="${esc(s.name)}">${head}${body}</section>`;
   }).join('');
   const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
   const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện người có KPI ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
@@ -433,7 +434,7 @@ function membersHtml(x) {
       <p class="hint">${groupCount} nhóm · ${people.size} người. Số KPI của từng người tính ${esc(range)}.${filterNote}</p></div></header>
       <ul class="km-legend">
         <li class="st-D"><i class="kd st-D"></i><span><b>Đã hoàn thành</b>: đã tick ô Kết quả, tính cả tick trễ. Số sau dấu / là tổng KPI đến ngày đang xem.</span></li>
-        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick, nhưng sau hạn (${DUE_LABEL} sáng hôm sau ngày của KPI).</span></li>
+        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick, nhưng sau hạn (${DUE_LABEL} sáng hôm sau ngày của KPI — chỉ ghi nhận từ ngày 22/11).</span></li>
         <li class="st-K"><i class="kd st-K"></i><span><b>Còn tồn đọng</b>: quá hạn mà chưa tick.</span></li>
       </ul>
       ${blocks || '<p class="k-none">Không có thành viên nào khớp bộ lọc.</p>'}</section>`;
@@ -495,7 +496,7 @@ function tableHtml(x, { tv = false } = {}) {
     const c = count(due);
     const p = pct(doneOf(c), c.total);
     const backlog = c.K;
-    const name = tv ? `<b title="${esc(s.name)}">${s.no ? `${s.no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.code ? `<span class="k-code">${esc(s.code)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
+    const name = tv ? `<b title="${esc(s.name)}">${s.no ? `${s.no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.no ? `<span class="k-code">${esc(String(s.no))}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
         <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');

@@ -25,10 +25,24 @@ export function normalizeText(str) {
   return String(str || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+// Trả về tên đầy đủ của dòng tiền / nhóm (không cắt bỏ chữ "Dòng tiền", chỉ bỏ số thứ tự thừa đầu dòng).
 export function shortStreamName(stream) {
-  const s = String(stream || '').trim();
-  const stripped = s.replace(/^dòng\s*tiền\s*\d*\s*[:–-]?\s*/i, '').trim();
-  return stripped || s || 'War Room';
+  const s = String(stream || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (!s) return 'War Room';
+  const strippedNo = s.replace(/^\d+\s*[.)\-–]\s*/, '').trim();
+  const m = /^dòng\s*tiền\s*\d+\s*[:\-–]\s*(.+)$/i.exec(strippedNo);
+  if (m) {
+    const rest = m[1].trim();
+    if (/^nhóm\b/i.test(rest)) return rest;
+    const isAllUpper = rest === rest.toLocaleUpperCase('vi');
+    if (isAllUpper) {
+      const lower = rest.toLocaleLowerCase('vi');
+      return `Dòng tiền ${lower === 'banking' ? 'Banking' : lower}`;
+    }
+    const fixed = /^bán\b|^nợ\b|^thu\b|^trái\b/i.test(rest) ? rest.charAt(0).toLocaleLowerCase('vi') + rest.slice(1) : rest;
+    return `Dòng tiền ${fixed}`;
+  }
+  return strippedNo || s;
 }
 
 export function todayKeyVN(nowMs = Date.now()) {
@@ -1404,13 +1418,22 @@ if (typeof document !== 'undefined') {
         });
       }
 
+      const curSnap = buildBoardSnapshot(now);
+      window.dispatchEvent(new CustomEvent('wr:wp-count', {
+        detail: {
+          peopleCount: curSnap.groups.length,
+          itemCount: curSnap.visibleItems.length,
+          showStats: Boolean(state.showStats),
+        },
+      }));
+
       if (state.showStats) {
         updateHeaderOnly();
         if ((removedEntries.length > 0 || prunedBySheet || historyWasReset) && document.activeElement?.id !== 'wp-date-picker') {
           render();
         }
       } else {
-        const snap = buildBoardSnapshot(now);
+        const snap = curSnap;
         if (
           !wasOnline ||
           snap.structSig !== state.lastBoardStructSig ||

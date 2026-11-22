@@ -36,16 +36,25 @@ export const isSupportTab = (name) => /^nhom ho tro(\s|:|-|$)/.test(normKey(stri
 /** Tab "Nhóm thanh lý" (có thể có số thứ tự "9. " ở đầu). */
 export const isLiquidationTab = (name) => /^nhom thanh ly(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
 
-/** "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Bán 4 dự án"; "1. Dòng tiền bán 4 dự án" -> "Bán 4 dự án"; "8. Nhóm hỗ trợ" -> "Nhóm hỗ trợ"; "9. Nhóm thanh lý" -> "Nhóm thanh lý". */
+/**
+ * Chuẩn hóa tên dòng tiền / nhóm từ tên tab Google Sheet, giữ ĐẦY ĐỦ tên (không lược bỏ chữ "Dòng tiền"):
+ * "1. Dòng tiền bán 4 dự án" -> "Dòng tiền bán 4 dự án"; "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Dòng tiền bán 4 dự án";
+ * "DÒNG TIỀN: BANKING" -> "Dòng tiền Banking"; "8. Nhóm thanh lý" -> "Nhóm thanh lý"; "9. Nhóm hỗ trợ" -> "Nhóm hỗ trợ".
+ */
 export function streamNameOf(tab) {
   const clean = stripPrefixNo(tab);
+  if (!clean) return String(tab || '').trim();
   const words = clean.split(' ').filter(Boolean);
-  let i = 0;
-  if (normKey(words[0]) === 'dong' && normKey(words[1]).replace(/[:\-–]$/, '') === 'tien') i = 2;
-  const rest = words.slice(i).join(' ').replace(/^[:\-–]\s*/, '');
-  if (!rest) return clean || String(tab || '').trim();
-  // Tên viết hoa toàn bộ -> dạng câu; tên đã viết thường / hoa đúng (vd "Equity / IPO") giữ nguyên, chỉ viết hoa chữ đầu.
-  const base = rest === rest.toLocaleUpperCase('vi') ? rest.toLocaleLowerCase('vi') : rest;
+  if (normKey(words[0]) === 'dong' && normKey(words[1]).replace(/[:\-–]$/, '') === 'tien') {
+    const rest = words.slice(2).join(' ').replace(/^[:\-–]\s*/, '').trim();
+    if (!rest) return 'Dòng tiền';
+    const isAllUpper = clean === clean.toLocaleUpperCase('vi');
+    if (!isAllUpper) return `Dòng tiền ${rest}`;
+    const lower = rest.toLocaleLowerCase('vi');
+    const fixed = lower === 'banking' ? 'Banking' : lower;
+    return `Dòng tiền ${fixed}`;
+  }
+  const base = clean === clean.toLocaleUpperCase('vi') ? clean.toLocaleLowerCase('vi') : clean;
   return base.charAt(0).toLocaleUpperCase('vi') + base.slice(1);
 }
 

@@ -25,12 +25,15 @@ import { normKey } from '../worksuite/model.js';
 
 const DUE_HOUR = 5;
 const TAU_MS = 2 * 60 * 1000; // lượt đọc trước cách hạn ≤ 2 phút coi là "sát hạn"
+/** Hệ thống chấm trễ hạn áp dụng từ ngày 22/11/2026 trở đi (ngày 21/11 hoàn thành muộn vẫn tính Hoàn thành). */
+export const LATE_TRACKING_START = '2026-11-22';
 
 /** Hạn (ms) của KPI ngày `date` = 05:00 ngày hôm sau giờ VN. shiftMin: CHỈ để thử trên máy (KPI_DUE_SHIFT_MIN). */
 export const closeDeadline = (date, shiftMin = 0) => Date.parse(`${date}T00:00:00Z`) + (24 + DUE_HOUR - 7) * 3600000 - shiftMin * 60000;
 
 const shiftOf = (env) => Number(env.KPI_DUE_SHIFT_MIN) || 0;
 export const loose = (s) => normKey(s).replace(/[^a-z0-9]+/g, '');
+const streamLoose = (s) => loose(normKey(s).replace(/^dong tien\s*[:\-–]?\s*/, ''));
 
 const ready = new WeakSet();
 export async function ensureTables(env) {
@@ -73,7 +76,7 @@ export function tasksOfDay(streams, day) {
   const out = [];
   const seen = new Map();
   for (const s of streams || []) {
-    const sk = loose(s.sourceName || s.name);
+    const sk = streamLoose(s.sourceName || s.name);
     for (const g of s.groups || []) {
       for (const r of g.rows || []) {
         const c = r.cells?.[day];
@@ -277,6 +280,7 @@ export async function activeConfirms(env, id) {
 export function reviewList(closes, cellLog, obs, confirms) {
   const out = [];
   for (const c of closes) {
+    if (c.day < LATE_TRACKING_START) continue;
     const deadline = Date.parse(c.deadline);
     for (const [s, g, p, k, v] of c.data) {
       if (v !== 'K') continue;

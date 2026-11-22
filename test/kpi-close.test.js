@@ -37,17 +37,22 @@ test('closeDay + closeVerdict: căn cứ từ lượt đọc trước / sau hạ
   assert.equal(closeVerdict(null, true, 'none'), 'U');
 });
 
-test('statusOf: ngày đã chốt — lúc 05:00 đã tick = Hoàn thành; chưa tick = Tồn đọng; tick sau đó = Hoàn thành trễ hạn', () => {
-  const day = '2026-11-21';
-  const now = vn(22, 9);
-  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'D' }, day, '2026-11-22', now), 'D');
-  assert.equal(statusOf({ kpi: 'a', res: '', closed: 'K' }, day, '2026-11-22', now), 'K');
-  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'K' }, day, '2026-11-22', now), 'L');
-  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'U' }, day, '2026-11-22', now), 'D');
+test('statusOf: ngày 21/11 không ghi nhận trễ hạn; từ 22/11 lúc 05:00 chưa tick -> tick sau đó = Hoàn thành trễ hạn', () => {
+  // Ngày 21/11: hệ thống chưa áp dụng chấm trễ hạn -> đã tick luôn là Hoàn thành (D), chưa tick vẫn Tồn đọng (K).
+  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'K' }, '2026-11-21', '2026-11-22', vn(22, 9)), 'D');
+  assert.equal(statusOf({ kpi: 'a', res: '', closed: 'K' }, '2026-11-21', '2026-11-22', vn(22, 9)), 'K');
+
+  // Từ ngày 22/11 trở đi: áp dụng đầy đủ bản chốt lúc 05:00 hôm sau.
+  const day = '2026-11-22';
+  const now = vn(23, 9);
+  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'D' }, day, '2026-11-23', now), 'D');
+  assert.equal(statusOf({ kpi: 'a', res: '', closed: 'K' }, day, '2026-11-23', now), 'K');
+  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'K' }, day, '2026-11-23', now), 'L');
+  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'U' }, day, '2026-11-23', now), 'D');
   // Bản chốt quyết định, không phụ thuộc giờ Worker thấy tick: tick lúc 04:58 (Worker thấy lúc 05:30) vẫn là Hoàn thành.
-  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'D', at: new Date(vn(22, 5, 30)).toISOString() }, day, '2026-11-22', now), 'D');
+  assert.equal(statusOf({ kpi: 'a', res: 'D', closed: 'D', at: new Date(vn(23, 5, 30)).toISOString() }, day, '2026-11-23', now), 'D');
   // Chưa chốt (trước 05:00): như cũ.
-  assert.equal(statusOf({ kpi: 'a', res: '' }, day, '2026-11-22', vn(22, 4)), 'N');
+  assert.equal(statusOf({ kpi: 'a', res: '' }, day, '2026-11-23', vn(23, 4)), 'N');
 });
 
 // ---------- đồng bộ + chốt sổ đầu-cuối: Google Sheet giả lập có lịch sử phiên bản + D1 giả lập ----------
@@ -60,7 +65,7 @@ async function freshEnv() {
   for (const t of ['kpi_sheet', 'kpi_close', 'kpi_close_obs', 'kpi_audit_log', 'kpi_cell_log', 'kpi_confirm', 'audit_log']) await sharedDb.prepare(`DELETE FROM ${t}`).run().catch(() => {});
   return { DB: sharedDb, KPI_SHEET_URL: ID, KPI_PLAN_URL: 'off', WARROOM_START: '2026-11-21' };
 }
-const HEAD = 'Stt,Nhóm,PIC,21/11,,22/11,,Ghi chú / Vướng mắc';
+const HEAD = 'Stt,Nhóm,PIC,22/11,,23/11,,Ghi chú / Vướng mắc';
 const SUB = ',,,KPI,Kết quả,KPI,Kết quả,';
 const csv = ({ an = 'FALSE', hien = 'TRUE', extra = [] } = {}) => [
   'BẢNG KPI VÀ KẾT QUẢ ĐẠT ĐƯỢC WAR ROOM CT HOMES (21/11/2026 - 25/11/2026)',
@@ -89,10 +94,10 @@ function fakeGoogle(revs) {
   return () => { globalThis.fetch = real; };
 }
 
-const cellOf = (data, person) => data.streams[0].groups[0].rows.find((r) => r.person === person).cells['2026-11-21'];
-const status = (data, person, now) => statusOf(cellOf(data, person), '2026-11-21', data.today, now);
+const cellOf = (data, person, day = '2026-11-22') => data.streams[0].groups[0].rows.find((r) => r.person === person).cells[day];
+const status = (data, person, now, day = '2026-11-22') => statusOf(cellOf(data, person, day), day, data.today, now);
 
-test('chốt sổ đầu-cuối: An chưa tick lúc 05:00 rồi 09:00 mới tick -> Hoàn thành trễ hạn; Hiền tick trước hạn -> Hoàn thành', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
+test('chốt sổ đầu-cuối: An chưa tick lúc 05:00 rồi 09:00 mới tick (từ ngày 22/11) -> Hoàn thành trễ hạn; Hiền tick trước hạn -> Hoàn thành', { skip: !DatabaseSync && 'Node chưa có node:sqlite' }, async () => {
   const { ensureSchema } = await import('../src/db.js');
   const { kpiData, syncKpi } = await import('../src/kpi/index.js');
   const { auditReport } = await import('../src/kpi/close.js');
@@ -101,29 +106,29 @@ test('chốt sổ đầu-cuối: An chưa tick lúc 05:00 rồi 09:00 mới tick
   const revs = [csv()];
   const restore = fakeGoogle(() => revs);
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4, 50) });
-    await syncKpi(env, { force: true, now: vn(22, 4, 59) });
-    let data = await kpiData(env, vn(22, 4, 59));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 4, 59)), 'N'); // còn hạn tới 05:00
-    await syncKpi(env, { force: true, now: vn(22, 5, 0, 20) }); // lượt đầu sau 05:00 -> chốt ngày 21
+    await syncKpi(env, { force: true, now: vn(23, 4, 50) });
+    await syncKpi(env, { force: true, now: vn(23, 4, 59) });
+    let data = await kpiData(env, vn(23, 4, 59));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 4, 59)), 'N'); // còn hạn tới 05:00
+    await syncKpi(env, { force: true, now: vn(23, 5, 0, 20) }); // lượt đầu sau 05:00 -> chốt ngày 22
     const rep = await auditReport(env, ID);
-    assert.deepEqual(rep.closes.map((c) => [c.day, c.basis, c.count]), [['2026-11-21', 'exact', { D: 1, K: 1, U: 0 }]]);
-    data = await kpiData(env, vn(22, 5, 1));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 5, 1)), 'K'); // Tồn đọng
-    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(22, 5, 1)), 'D'); // Hoàn thành
+    assert.deepEqual(rep.closes.map((c) => [c.day, c.basis, c.count]), [['2026-11-22', 'exact', { D: 1, K: 1, U: 0 }]]);
+    data = await kpiData(env, vn(23, 5, 1));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 5, 1)), 'K'); // Tồn đọng
+    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(23, 5, 1)), 'D'); // Hoàn thành
 
     revs.push(csv({ an: 'TRUE' })); // 09:00: An mới tick
-    await syncKpi(env, { force: true, now: vn(22, 9) });
-    data = await kpiData(env, vn(22, 9));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 9)), 'L'); // Hoàn thành trễ hạn
-    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(22, 9)), 'D');
+    await syncKpi(env, { force: true, now: vn(23, 9) });
+    data = await kpiData(env, vn(23, 9));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 9)), 'L'); // Hoàn thành trễ hạn
+    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(23, 9)), 'D');
 
     // Sửa sheet sau khi chốt không đổi được bản chốt (ghi 1 lần).
     revs.push(csv({ an: 'TRUE', hien: 'FALSE' }));
-    await syncKpi(env, { force: true, now: vn(22, 10) });
+    await syncKpi(env, { force: true, now: vn(23, 10) });
     assert.deepEqual((await auditReport(env, ID)).closes[0].count, { D: 1, K: 1, U: 0 });
-    data = await kpiData(env, vn(22, 10));
-    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(22, 10)), 'K'); // bỏ tick sau hạn: hiển thị theo ô hiện tại
+    data = await kpiData(env, vn(23, 10));
+    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(23, 10)), 'K'); // bỏ tick sau hạn: hiển thị theo ô hiện tại
   } finally {
     restore();
   }
@@ -138,13 +143,13 @@ test('chốt sổ khi Worker lỡ nhịp lúc 05:00: dùng lượt đọc cuối
   const revs = [csv()];
   const restore = fakeGoogle(() => revs);
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4) }); // thấy phiên bản 1 lúc 04:00 (An chưa tick)
+    await syncKpi(env, { force: true, now: vn(23, 4) }); // thấy phiên bản 1 lúc 04:00 (An chưa tick)
     revs.push(csv({ an: 'TRUE' })); // An tick lúc nào đó trong khi Worker ngừng chạy
-    await syncKpi(env, { force: true, now: vn(22, 6) }); // Worker chạy lại lúc 06:00
+    await syncKpi(env, { force: true, now: vn(23, 6) }); // Worker chạy lại lúc 06:00
     const c = (await auditReport(env, ID)).closes[0];
-    assert.deepEqual([c.basis, c.readBefore, c.readAfter, c.count], ['gap', new Date(vn(22, 4)).toISOString(), new Date(vn(22, 6)).toISOString(), { D: 1, K: 0, U: 1 }]);
-    const data = await kpiData(env, vn(22, 6));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 6)), 'D'); // không xác định -> không tính trễ oan
+    assert.deepEqual([c.basis, c.readBefore, c.readAfter, c.count], ['gap', new Date(vn(23, 4)).toISOString(), new Date(vn(23, 6)).toISOString(), { D: 1, K: 0, U: 1 }]);
+    const data = await kpiData(env, vn(23, 6));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 6)), 'D'); // không xác định -> không tính trễ oan
   } finally {
     restore();
   }
@@ -165,34 +170,34 @@ test('xác nhận lại: An tick 20:00, lỡ bỏ tick 04:58 -> chốt Tồn đ�
     return { status: res.status, ...(await res.json()) };
   };
   try {
-    await syncKpi(env, { force: true, now: vn(21, 19) }); // mốc
+    await syncKpi(env, { force: true, now: vn(22, 19) }); // mốc
     revs.push(csv({ an: 'TRUE' }));
-    await syncKpi(env, { force: true, now: vn(21, 20) }); // 20:00 An tick
+    await syncKpi(env, { force: true, now: vn(22, 20) }); // 20:00 An tick
     revs.push(csv({ an: 'FALSE' }));
-    await syncKpi(env, { force: true, now: vn(22, 4, 58) }); // 04:58 lỡ bỏ tick
-    await syncKpi(env, { force: true, now: vn(22, 5, 0, 20) }); // chốt: An chưa tick
+    await syncKpi(env, { force: true, now: vn(23, 4, 58) }); // 04:58 lỡ bỏ tick
+    await syncKpi(env, { force: true, now: vn(23, 5, 0, 20) }); // chốt: An chưa tick
     let items = (await api('GET')).items;
     assert.equal(items.length, 1);
     assert.deepEqual([items[0].person, items[0].kpi, items[0].history.map((h) => h.change), items[0].confirmed], ['Trương Huỳnh Thúy An', 'Gọi 40 khách', ['tick', 'untick'], null]);
 
     revs.push(csv({ an: 'TRUE' }));
-    await syncKpi(env, { force: true, now: vn(22, 8, 10) }); // 08:10 An tick lại
-    let data = await kpiData(env, vn(22, 8, 10));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 8, 10)), 'L'); // chưa xác nhận: trễ hạn
+    await syncKpi(env, { force: true, now: vn(23, 8, 10) }); // 08:10 An tick lại
+    let data = await kpiData(env, vn(23, 8, 10));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 8, 10)), 'L'); // chưa xác nhận: trễ hạn
 
-    assert.equal((await api('POST', { day: '2026-11-21', cell: items[0].cell })).status, 400); // bắt buộc lý do
-    assert.equal((await api('POST', { day: '2026-11-21', cell: items[0].cell, reason: 'Lỡ bấm bỏ tick lúc 04:58' })).status, 200);
-    data = await kpiData(env, vn(22, 8, 11));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 8, 11)), 'D'); // admin xác nhận -> Hoàn thành
+    assert.equal((await api('POST', { day: '2026-11-22', cell: items[0].cell })).status, 400); // bắt buộc lý do
+    assert.equal((await api('POST', { day: '2026-11-22', cell: items[0].cell, reason: 'Lỡ bấm bỏ tick lúc 04:58' })).status, 200);
+    data = await kpiData(env, vn(23, 8, 11));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 8, 11)), 'D'); // admin xác nhận -> Hoàn thành
     assert.equal(cellOf(data, 'Trương Huỳnh Thúy An').confirmed.by, 'admin');
     items = (await api('GET')).items;
     assert.equal(items[0].confirmed.reason, 'Lỡ bấm bỏ tick lúc 04:58');
     const logs = (await env.DB.prepare("SELECT action FROM audit_log WHERE action LIKE 'kpi_%'").all()).results.map((r) => r.action);
     assert.deepEqual(logs, ['kpi_confirm']);
 
-    assert.equal((await api('DELETE', { day: '2026-11-21', cell: items[0].cell })).status, 200); // huỷ xác nhận
-    data = await kpiData(env, vn(22, 8, 12));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 8, 12)), 'L');
+    assert.equal((await api('DELETE', { day: '2026-11-22', cell: items[0].cell })).status, 200); // huỷ xác nhận
+    data = await kpiData(env, vn(23, 8, 12));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 8, 12)), 'L');
   } finally {
     restore();
   }
@@ -214,20 +219,20 @@ test('tải Excel chốt sổ theo ngày (admin): lúc chốt / hiện tại / k
   };
   const values = (sheet) => sheet.rows.map((r) => r.cells.map((c) => c?.v ?? ''));
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4, 50) });
-    assert.equal((await get('?day=2026-11-21')).status, 404); // chưa chốt
-    await syncKpi(env, { force: true, now: vn(22, 5, 0, 20) }); // chốt: Hiền đã tick, An chưa
+    await syncKpi(env, { force: true, now: vn(23, 4, 50) });
+    assert.equal((await get('?day=2026-11-22')).status, 404); // chưa chốt
+    await syncKpi(env, { force: true, now: vn(23, 5, 0, 20) }); // chốt: Hiền đã tick, An chưa
     // Sau chốt: An tick (trễ), xoá dòng Hiền, thêm dòng mới.
     revs.push(csv({ an: 'TRUE', extra: ['3,Networking,Lê Văn Mới,Việc thêm sau,FALSE,,FALSE,'] }).split('\n').filter((l) => !l.includes('Thúy Hiền')).join('\n'));
-    await syncKpi(env, { force: true, now: vn(22, 9) });
+    await syncKpi(env, { force: true, now: vn(23, 9) });
 
     const list = await (await get()).json();
-    assert.deepEqual(list.days.map((d) => [d.day, d.basis, d.count]), [['2026-11-21', 'exact', { D: 1, K: 1, U: 0 }]]);
-    assert.equal((await get('?day=21-11-2026')).status, 400);
+    assert.deepEqual(list.days.map((d) => [d.day, d.basis, d.count]), [['2026-11-22', 'exact', { D: 1, K: 1, U: 0 }]]);
+    assert.equal((await get('?day=22-11-2026')).status, 400);
 
-    const res = await get('?day=2026-11-21');
+    const res = await get('?day=2026-11-22');
     assert.equal(res.status, 200);
-    assert.match(res.headers.get('Content-Disposition'), /chot-so-KPI-2026-11-21\.xlsx/);
+    assert.match(res.headers.get('Content-Disposition'), /chot-so-KPI-2026-11-22\.xlsx/);
     const book = await readXlsx(new Uint8Array(await res.arrayBuffer()));
     assert.deepEqual(book.sheets.map((s) => s.name), ['Chốt sổ', 'Tổng hợp', 'Nhật ký']);
     const main = values(book.sheets[0]);
@@ -257,11 +262,11 @@ test('dòng trùng hệt nhau (cùng người, cùng KPI): mỗi dòng có kết
   const revs = [csv({ extra: [dup] })];
   const restore = fakeGoogle(() => revs);
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4, 50) });
-    await syncKpi(env, { force: true, now: vn(22, 5, 0, 20) });
+    await syncKpi(env, { force: true, now: vn(23, 4, 50) });
+    await syncKpi(env, { force: true, now: vn(23, 5, 0, 20) });
     assert.deepEqual((await auditReport(env, ID)).closes[0].count, { D: 2, K: 1, U: 0 });
-    const data = await kpiData(env, vn(22, 6));
-    const an = data.streams[0].groups[0].rows.filter((r) => r.person === 'Trương Huỳnh Thúy An').map((r) => statusOf(r.cells['2026-11-21'], '2026-11-21', data.today, vn(22, 6)));
+    const data = await kpiData(env, vn(23, 6));
+    const an = data.streams[0].groups[0].rows.filter((r) => r.person === 'Trương Huỳnh Thúy An').map((r) => statusOf(r.cells['2026-11-22'], '2026-11-22', data.today, vn(23, 6)));
     assert.deepEqual(an, ['K', 'D']);
   } finally {
     restore();
@@ -277,15 +282,15 @@ test('lần đầu bật chốt sổ (căn cứ none): ô đã ghi giờ tick sa
   const revs = [csv()];
   const restore = fakeGoogle(() => revs);
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4, 50) }); // trước khi có chốt sổ: kpi_sheet đã có dữ liệu (An chưa tick)
+    await syncKpi(env, { force: true, now: vn(23, 4, 50) }); // trước khi có chốt sổ: kpi_sheet đã có dữ liệu (An chưa tick)
     for (const t of ['kpi_close', 'kpi_close_obs', 'kpi_cell_log', 'kpi_audit_log']) await env.DB.prepare(`DELETE FROM ${t}`).run();
     revs.push(csv({ an: 'TRUE' }));
-    await syncKpi(env, { force: true, now: vn(22, 6) }); // deploy: lượt đầu có chốt sổ; ticks.js ghi An tick lúc 06:00
+    await syncKpi(env, { force: true, now: vn(23, 6) }); // deploy: lượt đầu có chốt sổ; ticks.js ghi An tick lúc 06:00
     const c = (await auditReport(env, ID)).closes[0];
     assert.deepEqual([c.basis, c.count], ['none', { D: 0, K: 1, U: 1 }]);
-    const data = await kpiData(env, vn(22, 6));
-    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(22, 6)), 'L');
-    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(22, 6)), 'D');
+    const data = await kpiData(env, vn(23, 6));
+    assert.equal(status(data, 'Trương Huỳnh Thúy An', vn(23, 6)), 'L');
+    assert.equal(status(data, 'Mạc Thị Thúy Hiền', vn(23, 6)), 'D');
   } finally {
     restore();
   }
@@ -300,20 +305,30 @@ test('chốt sổ không gọi Google thêm lần nào (gói Free: tối đa 50 
   const revs = [csv()];
   const restore = fakeGoogle(() => revs);
   try {
-    await syncKpi(env, { force: true, now: vn(22, 4, 59) });
+    await syncKpi(env, { force: true, now: vn(23, 4, 59) });
     const real = globalThis.fetch;
     let calls = 0;
     globalThis.fetch = async () => { calls++; throw new Error('không được gọi ra ngoài'); };
     try {
-      await closeKpi(env, ID, JSON.parse((await env.DB.prepare('SELECT data FROM kpi_sheet WHERE id = 1').first()).data), vn(22, 5, 0, 30));
+      await closeKpi(env, ID, JSON.parse((await env.DB.prepare('SELECT data FROM kpi_sheet WHERE id = 1').first()).data), vn(23, 5, 0, 30));
     } finally {
       globalThis.fetch = real;
     }
     assert.equal(calls, 0);
     const rep = await auditReport(env, ID);
-    assert.deepEqual(rep.closes.map((c) => [c.day, c.basis, c.count]), [['2026-11-21', 'exact', { D: 1, K: 1, U: 0 }]]);
+    assert.deepEqual(rep.closes.map((c) => [c.day, c.basis, c.count]), [['2026-11-22', 'exact', { D: 1, K: 1, U: 0 }]]);
     assert.ok(!rep.log.some((l) => l.kind === 'error'));
   } finally {
     restore();
   }
+});
+
+test('ngày 21/11 hoàn thành muộn: không ghi nhận trễ hạn trên UI lẫn Excel xuất chốt sổ', async () => {
+  const { reconcileRows } = await import('../src/kpi/close-export.js');
+  const close = { day: '2026-11-21', data: [['ban4duan', 'networking', 'an', 'goi 40 khach', 'K', ['Dòng tiền bán 4 dự án', 'Networking', 'An', 'Gọi 40 khách']]] };
+  const streams = [{ name: 'Dòng tiền bán 4 dự án', groups: [{ name: 'Networking', rows: [{ person: 'An', cells: { '2026-11-21': { kpi: 'Gọi 40 khách', res: 'D', at: '2026-11-22T02:00:00.000Z' } } }] }] }];
+  const rows = reconcileRows(close, streams, [], {}, new Map());
+  assert.equal(rows[0].status, 'D');
+  assert.equal(rows[0].result, 'Hoàn thành');
+  assert.equal(rows[0].tickAt, '');
 });

@@ -4,7 +4,6 @@ import { fmtDay } from '../lib/format.js';
 import { useAutoScroll } from '../lib/useAutoScroll.js';
 import { StatusTag } from './bits.jsx';
 
-const shortFlow = (label) => label.replace(/^dòng tiền\s*/i, '').replace(/^./, (c) => c.toUpperCase());
 const SUM_KEYS = ['late', 'in_progress', 'upcoming', 'done'];
 
 /**
@@ -69,7 +68,7 @@ export default function DetailPanel({ data, filter, setFilter, detail, setDetail
               className={`chip ${detail.flow === f.key ? 'on' : ''}`}
               onClick={() => setD({ flow: f.key, group: 'all' })}
             >
-              {shortFlow(f.label)}
+              {f.label}
             </button>
           ))}
         </div>
@@ -124,7 +123,7 @@ export default function DetailPanel({ data, filter, setFilter, detail, setDetail
                   <td className={`c-date ${task.date === today ? 'is-today' : ''}`}>
                     {task.date === today ? 'Hôm nay' : fmtDay(task.date)}
                   </td>
-                  {!singleFlow && <td className="c-flow">{shortFlow(flow.label)}</td>}
+                  {!singleFlow && <td className="c-flow" title={flow.label}>{flow.label}</td>}
                   <td className="c-grp">{item.group || '–'}</td>
                   <td className="c-who">
                     <div className="nm">{item.pic || '–'}</div>

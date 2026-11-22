@@ -17,6 +17,8 @@ export const DUE_HOUR = 5;
 export const DUE_LABEL = '05:00';
 /** Du di sau giờ hết hạn (KPI-CLOSE: 0 — ngày đã chốt sổ dùng bản chốt, xem statusOf). */
 export const LATE_GRACE_MS = 0; // KPI-CLOSE: bỏ ân hạn, hạn đúng 05:00 (trước: 10 phút)
+/** Chỉ ghi nhận "Hoàn thành trễ hạn" từ ngày 22/11/2026 trở đi (ngày 21/11 hoàn thành muộn vẫn tính là Hoàn thành). */
+export const LATE_TRACKING_START = '2026-11-22';
 
 /** Thời điểm hết hạn (ms) của KPI ngày `date`: 05:00 sáng hôm sau giờ Việt Nam = 22:00 UTC của chính ngày đó. */
 export const dueAt = (date) => Date.parse(`${date}T00:00:00Z`) + (24 + DUE_HOUR - 7) * 3600 * 1000;
@@ -25,8 +27,9 @@ const WEEKDAY = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 /** "2026-11-23" -> "T2". */
 export const weekday = (date) => WEEKDAY[new Date(`${date}T00:00:00Z`).getUTCDay()] || '';
 
-/** Ô được tick lúc `at` (ISO) có trễ hạn không: sau hạn của KPI ngày `date` (05:00 sáng hôm sau, du di 10 phút). */
+/** Ô được tick lúc `at` (ISO) có trễ hạn không: sau hạn của KPI ngày `date` (05:00 sáng hôm sau), chỉ tính từ LATE_TRACKING_START. */
 export function isLateTick(date, at) {
+  if (date && date < LATE_TRACKING_START) return false;
   const t = Date.parse(at || '');
   if (!t) return false;
   return t > dueAt(date) + LATE_GRACE_MS;
@@ -38,8 +41,9 @@ export function isLateTick(date, at) {
  */
 export function statusOf(cell, date, today, now) {
   if (!cell || (!cell.kpi && !cell.res)) return null;
-  // KPI-CLOSE: ngày đã chốt sổ lúc 05:00 (src/kpi/close.js): lúc chốt chưa tick mà nay tick -> trễ hạn; chưa tick -> tồn đọng.
-  if (cell.closed) return cell.res === 'D' ? (cell.closed === 'K' ? 'L' : 'D') : 'K';
+  const trackLate = !date || date >= LATE_TRACKING_START;
+  // KPI-CLOSE: ngày đã chốt sổ lúc 05:00 (src/kpi/close.js): lúc chốt chưa tick mà nay tick -> trễ hạn (từ 22/11 trở đi); chưa tick -> tồn đọng.
+  if (cell.closed) return cell.res === 'D' ? (cell.closed === 'K' && trackLate ? 'L' : 'D') : 'K';
   if (cell.res === 'D') return isLateTick(date, cell.at) ? 'L' : 'D';
   if (cell.res === 'K') return 'K';
   if (date > today) return 'S';

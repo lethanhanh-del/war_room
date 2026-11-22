@@ -82,27 +82,38 @@ export function changePasswordPage(user, { error = "", info = "", forced = false
 // để không phải sửa từng trang và không mất khi ai đó ghi đè file HTML. Style Night Ops (docs/STYLE_GUIDE.md), màu ghi
 // thẳng vì mỗi trang đặt tên biến màu khác nhau. Màn hình TV (/kpi ?tv=1, /lich-truc chế độ TV) ẩn thanh này.
 export const NAV_PAGES = [
-  ["/", "Dòng tiền"], // màn hình War Room của Thành Anh (app React FE/)
   ["/kpi", "KPI & kết quả"],
   ["/lich-truc", "Lịch trực 24/7"],
-  ["/lich", "Hẹn lịch BOD"],
   ["/waiting-point", "Waiting Point"],
 ];
 
-// Danh sách 3 tab hỗ trợ tự động chuyển luân phiên trên màn hình War Room (có thể bật / tắt từng tab).
+export const WP_SEC_PER_PERSON = 10;
+
+/** Thời lượng hiển thị Waiting Point (giây): 0 người -> 0s (bỏ qua), mỗi người +10s. */
+export function waitingPointRotateSec(peopleCount) {
+  const n = Math.max(0, Math.floor(Number(peopleCount) || 0));
+  return n * WP_SEC_PER_PERSON;
+}
+
+// Danh sách 2 tab hỗ trợ tự động chuyển luân phiên trên màn hình War Room:
+// - KPI & kết quả: 3 phút (180s)
+// - Waiting Point: 0 người -> không chuyển qua / rời ngay về KPI; có người -> mỗi người +10s.
 export const AUTO_ROTATE_TABS = [
-  { href: "/", label: "Dòng tiền", sec: 180 },
   { href: "/kpi", label: "KPI & kết quả", sec: 180 },
-  { href: "/waiting-point", label: "Waiting Point", sec: 300 },
+  { href: "/waiting-point", label: "Waiting Point", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
 ];
 
-/** Tính tab kế tiếp khi bật tự động chuyển tab; trả null nếu bật ít hơn 2 tab. */
-export function nextRotateTarget(currentPath, enabledMap = {}) {
+/** Tính tab kế tiếp khi bật tự động chuyển tab; trả null nếu bật ít hơn 2 tab hoặc không có tab đích hợp lệ (VD Waiting Point trống). */
+export function nextRotateTarget(currentPath, enabledMap = {}, wpPeopleCount = null) {
   const active = AUTO_ROTATE_TABS.filter((t) => enabledMap[t.href] !== false);
   if (active.length < 2) return null;
-  const idx = active.findIndex((t) => t.href === currentPath);
-  if (idx < 0) return active[0];
-  return active[(idx + 1) % active.length];
+  const usable = wpPeopleCount === 0 ? active.filter((t) => t.href !== "/waiting-point") : active;
+  if (!usable.length) return null;
+  if (wpPeopleCount === 0 && currentPath === "/waiting-point") return usable[0];
+  if (usable.length < 2) return usable[0].href === currentPath ? null : usable[0];
+  const idx = usable.findIndex((t) => t.href === currentPath);
+  if (idx < 0) return usable[0];
+  return usable[(idx + 1) % usable.length];
 }
 
 const NAV_STYLE = `<style>
@@ -168,7 +179,9 @@ const NAV_STYLE = `<style>
 // treo tường. Bật / tắt nhớ theo từng trang (localStorage); thêm ?tucuon=1 trên địa chỉ để màn hình tự bật khi mở.
 // Người xem tự cuộn, bấm phím hoặc chạm màn hình thì tạm dừng 15 giây. Trang không dài hơn màn hình (vd "/") thì ẩn nút.
 const AUTO_SCROLL = `<script>(() => {
-  const SPEED = 28; // px mỗi giây: chậm, đọc kịp
+  const DEFAULT_SPEED = location.pathname === "/kpi" ? 14 : 28; // /kpi cuộn chậm hơn (14px/giây) để đọc kịp số liệu
+  const qSpeed = Number(new URLSearchParams(location.search).get("tocdo"));
+  const SPEED = Number.isFinite(qSpeed) && qSpeed >= 4 && qSpeed <= 200 ? qSpeed : DEFAULT_SPEED;
   const HOLD_MS = 5000, PAUSE_MS = 15000;
   const btn = document.getElementById("wrAuto");
   if (!btn) return;
@@ -238,11 +251,12 @@ const AUTO_SCROLL = `<script>(() => {
   if (on) set(true);
 })();</script>`;
 
-// Nút "Tự chuyển tab": xoay vòng giữa 3 tab Dòng tiền (3p), KPI & kết quả (3p), Waiting Point (5p).
+// Nút "Tự chuyển tab": xoay vòng giữa KPI & kết quả (3p) và Waiting Point (10s / người; trống 0 người thì bỏ qua / quay về KPI).
 // Cho phép bật/tắt công tắc chung và bật/tắt từng tab trong popover; lưu trạng thái vào localStorage (wr-autotab-v1).
 // Hỗ trợ ?chuyentab=1 / ?chuyentab=0 trên URL; chạy kể cả khi đang ẩn thanh nav ở chế độ TV.
 const AUTO_ROTATE = `<script>(() => {
   const TABS = ${JSON.stringify(AUTO_ROTATE_TABS)};
+  const WP_SEC_PER_PERSON = ${WP_SEC_PER_PERSON};
   const KEY = "wr-autotab-v1";
   const grp = document.getElementById("wrRotGrp");
   const btn = document.getElementById("wrRotToggle");
@@ -302,11 +316,90 @@ const AUTO_ROTATE = `<script>(() => {
 
   const st = loadState();
   saveState(st);
-  let remainSec = (getCurrentTab() || TABS[0]).sec;
+  const onWp = location.pathname === "/waiting-point";
+  let wpPeople = null; // null = chưa kiểm tra, 0 = trống (bỏ qua), >0 = số người hỗ trợ hiện có
+  let wpShowStats = false;
+  let checkingNext = false;
+  let skipNote = "";
+  let remainSec = onWp ? null : (getCurrentTab() || TABS[0]).sec;
 
   function resetCountdown() {
+    skipNote = "";
     const cur = getCurrentTab();
-    remainSec = cur ? cur.sec : TABS[0].sec;
+    if (onWp) remainSec = wpPeople != null ? wpPeople * WP_SEC_PER_PERSON : null;
+    else remainSec = cur ? cur.sec : TABS[0].sec;
+  }
+
+  async function fetchWpStatus() {
+    try {
+      const res = await fetch("/api/waiting-point/status", { cache: "no-store" });
+      if (!res.ok) return null;
+      const d = await res.json();
+      const n = Math.max(0, Math.floor(Number(d?.peopleCount) || 0));
+      wpPeople = n;
+      updateWpBadge();
+      return n;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function updateWpBadge() {
+    const badge = pop.querySelector('em[data-rot-badge="/waiting-point"]');
+    if (!badge) return;
+    if (wpPeople === null) badge.textContent = WP_SEC_PER_PERSON + "s / người";
+    else if (wpPeople === 0) badge.textContent = "Trống · bỏ qua";
+    else badge.textContent = wpPeople + " người · " + (wpPeople * WP_SEC_PER_PERSON) + "s";
+  }
+
+  async function trySwitchNext(manual = false) {
+    if (checkingNext) return;
+    const next = getNextTab();
+    if (!next) return;
+    if (next.href === "/waiting-point") {
+      checkingNext = true;
+      render();
+      const n = await fetchWpStatus();
+      checkingNext = false;
+      if (n === 0) {
+        skipNote = "Waiting Point trống (0 người) · bỏ qua";
+        resetCountdown();
+        skipNote = "Waiting Point trống (0 người) · bỏ qua";
+        render();
+        return;
+      }
+      if (n === null && !manual) {
+        skipNote = "Chưa kiểm tra được Waiting Point · giữ nguyên";
+        remainSec = (getCurrentTab() || TABS[0]).sec;
+        render();
+        return;
+      }
+    }
+    goTab(next.href);
+  }
+
+  function applyWpPeople(n, showStats = false) {
+    const prev = wpPeople;
+    wpPeople = Math.max(0, Math.floor(Number(n) || 0));
+    wpShowStats = Boolean(showStats);
+    updateWpBadge();
+    if (!onWp) { render(); return; }
+    const active = getEnabled();
+    const running = st.on && active.length >= 2 && st.tabs["/waiting-point"] !== false;
+    if (wpPeople === 0) {
+      remainSec = 0;
+      render();
+      if (running && !wpShowStats) {
+        const next = getNextTab();
+        if (next && next.href !== "/waiting-point") goTab(next.href);
+      }
+      return;
+    }
+    const targetSec = wpPeople * WP_SEC_PER_PERSON;
+    if (prev === null || remainSec === null) remainSec = targetSec;
+    else if (wpPeople > prev) remainSec += (wpPeople - prev) * WP_SEC_PER_PERSON;
+    else if (wpPeople < prev) remainSec = Math.min(remainSec, targetSec);
+    render();
   }
 
   function syncPopPos() {
@@ -326,12 +419,12 @@ const AUTO_ROTATE = `<script>(() => {
 
     if (grp) grp.dataset.on = String(st.on && active.length >= 2);
     btn.setAttribute("aria-pressed", String(st.on));
-    cdEl.textContent = running ? fmtSec(remainSec) : "";
+    cdEl.textContent = running ? (checkingNext || remainSec === null ? "…" : fmtSec(remainSec)) : "";
     btn.title = running
-      ? "Đang tự chuyển sang " + next.label + " sau " + fmtSec(remainSec) + ". Bấm để tắt."
+      ? (skipNote || ("Đang tự chuyển sang " + next.label + (remainSec === null ? "" : " sau " + fmtSec(remainSec)) + ". Bấm để tắt."))
       : st.on && active.length < 2
-        ? "Cần bật ít nhất 2 tab để tự chuyển."
-        : "Tự động chuyển luân phiên: Dòng tiền (3p) → KPI & kết quả (3p) → Waiting Point (5p).";
+        ? "Cần bật cả 2 tab để tự chuyển."
+        : "Tự động chuyển luân phiên: KPI & kết quả (3p) ↔ Waiting Point (10s/người; bỏ qua khi trống).";
 
     pop.querySelectorAll("input[data-rot-href]").forEach((cb) => {
       const h = cb.getAttribute("data-rot-href");
@@ -339,17 +432,19 @@ const AUTO_ROTATE = `<script>(() => {
       cb.checked = checked;
       cb.closest(".wr-rot-item")?.classList.toggle("is-off", !checked);
     });
+    updateWpBadge();
 
     if (statEl) {
       if (active.length < 2) statEl.textContent = "Chọn tối thiểu 2 tab để xoay vòng";
-      else if (running) statEl.textContent = "Kế tiếp: " + next.label + " (" + fmtSec(remainSec) + ")";
+      else if (skipNote) statEl.textContent = skipNote;
+      else if (running) statEl.textContent = "Kế tiếp: " + next.label + (remainSec === null ? " (đang kiểm tra…)" : " (" + fmtSec(remainSec) + ")");
       else if (st.on && !curEnabled) statEl.textContent = "Đang bật (" + active.length + " tab) · Ngoài vòng xoay";
-      else statEl.textContent = "Đang tắt · " + active.length + "/3 tab được chọn";
+      else statEl.textContent = "Đang tắt · " + active.length + "/" + TABS.length + " tab được chọn";
     }
-    if (nextBtn) nextBtn.disabled = !next;
+    if (nextBtn) nextBtn.disabled = !next || checkingNext;
   }
 
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", async () => {
     st.on = !st.on;
     saveState(st);
     resetCountdown();
@@ -357,7 +452,10 @@ const AUTO_ROTATE = `<script>(() => {
     if (st.on) {
       const active = getEnabled();
       const cur = getCurrentTab();
-      if (active.length >= 2 && (!cur || st.tabs[cur.href] === false)) {
+      if (active.length >= 2 && onWp && wpPeople === 0 && !wpShowStats) {
+        const next = getNextTab();
+        if (next && next.href !== "/waiting-point") goTab(next.href);
+      } else if (active.length >= 2 && (!cur || st.tabs[cur.href] === false)) {
         goTab(active[0].href);
       } else if (active.length < 2) {
         pop.hidden = false;
@@ -372,7 +470,7 @@ const AUTO_ROTATE = `<script>(() => {
     const open = pop.hidden;
     pop.hidden = !open;
     cfgBtn.setAttribute("aria-expanded", String(open));
-    if (open) syncPopPos();
+    if (open) { syncPopPos(); fetchWpStatus().then(() => render()); }
   });
 
   pop.addEventListener("change", (e) => {
@@ -385,10 +483,18 @@ const AUTO_ROTATE = `<script>(() => {
     render();
   });
 
-  nextBtn?.addEventListener("click", () => {
-    const next = getNextTab();
-    if (next) goTab(next.href);
+  nextBtn?.addEventListener("click", () => { trySwitchNext(true); });
+
+  window.addEventListener("wr:wp-count", (e) => {
+    const d = e?.detail;
+    if (d && typeof d.peopleCount === "number") applyWpPeople(d.peopleCount, d.showStats);
   });
+
+  if (onWp) {
+    setTimeout(() => {
+      if (wpPeople === null) fetchWpStatus().then((n) => { if (n !== null && wpPeople === null) applyWpPeople(n, false); });
+    }, 4000);
+  }
 
   document.addEventListener("click", (e) => {
     if (pop.hidden) return;
@@ -410,12 +516,12 @@ const AUTO_ROTATE = `<script>(() => {
     const active = getEnabled();
     const cur = getCurrentTab();
     if (!st.on || active.length < 2 || !cur || st.tabs[cur.href] === false) return;
-    if (document.hidden || !pop.hidden) return;
+    if (document.hidden || !pop.hidden || checkingNext) return;
+    if (onWp && (remainSec === null || wpShowStats)) return;
     remainSec -= 1;
     if (remainSec <= 0) {
-      const next = getNextTab();
-      if (next) { goTab(next.href); return; }
-      resetCountdown();
+      trySwitchNext(false);
+      return;
     }
     render();
   }, 1000);
@@ -429,9 +535,9 @@ export function navBar(user, path) {
   const links = NAV_PAGES.map(([href, label]) => `<a class="wr-link" href="${href}"${cur(href)}>${label}</a>`).join("");
   const account = user.role === "admin" ? `<a href="/admin"${cur("/admin")}>Quản trị</a>` : `<a href="/doi-mat-khau">Đổi mật khẩu</a>`;
   const rotItems = AUTO_ROTATE_TABS.map(
-    (t) => `<label class="wr-rot-item"><span class="wr-rot-item-l"><input type="checkbox" data-rot-href="${t.href}" checked /><strong>${esc(t.label)}</strong></span><em>${Math.round(t.sec / 60)} phút</em></label>`
+    (t) => `<label class="wr-rot-item"><span class="wr-rot-item-l"><input type="checkbox" data-rot-href="${t.href}" checked /><strong>${esc(t.label)}</strong></span><em data-rot-badge="${t.href}">${t.secPerPerson ? `${t.secPerPerson}s / người` : `${Math.round(t.sec / 60)} phút`}</em></label>`
   ).join("");
   const rotControl = `<div class="wr-rot-grp" id="wrRotGrp" data-on="false"><button type="button" class="wr-rot-btn" id="wrRotToggle" aria-pressed="false"><i aria-hidden="true"></i><span class="wr-rot-lbl">Chuyển tab</span><b class="wr-rot-cd" id="wrRotCd"></b></button><button type="button" class="wr-rot-cfg" id="wrRotCfg" aria-expanded="false" aria-controls="wrRotPop" title="Chọn các tab tự chuyển">▾</button></div>`;
   const rotPopover = `<div class="wr-rot-pop" id="wrRotPop" hidden role="dialog" aria-label="Cấu hình tự chuyển tab"><div class="wr-rot-head"><b>Tự động chuyển tab</b><span>Bật / tắt từng tab</span></div><div class="wr-rot-list">${rotItems}</div><div class="wr-rot-foot"><span id="wrRotStat"></span><button type="button" class="wr-rot-next" id="wrRotNext">Chuyển ngay →</button></div></div>`;
-  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><button type="button" class="wr-auto" id="wrAuto" aria-pressed="false" hidden><i aria-hidden="true"></i><span>Tự cuộn</span></button>${rotControl}<span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>${rotPopover}${AUTO_SCROLL}${AUTO_ROTATE}`;
+  return `${NAV_STYLE}<nav class="wr-nav" aria-label="Trang"><a class="wr-brand" href="/kpi" title="War Room CT Homes"><i>WR</i><span>WAR ROOM</span></a>${links}<span class="wr-sp"></span><button type="button" class="wr-auto" id="wrAuto" aria-pressed="false" hidden><i aria-hidden="true"></i><span>Tự cuộn</span></button>${rotControl}<span class="wr-user"><span class="wr-name">👤 <b>${esc(user.fullName)}</b></span>${account}<a href="/logout">Đăng xuất</a></span></nav>${rotPopover}${AUTO_SCROLL}${AUTO_ROTATE}`;
 }

@@ -34,7 +34,7 @@ export default function FlowPanel({ index, flow, date, days, today, compact, onO
       <header className="fl-head clickable" onClick={onOpen} title="Bấm để xem chi tiết từng task">
         <em className="num">{index}</em>
         <div className="fl-title">
-          <h2>{flow.label}</h2>
+          <h2 title={flow.label}>{flow.label}</h2>
           <div className="fl-counts">
             {SUMMARY_KEYS.map((k) => (
               <span key={k} className={`cnt st-${k} ${flow.counts[k] ? '' : 'zero'}`} title={STATUS[k].label}>

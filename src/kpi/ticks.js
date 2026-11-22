@@ -12,8 +12,9 @@
 
 import { normKey } from '../worksuite/model.js';
 
-const contentKey = (s, g, r, date, cell) => [normKey(s.name), normKey(g.name), normKey(r.person), date, normKey(cell.kpi)].join('|');
-const rowKey = (s, r, date) => [normKey(s.name), r.row, date].join('|');
+const streamKey = (s) => normKey(s.name).replace(/^dong tien\s*[:\-–]?\s*/, '');
+const contentKey = (s, g, r, date, cell) => [streamKey(s), normKey(g.name), normKey(r.person), date, normKey(cell.kpi)].join('|');
+const rowKey = (s, r, date) => [streamKey(s), r.row, date].join('|');
 
 /**
  * Gắn `at` (ISO) cho các ô Đạt của `streams` (sửa tại chỗ) dựa trên lần đọc trước `prev`.
@@ -35,10 +36,10 @@ export function stampTicks(streams, prev, now = Date.now()) {
     }
   }
   // Dòng tiền chưa có ở lần đọc trước (lần đọc đầu tiên, hoặc tab mới thêm): không biết các ô đã tick được tick lúc nào.
-  const known = new Set((prev || []).map((s) => normKey(s.name)));
+  const known = new Set((prev || []).map((s) => streamKey(s)));
   const stamp = new Date(now).toISOString();
   for (const s of streams) {
-    const first = !known.has(normKey(s.name));
+    const first = !known.has(streamKey(s));
     for (const g of s.groups || []) {
       for (const r of g.rows || []) {
         for (const [date, cell] of Object.entries(r.cells || {})) {

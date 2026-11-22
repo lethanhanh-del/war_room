@@ -483,11 +483,42 @@
     const $ = (id) => document.getElementById(id);
     const esc = (v) => String(v == null ? "" : v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
     const normKey = (s) => String(s || "").trim().toLowerCase().replace(/đ/g,"d").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+    const OFFICIAL_STREAMS = {
+      1: "Dòng tiền bán 4 dự án",
+      2: "Dòng tiền Banking",
+      3: "Dòng tiền nợ khó đòi",
+      4: "Dòng tiền thu trước hạn quá hạn",
+      5: "Dòng tiền Equity / IPO",
+      6: "Dòng tiền trái phiếu",
+      7: "Dòng tiền Tài chính 57",
+      8: "Nhóm thanh lý",
+    };
+    function canonicalStreamName(streamNo, rawName) {
+      if (streamNo != null && OFFICIAL_STREAMS[streamNo]) return OFFICIAL_STREAMS[streamNo];
+      const clean = String(rawName || "").replace(/\s+/g, " ").trim().replace(/^\d+\s*[.)\-–]\s*/, "");
+      const nk = normKey(clean);
+      if (!nk) return "Chưa phân nhóm";
+      if (nk === "dong tien thu truoc han qua han" || nk === "thu truoc han qua han") return "Dòng tiền thu trước hạn quá hạn";
+      if (nk === "thanh ly" || nk === "nhom thanh ly") return "Nhóm thanh lý";
+      if (nk === "trai phieu") return "Dòng tiền trái phiếu";
+      if (nk.includes("tai chinh 57")) return "Dòng tiền Tài chính 57";
+      if (nk.includes("equity") && nk.includes("ipo")) return "Dòng tiền Equity / IPO";
+      return clean;
+    }
+    function normalizeTaskStreams(data) {
+      if (!data || !Array.isArray(data.tasks)) return data;
+      data.tasks.forEach((t) => {
+        const full = canonicalStreamName(t.streamNo, t.streamName || t.streamShort);
+        t.streamName = full;
+        t.streamShort = full;
+      });
+      return data;
+    }
     const fmtT = (iso) => { if (!iso) return "--:--:--"; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleTimeString("vi-VN", { hour:"2-digit", minute:"2-digit", second:"2-digit" }); };
     const fmtDT = (iso) => { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? iso : d.toLocaleString("vi-VN", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit" }); };
 
     const S = {
-      data: structuredClone(INITIAL_DATA),
+      data: normalizeTaskStreams(structuredClone(INITIAL_DATA)),
       log: [{ id: "init", timestamp: INITIAL_DATA.meta.lastSyncAt, source: "gdrive", actor: "Google Drive WAR ROOM", fileName: "4 tệp đồng bộ", summary: "Đã tải dữ liệu thực tế mới nhất từ Google Drive WAR ROOM (63 đầu việc, 8/10 dòng tiền, 20 vị trí chủ chốt).", diffs: [] }],
       src: "Google Drive WAR ROOM (4 files)",
       lastSync: INITIAL_DATA.meta.lastSyncAt,
@@ -498,14 +529,14 @@
 
     try {
       const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
-      if (saved && saved.data && saved.data.tasks) { S.data = saved.data; S.log = saved.log || S.log; S.src = saved.src || S.src; S.lastSync = saved.lastSync || S.lastSync; }
+      if (saved && saved.data && saved.data.tasks) { S.data = normalizeTaskStreams(saved.data); S.log = saved.log || S.log; S.src = saved.src || S.src; S.lastSync = saved.lastSync || S.lastSync; }
     } catch (_) {}
 
     let bc = null;
     try {
       bc = new BroadcastChannel("wr10_standalone_sync");
       bc.onmessage = (e) => {
-        if (e.data && e.data.data) { S.data = e.data.data; S.log = e.data.log; S.src = e.data.src; S.lastSync = e.data.lastSync; renderAll(); toast("Đồng bộ liên tab Real-Time", "Dữ liệu vừa được cập nhật."); }
+        if (e.data && e.data.data) { S.data = normalizeTaskStreams(e.data.data); S.log = e.data.log; S.src = e.data.src; S.lastSync = e.data.lastSync; renderAll(); toast("Đồng bộ liên tab Real-Time", "Dữ liệu vừa được cập nhật."); }
       };
     } catch (_) {}
 
@@ -536,7 +567,7 @@
       const apply = (obj, o) => { Object.entries(o.data || {}).forEach(([k, v]) => { obj[k] = v === "" ? undefined : v; }); obj.updatedBy = o.by; obj.updatedAt = o.at; };
       d.tasks.forEach((t) => { const o = ov.get("task:" + t.id); if (o) apply(t, o); });
       (d.directives || []).forEach((x) => { const o = ov.get("directive:" + x.id); if (o) apply(x, o); });
-      S.data = d;
+      S.data = normalizeTaskStreams(d);
     }
 
     function applyLive(p) {
@@ -611,7 +642,7 @@
       const col = (S.data.shiftColumns || []).find((c) => c.shift === sh && dm(c.date) === d);
       if (!col) return null;
       const people = new Map();
-      (S.data.tasks || []).forEach((t) => { if (!t.isPlaceholder && (t.activeShiftKeys || []).includes(col.key) && !people.has(t.member)) people.set(t.member, t.streamShort); });
+      (S.data.tasks || []).forEach((t) => { if (!t.isPlaceholder && (t.activeShiftKeys || []).includes(col.key) && !people.has(t.member)) people.set(t.member, t.streamName); });
       return people;
     }
     const shiftName = ([d, sh]) => `Ca ${sh === "night" ? "Đêm" : "Ngày"} ${d}`;
@@ -794,16 +825,18 @@
           const mem = ws.grid.get(`${r},${cols.mem || 4}`) || "", title = ws.grid.get(`${r},${cols.title || 5}`) || "", dept = ws.grid.get(`${r},${cols.dept || 6}`) || "", task = ws.grid.get(`${r},${cols.task || 7}`) || "";
           const sno = /^\d+$/.test(snRaw) ? Number(snRaw) : null;
           if (sname) { lastSN = sname; lastSNo = sno; } else if (sno === null && lastSN && lastSNo === null) sname = lastSN;
-          let sk, ssht, cat;
-          if (gt === "support") { sk = "support_" + hStr(sname || "khac"); ssht = sname || "Nhóm hỗ trợ"; cat = "support"; }
-          else if (sno !== null) { sk = "stream_" + sno; ssht = "Dòng tiền #" + sno; cat = "cashflow"; }
+          let sk, cat;
+          if (gt === "support") { sk = "support_" + hStr(sname || "khac"); cat = "support"; }
+          else if (sno !== null) { sk = "stream_" + sno; cat = "cashflow"; }
           else {
             const nk = normKey(sname);
-            if (nk.includes("co van") || nk.includes("chi dao")) { sk = "exec_advisory"; ssht = "Ban Chỉ đạo"; cat = "leadership"; }
-            else if (nk.includes("tai chinh")) { sk = "exec_finance"; ssht = "Tài chính chủ trì 10 DT"; cat = "leadership"; }
-            else if (nk.includes("ky luat") || nk.includes("ksnb")) { sk = "exec_discipline"; ssht = "Kiểm soát kỷ luật"; cat = "leadership"; }
-            else { sk = "grp_" + hStr(sname || String(r)); ssht = sname.slice(0, 26) || "Khác"; cat = "cashflow"; }
+            if (nk.includes("co van") || nk.includes("chi dao")) { sk = "exec_advisory"; cat = "leadership"; }
+            else if (nk.includes("tai chinh")) { sk = "exec_finance"; cat = "leadership"; }
+            else if (nk.includes("ky luat") || nk.includes("ksnb")) { sk = "exec_discipline"; cat = "leadership"; }
+            else { sk = "grp_" + hStr(sname || String(r)); cat = "cashflow"; }
           }
+          const fullName = canonicalStreamName(sno, sname || (gt === "support" ? "Nhóm hỗ trợ" : "Chưa phân nhóm"));
+          const ssht = fullName;
           const aSh = [];
           shifts.forEach((sc) => { if (["X","1","YES","TRUE","✓","V","CÓ","CO"].includes((ws.grid.get(`${r},${sc.col}`) || "").toUpperCase())) aSh.push(sc.key); });
           const ph = !mem || ["bo sung","de xuat","dang can nhac","chua co ten","theo ca truc","tbd"].some((p) => normKey(mem).includes(p));
@@ -817,7 +850,7 @@
           const defP = ph ? 0 : aSh.length && task ? 35 : aSh.length ? 25 : task ? 15 : 10;
           tasks.push({
             id: (gt === "warroom" ? "main_" : "sup_") + hStr(`${sk}|${mem || "r"+r}|${task.slice(0,36)}`),
-            sheet: ws.name, row: r, groupType: gt, category: cat, streamNo: sno ?? undefined, streamKey: sk, streamShort: ssht, streamName: sname || "Chưa phân nhóm",
+            sheet: ws.name, row: r, groupType: gt, category: cat, streamNo: sno ?? undefined, streamKey: sk, streamShort: ssht, streamName: fullName,
             member: mem || "Chưa phân công nhân sự", isPlaceholder: ph || undefined, title: title || undefined, department: dept || undefined, task: task || undefined,
             activeShiftKeys: aSh.length ? aSh : undefined, status: fSt || defSt, progress: fProg !== null ? fProg : (fSt === "done" ? 100 : defP),
             stage: fSt === "done" ? 6 : defStg, deadline: (cols.dl && ws.grid.get(`${r},${cols.dl}`)) || "25/11/2026",
@@ -902,10 +935,10 @@
       const wr = tasks.filter((t) => t.groupType === "warroom"), sup = tasks.filter((t) => t.groupType === "support"), cf = streams.filter((s) => s.category === "cashflow"), unCf = cf.filter((s) => s.assigned === 0);
       const people = new Set(tasks.filter((t) => !t.isPlaceholder).map((t) => t.member)), blocked = tasks.filter((t) => t.status === "blocked" || Boolean(t.blocker)), shiftMarks = tasks.reduce((a, t) => a + (t.activeShiftKeys || []).length, 0);
       const alerts = [];
-      if (unCf.length) alerts.push({ sev: "critical", cat: "Zero Waiting Point", title: `${unCf.length} dòng tiền chưa có nhân sự phụ trách`, detail: unCf.map((s) => `DT #${s.streamNo} (${s.streamName.slice(0,32)})`).join(", "), act: "Chốt ngay 1 Owner duy nhất cho từng dòng tiền." });
-      tasks.filter((t) => t.blocker && !t.isPlaceholder).slice(0,4).forEach((bt) => alerts.push({ sev: "critical", cat: "Điểm nghẽn trực tiếp", title: `${bt.member} (${bt.streamShort})`, detail: bt.blocker, act: "Huy động thẩm quyền tháo gỡ ngay." }));
+      if (unCf.length) alerts.push({ sev: "critical", cat: "Zero Waiting Point", title: `${unCf.length} dòng tiền chưa có nhân sự phụ trách`, detail: unCf.map((s) => `${s.streamNo != null ? `${s.streamNo}. ` : ""}${s.streamName}`).join(", "), act: "Chốt ngay 1 Owner duy nhất cho từng dòng tiền." });
+      tasks.filter((t) => t.blocker && !t.isPlaceholder).slice(0,4).forEach((bt) => alerts.push({ sev: "critical", cat: "Điểm nghẽn trực tiếp", title: `${bt.member} (${bt.streamName})`, detail: bt.blocker, act: "Huy động thẩm quyền tháo gỡ ngay." }));
       const tbdWr = wr.filter((t) => t.isPlaceholder && (t.streamNo == null || t.streamNo <= 4));
-      if (tbdWr.length) alerts.push({ sev: "warning", cat: "Vị trí chờ bổ sung", title: `${tbdWr.length} vị trí đang chờ chốt tên`, detail: tbdWr.map((t) => `${t.streamShort}: ${t.member}`).join(" | "), act: "Tổng vụ phối hợp chốt nhân sự ngay." });
+      if (tbdWr.length) alerts.push({ sev: "warning", cat: "Vị trí chờ bổ sung", title: `${tbdWr.length} vị trí đang chờ chốt tên`, detail: tbdWr.map((t) => `${t.streamName}: ${t.member}`).join(" | "), act: "Tổng vụ phối hợp chốt nhân sự ngay." });
       const unRoles = coreRoles.filter((r) => !r.isConfirmed);
       if (unRoles.length) alerts.push({ sev: "warning", cat: "20 Vị trí chủ chốt", title: `${unRoles.length}/${coreRoles.length} vị trí chưa chốt tên`, detail: unRoles.slice(0,4).map((r) => r.role).join(", "), act: "Kiểm tra tab 20 Vị trí chủ chốt." });
       const noShift = wr.filter((t) => !t.isPlaceholder && !(t.activeShiftKeys || []).length).length;
@@ -938,7 +971,7 @@
       $("feedList").innerHTML = S.log.slice(0, 30).map((ev) => `<div class="feed-box ${ev.source === "dashboard" ? "dashboard" : ""}"><div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-muted);"><strong>${esc(ev.actor)}</strong><span class="mono">${esc(fmtDT(ev.timestamp))}</span></div><div style="font-weight:600;margin-top:3px;">${esc(ev.summary)}</div><div style="font-size:11.5px;color:var(--text-muted);">${esc(ev.fileName)}</div>${(ev.diffs || []).slice(0, 5).map((d) => `<div class="diff-line"><strong>${esc(d.member)}</strong> • ${esc(d.field)}: ${d.before ? `<span style="text-decoration:line-through;color:var(--danger);">${esc(d.before)}</span> → ` : ""}<strong style="color:var(--success);">${esc(d.after)}</strong></div>`).join("")}</div>`).join("") || `<span class="empty">Chưa có cập nhật nào.</span>`;
 
       const sf = $("sFilter"), prevS = S.s;
-      sf.innerHTML = `<option value="all">Tất cả dòng tiền / nhóm (${m.streams.length})</option>` + m.streams.map((s) => `<option value="${esc(s.streamKey)}">${esc((s.streamNo != null ? `DT #${s.streamNo} — ` : "") + s.streamName.slice(0, 48))}</option>`).join("");
+      sf.innerHTML = `<option value="all">Tất cả dòng tiền / nhóm (${m.streams.length})</option>` + m.streams.map((s) => `<option value="${esc(s.streamKey)}">${esc((s.streamNo != null ? `${s.streamNo}. ` : "") + s.streamName)}</option>`).join("");
       sf.value = [...sf.options].some((o) => o.value === prevS) ? prevS : "all";
       const rpf = $("rpFilter"), prevP = S.rp, pset = new Set(); m.coreRoles.forEach((r) => (r.projects || []).forEach((p) => pset.add(p)));
       rpf.innerHTML = `<option value="all">Tất cả mũi dự án (${pset.size})</option>` + [...pset].sort().map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("");
@@ -960,7 +993,7 @@
       $("tasksBody").innerHTML = rows.length ? rows.map((t) => {
         const sm = STATUS[t.status] || STATUS.not_started;
         const shHtml = (t.activeShiftKeys || []).length ? t.activeShiftKeys.map((k) => `<span class="badge b-done" style="margin:2px 2px 0 0;">${esc(sMap.get(k) || k)}</span>`).join("") : `<span style="color:var(--text-muted);">Chưa xếp ca</span>`;
-        return `<tr class="${S.flashed.has(t.id) ? "row-flash" : ""}"><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc([t.title, t.department].filter(Boolean).join(" • "))}</div></td><td><strong>${esc(t.streamShort)}</strong><div style="font-size:11.5px;color:var(--text-muted);max-width:190px;">${esc(t.streamName)}</div></td><td style="max-width:280px;"><div>${esc(t.task || "Chưa ghi nhiệm vụ cụ thể")}</div>${t.blocker ? `<div style="color:var(--danger);font-weight:600;font-size:11.5px;margin-top:3px;">⚠ ${esc(t.blocker)}</div>` : ""}${t.result ? `<div style="color:var(--success);font-weight:600;font-size:11.5px;margin-top:3px;">✓ ${esc(t.result)}</div>` : ""}${t.cashflowValue ? `<div class="mono" style="color:var(--info);font-size:11.5px;margin-top:2px;">Giá trị: ${esc(t.cashflowValue)}</div>` : ""}</td><td style="white-space:nowrap;"><strong>${esc(STAGES[t.stage] || "Bước " + t.stage)}</strong><div class="mono" style="font-size:11.5px;color:var(--text-muted);">Hạn: ${esc(t.deadline || "25/11/2026")}</div></td><td><span class="badge ${sm.cls}">${esc(sm.label)}</span></td><td style="min-width:92px;"><div class="mono" style="font-weight:700;margin-bottom:4px;">${t.progress}%</div><div class="bar-track"><div class="bar-fill ${sm.bar}" style="width:${t.progress}%"></div></div></td><td style="max-width:170px;">${shHtml}</td><td><button class="btn edit-btn" data-id="${esc(t.id)}" type="button">Cập nhật</button></td></tr>`;
+        return `<tr class="${S.flashed.has(t.id) ? "row-flash" : ""}"><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc([t.title, t.department].filter(Boolean).join(" • "))}</div></td><td style="min-width:180px;"><strong>${esc(t.streamName)}</strong></td><td style="max-width:280px;"><div>${esc(t.task || "Chưa ghi nhiệm vụ cụ thể")}</div>${t.blocker ? `<div style="color:var(--danger);font-weight:600;font-size:11.5px;margin-top:3px;">⚠ ${esc(t.blocker)}</div>` : ""}${t.result ? `<div style="color:var(--success);font-weight:600;font-size:11.5px;margin-top:3px;">✓ ${esc(t.result)}</div>` : ""}${t.cashflowValue ? `<div class="mono" style="color:var(--info);font-size:11.5px;margin-top:2px;">Giá trị: ${esc(t.cashflowValue)}</div>` : ""}</td><td style="white-space:nowrap;"><strong>${esc(STAGES[t.stage] || "Bước " + t.stage)}</strong><div class="mono" style="font-size:11.5px;color:var(--text-muted);">Hạn: ${esc(t.deadline || "25/11/2026")}</div></td><td><span class="badge ${sm.cls}">${esc(sm.label)}</span></td><td style="min-width:92px;"><div class="mono" style="font-weight:700;margin-bottom:4px;">${t.progress}%</div><div class="bar-track"><div class="bar-fill ${sm.bar}" style="width:${t.progress}%"></div></div></td><td style="max-width:170px;">${shHtml}</td><td><button class="btn edit-btn" data-id="${esc(t.id)}" type="button">Cập nhật</button></td></tr>`;
       }).join("") : `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted);">Không có đầu việc khớp bộ lọc.</td></tr>`;
       $("tasksBody").querySelectorAll(".edit-btn").forEach((b) => { b.onclick = () => openDrawer(b.dataset.id); });
     }
@@ -984,7 +1017,7 @@
         if (!pk) return;
         if (!byPerson.has(pk)) byPerson.set(pk, { member: t.member, streams: new Set(), keys: new Set(), taskIds: [] });
         const p = byPerson.get(pk);
-        if (t.streamShort) p.streams.add(t.streamShort);
+        if (t.streamName) p.streams.add(t.streamName);
         p.taskIds.push(t.id);
         (t.activeShiftKeys || []).forEach((k) => p.keys.add(k));
       });
@@ -1055,7 +1088,7 @@
         const w = !t.isPlaceholder ? warnMap.get(mk) : null;
         const rowCls = w ? `shift-warn-row${w.hasNightToDay ? " is-nd" : ""}` : "";
         const warnTag = w ? `<div class="sw-badge${w.hasNightToDay ? " is-nd" : ""}" title="Trực ca liền kề 24h">⚠ ${esc(w.pairs.map((p) => p.label).join(" · "))}</div>` : "";
-        return `<tr class="${rowCls}" data-member-key="${esc(mk)}"><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc(t.department || t.title || "")}</div>${warnTag}</td><td><strong>${esc(t.streamShort)}</strong></td><td class="mono" style="text-align:center;font-weight:700;">${(t.activeShiftKeys || []).length}</td>${cols.map((c) => {
+        return `<tr class="${rowCls}" data-member-key="${esc(mk)}"><td><strong>${esc(t.member)}</strong><div style="font-size:11.5px;color:var(--text-muted);">${esc(t.department || t.title || "")}</div>${warnTag}</td><td><strong>${esc(t.streamName)}</strong></td><td class="mono" style="text-align:center;font-weight:700;">${(t.activeShiftKeys || []).length}</td>${cols.map((c) => {
           const on = (t.activeShiftKeys || []).includes(c.key);
           if (!on) return `<td style="text-align:center;"><span style="color:var(--border-strong);">·</span></td>`;
           const wk = w && w.warnKeys.get(c.key);
@@ -1087,7 +1120,7 @@
 
     function openDrawer(id) {
       const t = S.data.tasks.find((x) => x.id === id); if (!t) return;
-      $("dId").value = t.id; $("dTitle").textContent = t.member; $("dSub").textContent = `${t.streamShort} • ${t.task || t.streamName}`;
+      $("dId").value = t.id; $("dTitle").textContent = t.member; $("dSub").textContent = [t.streamName, t.task].filter(Boolean).join(" • ");
       $("dStatus").value = t.status; $("dStage").value = String(t.stage); $("dProg").value = String(t.progress); $("dProgTxt").textContent = `${t.progress}%`;
       $("dDeadline").value = t.deadline || ""; $("dVal").value = t.cashflowValue || ""; $("dBlocker").value = t.blocker || ""; $("dResult").value = t.result || ""; $("dNote").value = t.note || ""; $("dActor").value = L.mode === "server" && L.me ? L.me.fullName : S.op; $("dActor").readOnly = L.mode === "server";
       $("drawerBg").classList.add("open");
@@ -1170,7 +1203,7 @@
         if (confirm("Khôi phục dữ liệu gốc cho TẤT CẢ mọi người? Mọi cập nhật trên dashboard và file Excel đã nạp sẽ bị xóa.")) push("/api/live/reset", {}, "Đã khôi phục dữ liệu gốc", "Áp dụng cho mọi người");
         return;
       }
-      if (!confirm("Khôi phục dữ liệu gốc? Mọi cập nhật đã nhập trên trình duyệt này sẽ bị xóa.")) return; try { localStorage.removeItem(STORE_KEY); } catch (_) {} S.data = structuredClone(INITIAL_DATA); S.src = "Google Drive WAR ROOM (4 files)"; S.lastSync = INITIAL_DATA.meta.lastSyncAt; renderAll(); toast("Đã khôi phục dữ liệu gốc", "Google Drive WAR ROOM"); };
+      if (!confirm("Khôi phục dữ liệu gốc? Mọi cập nhật đã nhập trên trình duyệt này sẽ bị xóa.")) return; try { localStorage.removeItem(STORE_KEY); } catch (_) {} S.data = normalizeTaskStreams(structuredClone(INITIAL_DATA)); S.src = "Google Drive WAR ROOM (4 files)"; S.lastSync = INITIAL_DATA.meta.lastSyncAt; renderAll(); toast("Đã khôi phục dữ liệu gốc", "Google Drive WAR ROOM"); };
     $("catFilter").onchange = (e) => { S.cat = e.target.value; renderAll(); };
     $("qInput").oninput = (e) => { S.q = e.target.value; renderTasks(computeModel()); };
     $("gFilter").onchange = (e) => { S.g = e.target.value; renderTasks(computeModel()); };

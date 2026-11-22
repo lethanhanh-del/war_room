@@ -8,10 +8,18 @@
 // Mỗi dòng KPI của 1 người là 1 item: task = nội dung ô KPI của ngày, done = ô Kết quả Đạt / đã tick.
 // App tự tính Đạt / Không đạt / Đang làm / Chưa đến hạn theo ngày hôm nay (FE/src/lib/status.js).
 
-/** Tên ô dòng tiền: tên tab task ("Dòng tiền bán 4 dự án"); tên viết hoa toàn bộ thì đổi sang dạng câu. */
+/** Tên đầy đủ của ô dòng tiền / nhóm (VD "Dòng tiền bán 4 dự án", "Nhóm thanh lý"). Không cắt chữ "Dòng tiền". */
 export function flowLabel(stream) {
-  const sheet = String(stream.sheet || '').replace(/\s+/g, ' ').trim().replace(/^\d+\s*[.)\-–]\s*/, '');
-  const t = /^dòng tiền\b/i.test(sheet) ? sheet : `Dòng tiền ${stream.name || sheet}`.trim();
+  const sheet = String(stream.sheet || '').normalize('NFC').replace(/\s+/g, ' ').trim().replace(/^\d+\s*[.)\-–]\s*/, '');
+  const name = String(stream.name || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+  if (stream.kind === 'liquidation' || stream.kind === 'support' || /^nhóm\b/i.test(name)) {
+    return name || sheet;
+  }
+  const t = /^dòng tiền\b/i.test(name)
+    ? name
+    : /^dòng tiền\b/i.test(sheet)
+      ? sheet
+      : `Dòng tiền ${name || sheet}`.trim();
   if (t !== t.toLocaleUpperCase('vi')) return t;
   const lower = t.toLocaleLowerCase('vi');
   return lower.charAt(0).toLocaleUpperCase('vi') + lower.slice(1);
@@ -53,8 +61,8 @@ export function toDashboard(data) {
         });
       }
     });
-    // Dòng tiền có số thứ tự trong file phân chia nhiệm vụ (plan.js): tên đúng như file, app hiện số này ở ô vuông đầu thẻ.
-    return { key: s.key, ...(s.no ? { no: s.no } : {}), label: s.no ? s.name : flowLabel(s), sheet: s.kpiSheet || s.sheet || '', sheetTitle: s.sheet || '', days, groups, items };
+    // Luôn hiện đúng tên đầy đủ của dòng tiền / nhóm (không bỏ chữ "Dòng tiền").
+    return { key: s.key, ...(s.no ? { no: s.no } : {}), label: flowLabel(s), sheet: s.kpiSheet || s.sheet || '', sheetTitle: s.sheet || '', days, groups, items };
   });
   return {
     spreadsheetTitle: 'Google Sheet KPI',

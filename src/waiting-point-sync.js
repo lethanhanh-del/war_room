@@ -3,6 +3,79 @@
 
 const MAX_HISTORY_DAYS = 30;
 const MAX_ITEMS_PER_DAY = 200;
+export const WP_SEC_PER_PERSON = 10;
+
+export function waitingPointDurationSec(peopleCount) {
+  const n = Math.max(0, Math.floor(Number(peopleCount) || 0));
+  return n * WP_SEC_PER_PERSON;
+}
+
+/** Đếm số người hỗ trợ đang có task đầy đủ 6 cột trên CSV tab Waiting Point (khớp logic public/waiting-point.js). */
+export function countWaitingPointPeopleFromCsv(csv) {
+  const text = String(csv || '');
+  const rows = [];
+  let row = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; }
+      else if (ch === '"') inQuotes = false;
+      else cur += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === ',') { row.push(cur); cur = ''; }
+    else if (ch === '\n') { row.push(cur.replace(/\r$/, '')); rows.push(row); row = []; cur = ''; }
+    else cur += ch;
+  }
+  if (cur.length || row.length) { row.push(cur.replace(/\r$/, '')); rows.push(row); }
+
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const joined = rows[i].join(' ');
+    if (/vấn\s*đề|van\s*de/i.test(joined) && /dòng\s*tiền|dong\s*tien/i.test(joined)) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return { peopleCount: 0, itemCount: 0, sec: 0 };
+
+  const headerRow = rows[headerIdx];
+  const findCol = (re, fb) => {
+    const idx = headerRow.findIndex((h) => re.test(String(h || '')));
+    return idx >= 0 ? idx : fb;
+  };
+  const iStt = findCol(/stt/i, 0);
+  const iStream = findCol(/dòng\s*tiền|dong\s*tien/i, 1);
+  const iGroup = findCol(/nhóm\s*công\s*việc|nhom\s*cong\s*viec/i, 2);
+  const iIssue = findCol(/vấn\s*đề|van\s*de/i, 3);
+  const iTime = findCol(/thời\s*gian|thoi\s*gian/i, 4);
+  const iOwner = findCol(/người\s*phụ\s*trách|nguoi\s*phu\s*trach/i, 5);
+  const iSupporter = findCol(/người\s*hỗ\s*trợ|nguoi\s*ho\s*tro/i, 6);
+
+  const hasValidTime = (raw) => {
+    const s = String(raw || '').trim();
+    return Boolean(s && /\d/.test(s));
+  };
+
+  const people = new Set();
+  let itemCount = 0;
+  for (const r of rows.slice(headerIdx + 1)) {
+    const stt = String(r[iStt] || '').trim();
+    const stream = String(r[iStream] || '').trim();
+    const group = String(r[iGroup] || '').trim();
+    const issue = String(r[iIssue] || '').trim();
+    const timeRaw = String(r[iTime] || '').trim();
+    const owner = String(r[iOwner] || '').trim();
+    const supporter = String(r[iSupporter] || '').trim();
+    if (/^vấn\s*đề\s*gặp\s*phải$/i.test(issue) || (/^stt$/i.test(stt) && /^dòng\s*tiền$/i.test(stream))) continue;
+    if (!stream || !group || !issue || !owner || !supporter || !hasValidTime(timeRaw)) continue;
+    itemCount += 1;
+    people.add(norm(supporter));
+  }
+  const peopleCount = people.size;
+  return { peopleCount, itemCount, sec: waitingPointDurationSec(peopleCount) };
+}
 
 function norm(s) {
   return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();

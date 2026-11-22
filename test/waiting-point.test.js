@@ -19,8 +19,8 @@ import {
   buildWaitingPointXlsx,
   fetchWaitingPoints,
 } from '../public/waiting-point.js';
-import { emptyWaitingPointState, mergeWaitingPointState, pruneHistoryAgainstSheetRows } from '../src/waiting-point-sync.js';
-import { AUTO_ROTATE_TABS, nextRotateTarget, navBar } from '../src/pages.js';
+import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPointState, pruneHistoryAgainstSheetRows } from '../src/waiting-point-sync.js';
+import { AUTO_ROTATE_TABS, nextRotateTarget, navBar, waitingPointRotateSec } from '../src/pages.js';
 
 test('parseTimeSpec xử lý đủ 12 mốc dropdown và các định dạng giờ', () => {
   const presets = [
@@ -294,42 +294,55 @@ test('Bảng thống kê tự đối chiếu với Sheet: dòng còn trên Sheet
   assert.equal(staleRetry.recentCleared[0].issue, 'Bản ghi mới sau khi xóa');
 });
 
-test('Tự động chuyển tab: đúng thời lượng 3p/3p/5p, bật tắt từng tab và render đủ trong navBar', () => {
+test('Tự động chuyển tab: chỉ còn KPI (3p) ↔ Waiting Point (10s/người, bỏ qua khi 0 người) và ẩn Dòng tiền', () => {
   assert.deepEqual(
-    AUTO_ROTATE_TABS.map((t) => [t.href, t.sec]),
+    AUTO_ROTATE_TABS.map((t) => [t.href, t.sec, t.secPerPerson || 0]),
     [
-      ['/', 180],
-      ['/kpi', 180],
-      ['/waiting-point', 300],
+      ['/kpi', 180, 0],
+      ['/waiting-point', 0, 10],
     ],
   );
+  assert.equal(waitingPointRotateSec(0), 0);
+  assert.equal(waitingPointRotateSec(1), 10);
+  assert.equal(waitingPointRotateSec(4), 40);
 
-  // Vòng xoay đủ 3 tab
-  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/kpi');
-  assert.equal(nextRotateTarget('/kpi', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/waiting-point');
-  assert.equal(nextRotateTarget('/waiting-point', { '/': true, '/kpi': true, '/waiting-point': true }).href, '/');
+  // Vòng xoay 2 tab khi Waiting Point có người
+  assert.equal(nextRotateTarget('/kpi', { '/kpi': true, '/waiting-point': true }, 2).href, '/waiting-point');
+  assert.equal(nextRotateTarget('/waiting-point', { '/kpi': true, '/waiting-point': true }, 2).href, '/kpi');
 
-  // Tắt 1 tab (/kpi) -> chỉ xoay giữa Dòng tiền và Waiting Point
-  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': false, '/waiting-point': true }).href, '/waiting-point');
-  assert.equal(nextRotateTarget('/waiting-point', { '/': true, '/kpi': false, '/waiting-point': true }).href, '/');
+  // Waiting Point trống (0 người): đang ở /kpi thì không chuyển qua; đang ở /waiting-point thì quay ngay về /kpi
+  assert.equal(nextRotateTarget('/kpi', { '/kpi': true, '/waiting-point': true }, 0), null);
+  assert.equal(nextRotateTarget('/waiting-point', { '/kpi': true, '/waiting-point': true }, 0).href, '/kpi');
 
-  // Đang ở trang ngoài vòng xoay (/lich) -> trả tab bật đầu tiên
-  assert.equal(nextRotateTarget('/lich', { '/': false, '/kpi': true, '/waiting-point': true }).href, '/kpi');
+  // Đang ở trang ngoài vòng xoay (/lich-truc) -> trả tab bật đầu tiên (/kpi)
+  assert.equal(nextRotateTarget('/lich-truc', { '/kpi': true, '/waiting-point': true }).href, '/kpi');
 
   // Chỉ bật 0 hoặc 1 tab -> không tự chuyển
-  assert.equal(nextRotateTarget('/', { '/': true, '/kpi': false, '/waiting-point': false }), null);
-  assert.equal(nextRotateTarget('/', { '/': false, '/kpi': false, '/waiting-point': false }), null);
+  assert.equal(nextRotateTarget('/kpi', { '/kpi': true, '/waiting-point': false }), null);
+  assert.equal(nextRotateTarget('/kpi', { '/kpi': false, '/waiting-point': false }), null);
 
-  // navBar chèn đủ công tắc, popover chọn 3 tab và giữ đúng 1 aria-current="page"
+  // Đếm người từ CSV Waiting Point: bỏ dòng thiếu cột, mỗi người +10s
+  const emptyCsv = 'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ\n1,Dòng tiền 1: Bán 4 dự án,Networking,Thiếu người,10 phút,Mai,\n';
+  assert.deepEqual(countWaitingPointPeopleFromCsv(emptyCsv), { peopleCount: 0, itemCount: 0, sec: 0 });
+  const activeCsv = [
+    'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
+    '1,Dòng tiền 1: Bán 4 dự án,Networking,Hư wifi,15 phút,Thành Anh,Chiến',
+    '2,Dòng tiền 1: Bán 4 dự án,Data,Thiếu file,10 phút,Mai,Chiến',
+    '3,Dòng tiền 2: Banking,H300,Thiếu hồ sơ,20 phút,Thu,Tuấn',
+  ].join('\n');
+  assert.deepEqual(countWaitingPointPeopleFromCsv(activeCsv), { peopleCount: 2, itemCount: 3, sec: 20 });
+
+  // navBar ẩn Dòng tiền, chèn công tắc xoay vòng 2 tab KPI (3 phút) + Waiting Point (10s / người)
   const html = navBar({ role: 'admin', fullName: 'Quản trị viên' }, '/waiting-point');
   assert.match(html, /id="wrRotToggle"/);
   assert.match(html, /id="wrRotCfg"/);
   assert.match(html, /id="wrRotPop"/);
-  assert.match(html, /data-rot-href="\/"/);
+  assert.doesNotMatch(html, /data-rot-href="\/"/);
+  assert.doesNotMatch(html, /class="wr-link" href="\/"/);
   assert.match(html, /data-rot-href="\/kpi"/);
   assert.match(html, /data-rot-href="\/waiting-point"/);
   assert.match(html, /3 phút/);
-  assert.match(html, /5 phút/);
+  assert.match(html, /10s \/ người/);
 });
 
 test('buildWaitingPointXlsx tạo file .xlsx chuẩn OOXML ZIP với 2 sheet và giữ nguyên tiếng Việt UTF-8', () => {

@@ -24,11 +24,11 @@ function group(name, pic, title, rows) {
   return { key: key(name), name, pic: { name: pic, title }, members: persons.filter((p) => p !== pic), rows };
 }
 function stream(name, code, pic, groups) {
-  return { key: key(name), name, sheet: `DÒNG TIỀN ${name.toUpperCase()}`, code, pic, days, groups };
+  return { key: key(name), name, sheet: name.toUpperCase(), code, pic, days, groups };
 }
 
 const streams = [
-  stream('Bán 4 dự án', 'DT01', 'Hoàng Thị Quỳnh Mai', [
+  stream('Dòng tiền bán 4 dự án', 'DT01', 'Hoàng Thị Quỳnh Mai', [
     group('Networking', 'Hoàng Thị Quỳnh Mai', 'Trưởng Phòng Sales', [
       row('Mạc Thị Thúy Hiền', [['Gặp 5 khách hàng VIP', 'D'], ['Tổ chức networking 30 khách', 'D'], ['Chốt 3 khách giữ chỗ', 'D'], ['Thu cọc 2 căn', 'S'], ['Chốt doanh số tuần', 'S']]),
       row('Trương Huỳnh Thúy An', [['Gọi 40 khách hàng cũ', 'D'], ['Mời 15 khách dự sự kiện', 'D'], ['Đưa 5 khách đi xem nhà mẫu', 'C'], ['Hẹn ký hợp đồng 2 khách', 'S'], ['Cập nhật CRM cuối tuần', 'S']]),
@@ -53,7 +53,7 @@ const streams = [
       row('Ngô Thị Thu Thủy', [['Nộp hồ sơ sổ hồng I-Home đợt 1', 'D'], ['Làm việc Sở TN&MT về Bồng Sơn', 'K'], ['Nhận kết quả thẩm định Liên Chiểu', 'C'], ['Nhận sổ hồng I-Home đợt 1', 'S'], ['Báo cáo tiến độ pháp lý', 'S']], 'Sở TN&MT hẹn trả lời ngày 24/11'),
     ]),
   ]),
-  stream('Banking', 'DT02', 'Nguyễn Thị Mai Thu', [
+  stream('Dòng tiền Banking', 'DT02', 'Nguyễn Thị Mai Thu', [
     group('SS1 – Hạn mức HDBank', 'Nguyễn Thị Mai Thu', 'Giám đốc Ban Kế toán 1', [
       row('Nguyễn Thế Nhiên', [['Chốt checklist hồ sơ HDBank', 'D'], ['Gửi phương án tài chính SS1', 'D'], ['Nộp đủ hồ sơ hạn mức cho HDBank', 'K'], ['HDBank thẩm định hồ sơ', 'S'], ['Chốt điều kiện hạn mức', 'S']], 'Thiếu dự toán chi tiết từ Ban Xây dựng'),
     ]),
@@ -64,7 +64,7 @@ const streams = [
       row('Huỳnh Ngọc Nhật Tài', [['Soát xét hồ sơ SS1 và N20', 'L'], ['Bổ sung báo cáo tài chính', 'K'], ['Hoàn thiện hồ sơ trình HDBank', 'D'], ['Gửi hồ sơ bổ sung', 'S'], ['Nhận phản hồi ngân hàng', 'S']]),
     ]),
   ]),
-  stream('Nợ khó đòi', 'DT03', 'Mạc Thị Thúy Hiền', [
+  stream('Dòng tiền nợ khó đòi', 'DT03', 'Mạc Thị Thúy Hiền', [
     group('Thúc đẩy tòa ra bản án', 'Mạc Thị Thúy Hiền', 'Trưởng Phòng Đối ngoại', [
       row('Mạc Thị Thúy Hiền', [['Nộp đơn đề nghị xét xử nhanh', 'D'], ['Làm việc với thẩm phán', 'D'], ['Nhận lịch xét xử', 'D'], ['Dự phiên tòa', 'S'], ['Báo cáo kết quả', 'S']]),
     ]),
@@ -75,13 +75,13 @@ const streams = [
       row('Phạm Thu Hà', [['Rà soát 15 hồ sơ nợ', 'K'], ['Gửi thư nhắc nợ 15 khách', 'D'], ['Gọi 20 khách nợ', 'D'], ['Lập danh sách khởi kiện', 'S'], ['Tổng hợp tiến độ thu', 'S']], 'Thiếu chứng từ gốc 3 hồ sơ'),
     ]),
   ]),
-  stream('Tài chính', '', 'Phạm Thanh Hùng', [
+  stream('Dòng tiền Tài chính 57', 'DT07', 'Phạm Thanh Hùng', [
     group('Kế hoạch dòng tiền', 'Phạm Thanh Hùng', 'Quyền Phó Tổng giám đốc', [
       row('Phạm Thanh Hùng', [['Chốt kế hoạch dòng tiền tuần', 'D'], ['Cập nhật dòng tiền 10 nguồn', 'D'], ['Báo cáo Chủ tịch', 'D'], ['Rà soát chi phí', 'S'], ['Tổng kết dòng tiền', 'S']]),
       row('Huỳnh Ngọc Nhật Tài', [['Báo cáo thu chi ngày 21/11', 'D'], ['Báo cáo thu chi ngày 22/11', 'D'], ['Báo cáo thu chi ngày 23/11', 'D'], ['Báo cáo thu chi ngày 24/11', 'S'], ['Báo cáo thu chi ngày 25/11', 'S']]),
     ]),
   ]),
-  stream('Thu trước hạn / quá hạn', 'DT04', 'Hoàng Thị Hà Thu', [
+  stream('Dòng tiền thu trước hạn quá hạn', 'DT04', 'Hoàng Thị Hà Thu', [
     group('Thu trước hạn', 'Hoàng Thị Hà Thu', 'Trưởng nhóm thu hồi', [
       row('Hoàng Thị Hà Thu', [['Gọi 30 khách thu trước hạn', 'D'], ['Thu 800 triệu trước hạn', 'D'], ['Gọi 40 khách thu trước hạn', 'C'], ['Thu 1 tỷ trước hạn', 'S'], ['Chốt số thu tuần', 'S']]),
     ]),
