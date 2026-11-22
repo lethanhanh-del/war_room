@@ -85,7 +85,7 @@ export const NAV_PAGES = [
   ["/kpi", "KPI & kết quả"],
   ["/lich-truc", "Lịch trực 24/7"],
   ["/lich", "Hẹn lịch BOD"],
-  ["/waiting-point", "Waiting Point · Điểm nghẽn"],
+  ["/waiting-point", "Waiting Point"],
 ];
 
 export const WP_SEC_PER_PERSON = 10;
@@ -99,11 +99,11 @@ export function waitingPointRotateSec(peopleCount) {
 
 // Danh sách 3 tab hỗ trợ tự động chuyển luân phiên trên màn hình War Room:
 // - KPI & kết quả: 3 phút (180s)
-// - Waiting Point · Điểm nghẽn: 0 người -> bỏ qua / rời ngay về KPI; có người -> mỗi người +10s.
+// - Waiting Point: 0 người -> bỏ qua / rời ngay về KPI; có người -> mỗi người +10s.
 // - Hẹn lịch BOD: không có lịch họp sắp tới -> bỏ qua; có người đặt lịch họp -> tự bật lên 30s cho cấp trên xem.
 export const AUTO_ROTATE_TABS = [
   { href: "/kpi", label: "KPI & kết quả", sec: 180 },
-  { href: "/waiting-point", label: "Waiting Point · Điểm nghẽn", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
+  { href: "/waiting-point", label: "Waiting Point", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
   { href: "/lich", label: "Hẹn lịch BOD", sec: BOOKING_ROTATE_SEC, whenHasData: true },
 ];
 
@@ -267,7 +267,7 @@ const AUTO_SCROLL = `<script>(() => {
   if (on) set(true);
 })();</script>`;
 
-// Nút "Tự chuyển tab": xoay vòng giữa KPI & kết quả (3p), Waiting Point · Điểm nghẽn (10s/người; bỏ qua khi trống) và Hẹn lịch BOD (30s khi có lịch họp; bỏ qua khi trống).
+// Nút "Tự chuyển tab": xoay vòng giữa KPI & kết quả (3p), Waiting Point (10s/người; bỏ qua khi trống) và Hẹn lịch BOD (30s khi có lịch họp; bỏ qua khi trống).
 // Khi có người vừa đặt lịch họp mới (WebSocket scope="bookings", event="created", kind="meeting"), màn hình đang bật Chuyển tab lập tức mở /lich trong 30 giây cho cấp trên thấy rồi tự quay lại.
 const AUTO_ROTATE = `<script>(() => {
   const TABS = ${JSON.stringify(AUTO_ROTATE_TABS)};

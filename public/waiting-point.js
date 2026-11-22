@@ -1836,8 +1836,8 @@ if (typeof document !== 'undefined') {
         <div class="wp-brand">
           <span class="wp-brand-badge" aria-hidden="true">WP</span>
           <div class="wp-brand-txt">
-            <h1>Waiting Point · Điểm nghẽn</h1>
-            <p class="wp-brand-note">Nơi hiển thị trực tiếp các <b>điểm nghẽn / vướng mắc công việc</b> từ sheet <b>“Điểm nghẽn”</b> — Waiting Point và Điểm nghẽn task là cùng một bảng theo dõi.</p>
+            <h1>Waiting Point</h1>
+            <p class="wp-brand-note">Nơi hiển thị trực tiếp các <b>vướng mắc công việc cần hỗ trợ</b>, cập nhật theo thời gian thực.</p>
           </div>
         </div>
         <div class="wp-actions">

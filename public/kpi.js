@@ -29,7 +29,7 @@ const ICON = {
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
 const STATUS_ICON = { D: 'check', L: 'clock', K: 'x', N: 'dot', S: 'calendar', U: 'alert' };
-const UNAPPROVED_LABEL = 'BOD chưa duyệt';
+const UNAPPROVED_LABEL = 'Chưa trình BOD';
 const chip = (st) => `<span class="k-chip st-${st}">${icon(STATUS_ICON[st])}${st === 'U' ? UNAPPROVED_LABEL : STATUS_LABEL[st]}</span>`;
 const initials = (n) => {
   const w = String(n || '').trim().split(/\s+/).filter(Boolean);
@@ -627,7 +627,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       ].join(' · ');
       const badgeNum = streamBadgeNo(s, isSpecial ? '' : String(si + 1));
       const unapproved = s.bodApproved === false;
-      const bodTag = unapproved ? `<span class="kms-bod-warn" title="Ô E1 trên sheet chưa được BOD tick duyệt">${icon('alert')}${UNAPPROVED_LABEL}</span>` : '';
+      const bodTag = unapproved ? `<span class="kms-bod-warn" title="Ô E1 trên sheet chưa tick: KPI chưa trình BOD">${icon('alert')}${UNAPPROVED_LABEL}</span>` : '';
       const head = `<header class="km-stream">
         <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
           <div class="kms-name"><div class="kms-title-row"><h3>${esc(s.name)}</h3>${bodTag}</div>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
@@ -651,7 +651,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         <li class="st-N"><i class="kd st-N"></i><span><b>Đang làm</b>: KPI hôm nay chưa tick (hạn ${DUE_LABEL} sáng hôm sau).</span></li>
         <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick sau ${DUE_LABEL} sáng hôm sau (áp dụng từ 22/11).</span></li>
         <li class="st-K"><i class="kd st-K"></i><span><b>Không đạt / Tồn đọng</b>: quá hạn mà chưa tick.</span></li>
-        ${hasUnapproved ? `<li class="st-U"><i class="kd st-U"></i><span><b>${UNAPPROVED_LABEL}</b>: ô E1 trên sheet chưa tick duyệt.</span></li>` : ''}
+        ${hasUnapproved ? `<li class="st-U"><i class="kd st-U"></i><span><b>${UNAPPROVED_LABEL}</b>: ô E1 trên sheet chưa tick.</span></li>` : ''}
       </ul>
       ${blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>'}</section>`;
 }
@@ -701,7 +701,7 @@ function tableHtml(x, { tv = false } = {}) {
       const c = count(list);
       let label = '—';
       let cls = 'muted';
-      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · ${UNAPPROVED_LABEL}`; cls = 'review'; }
+      if (c.total && unapproved) { label = tv ? `${c.total} chưa trình BOD` : `${c.total} KPI · ${UNAPPROVED_LABEL}`; cls = 'review'; }
       else if (c.total && d.date > today) { label = tv ? '' : `${c.total} KPI sắp tới`; }
       else if (c.total) {
         const done = doneOf(c);
