@@ -206,8 +206,18 @@ function render() {
     $('main').innerHTML = tvHtml();
     return;
   }
+  const prevScrolls = new Map();
+  $('main').querySelectorAll('[data-scroll-key]').forEach((el) => {
+    const k = el.getAttribute('data-scroll-key');
+    if (k && el.scrollTop > 0) prevScrolls.set(k, el.scrollTop);
+  });
   $('filters').innerHTML = filtersHtml();
   $('main').innerHTML = pageHtml();
+  $('main').querySelectorAll('[data-scroll-key]').forEach((el) => {
+    const k = el.getAttribute('data-scroll-key');
+    if (k && prevScrolls.has(k)) el.scrollTop = prevScrolls.get(k);
+  });
+  wireKpiAutoScroll();
 }
 
 function renderSync() {
@@ -395,7 +405,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
     notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : '',
     lateNote(it),
   ].filter(Boolean).join('');
-  return `<li class="kmt-item st-${it.status}">
+  return `<li class="kmt-item st-${it.status}" title="${esc(it.kpi)}">
       <span class="kmt-ic">${icon(STATUS_ICON[it.status])}</span>
       <span class="kmt-body"><span class="kmt-title">${dateTag}<b class="kl-kpi">${esc(it.kpi)}</b></span>${extra}</span>
       ${chip(it.status)}
@@ -416,57 +426,85 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
     return links.length ? `<p class="kg-links kpc-links">${links.join('')}</p>` : '';
   }
 
-  function personCardHtml(card, f) {
+  function personCardHtml(card, f, streamKey = '') {
     const { p, groupName, tasks, notes, folderHtml } = card;
     const isAll = f.day === 'all';
     const badges = [];
     if (p.total) {
       badges.push(`<span class="kmp-stat st-D" title="Đã hoàn thành / tổng KPI đến ngày đang xem"><b>${p.done}/${p.total}</b> xong</span>`);
       if (p.doing) badges.push(`<span class="kmp-stat st-N"><b>${p.doing}</b> đang làm</span>`);
-      if (p.late) badges.push(`<span class="kmp-stat st-L"><b>${p.late}</b> trễ hạn</span>`);
+      if (p.late) badges.push(`<span class="kmp-stat st-L"><b>${p.late}</b> trễ</span>`);
       if (p.backlog) badges.push(`<span class="kmp-stat st-K"><b>${p.backlog}</b> tồn đọng</span>`);
     } else {
       badges.push(`<span class="kmp-stat is-idle">Chưa có KPI</span>`);
     }
     const emptyText = isAll ? 'Chưa có task nào' : `Không có task ngày ${esc(labelOf(f.day))}`;
-    const taskHtml = tasks.length
-      ? `<ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll, !isAll && it.date < f.day)).join('')}</ul>`
-      : `<p class="kmp-empty">${emptyText}</p>`;
-  const hasBacklog = tasks.some((it) => it.status === 'K');
-  const isIdleCard = !tasks.length;
-  return `<article class="km-person-card${hasBacklog ? ' has-backlog' : ''}${isIdleCard ? ' is-idle-card' : ''}">
+    const hasBacklog = tasks.some((it) => it.status === 'K');
+    const hasLate = !hasBacklog && tasks.some((it) => it.status === 'L');
+    const allDone = !hasBacklog && !hasLate && tasks.length > 0 && tasks.every((it) => it.status === 'D');
+    const isIdleCard = !tasks.length;
+    const toneCls = hasBacklog ? ' has-backlog' : hasLate ? ' has-late' : allDone ? ' is-all-done' : '';
+    const scrollKey = `pc:${streamKey}/${groupName}/${p.name}`;
+
+    const denom = Math.max(1, p.total || tasks.length);
+    const doneOnTime = Math.max(0, (p.done || 0) - (p.late || 0));
+    const okW = Math.round((doneOnTime / denom) * 100);
+    const lateW = Math.round(((p.late || 0) / denom) * 100);
+    const badW = Math.round(((p.backlog || 0) / denom) * 100);
+    const rate = p.total ? pct(p.done, p.total) : null;
+
+    const bodyHtml = tasks.length
+      ? `<div class="kpc-meter" aria-hidden="true">${okW ? `<i class="m-ok" style="width:${okW}%"></i>` : ''}${lateW ? `<i class="m-late" style="width:${lateW}%"></i>` : ''}${badW ? `<i class="m-bad" style="width:${badW}%"></i>` : ''}</div>
+         <div class="kpc-scroll-wrap">
+           <div class="kpc-scroll" data-kpi-autoscroll="1" data-scroll-key="${esc(scrollKey)}">
+             <ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll, !isAll && it.date < f.day)).join('')}</ul>
+           </div>
+         </div>
+         <footer class="kpc-foot">
+           <div class="kpc-foot-l">${folderHtml || `<span>${tasks.length} đầu việc</span>`}</div>
+           <span class="kpc-scroll-hint" data-scroll-hint hidden><i class="kpc-scroll-ic" aria-hidden="true">↓</i> <span data-scroll-label>Tự cuộn</span> · <b>${tasks.length}</b> việc</span>
+         </footer>`
+      : `<div class="kpc-idle-body"><p class="kmp-empty">${emptyText}</p>${folderHtml}</div>`;
+
+    return `<article class="km-person-card${toneCls}${isIdleCard ? ' is-idle-card' : ' is-uniform-card'}">
       <header class="kpc-head">
-        <span class="km-who">
-          <span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span>
-          <span class="kp-name">
-            <span class="kpc-title"><b>${esc(p.name)}</b><span class="kpc-sep"> - </span><span class="kpc-group">${esc(groupName)}</span></span>
-            ${p.isPic ? '<small>PIC nhóm</small>' : ''}
+        <div class="kpc-top">
+          <span class="km-who">
+            <span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span>
+            <span class="kpc-id">
+              <b class="kpc-name" title="${esc(p.name)}">${esc(p.name)}</b>
+              ${p.isPic ? '<span class="kpc-pic-tag" title="PIC nhóm">PIC</span>' : ''}
+            </span>
           </span>
-        </span>
-        <span class="kmp-stats">${badges.join('')}</span>
+          <span class="kpc-group-pill" title="${esc(groupName)}">${esc(groupName)}</span>
+        </div>
+        <div class="kpc-sub">
+          <span class="kmp-stats">${badges.join('')}</span>
+          ${rate == null ? '' : `<span class="kpc-pct ${tone(rate)}">${rate}%</span>`}
+        </div>
       </header>
-      ${taskHtml}
-      ${folderHtml}
+      ${bodyHtml}
     </article>`;
   }
 
   function masonryColCount() {
     const w = typeof window !== 'undefined' ? window.innerWidth : 1440;
-    return w >= 1440 ? 3 : w >= 860 ? 2 : 1;
+    return w >= 1360 ? 3 : w >= 860 ? 2 : 1;
   }
 
-  function packMasonry(cards, maxCols, f) {
-    const colCount = Math.max(1, Math.min(maxCols, cards.length));
-    const cols = Array.from({ length: colCount }, () => ({ weight: 0, html: [] }));
-    for (const card of cards) {
-      let best = 0;
-      for (let i = 1; i < colCount; i++) {
-        if (cols[i].weight < cols[best].weight) best = i;
-      }
-      cols[best].html.push(personCardHtml(card, f));
-      cols[best].weight += card.weight;
+  // Trải đều các khối nhân sự có task thành lưới đồng kích thước (mọi thẻ bằng chiều rộng và chiều cao, bên trong tự cuộn mượt);
+  // các thẻ chưa có task gom riêng thành hàng gọn bên dưới để không làm lệch các khối chính.
+  function packMasonry(cards, maxCols, f, streamKey = '') {
+    const active = cards.filter((c) => c.tasks.length > 0);
+    const idle = cards.filter((c) => c.tasks.length === 0);
+    const parts = [];
+    if (active.length) {
+      parts.push(`<div class="km-card-grid" style="--cols:${maxCols}">${active.map((c) => personCardHtml(c, f, streamKey)).join('')}</div>`);
     }
-    return `<div class="km-masonry" style="--cols:${colCount}">${cols.map((c) => `<div class="km-col">${c.html.join('')}</div>`).join('')}</div>`;
+    if (idle.length) {
+      parts.push(`<div class="km-idle-grid" style="--cols:${maxCols}">${idle.map((c) => personCardHtml(c, f, streamKey)).join('')}</div>`);
+    }
+    return parts.join('');
   }
 
   function streamsDetailHtml(x) {
@@ -539,7 +577,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.doing, 'N', 'Đang làm')}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
     const body = personCards.length
-        ? packMasonry(personCards, maxCols, f)
+        ? packMasonry(personCards, maxCols, f, s.key)
         : isSpecial
           ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
         : `<p class="k-none">Chưa có thành viên nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
@@ -698,6 +736,115 @@ window.addEventListener('resize', () => {
     lastMasonryCols = next;
     if (S.model && !prefs.tv) render();
   }
+  $('main')?.querySelectorAll('[data-kpi-autoscroll]').forEach(updateScrollDecor);
 });
+
+// ---------- Tự cuộn mượt bên trong từng khối nhân sự (dừng khi rê chuột / cuộn tay) ----------
+const cardScrollMeta = new Map();
+const CARD_SPEED = 22; // px/s: đọc thoải mái trên màn hình War Room
+const CARD_HOLD_MS = 3200;
+const CARD_MANUAL_PAUSE_MS = 10000;
+const reducedMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function scrollMetaOf(key) {
+  if (!cardScrollMeta.has(key)) {
+    cardScrollMeta.set(key, { carry: 0, holdUntil: Date.now() + CARD_HOLD_MS, pauseUntil: 0, hovered: false });
+  }
+  return cardScrollMeta.get(key);
+}
+
+function updateScrollDecor(el) {
+  const room = el.scrollHeight - el.clientHeight;
+  const wrap = el.closest('.kpc-scroll-wrap');
+  if (wrap) {
+    wrap.classList.toggle('has-overflow', room > 8);
+    wrap.classList.toggle('at-bottom', room <= 8 || el.scrollTop >= room - 2);
+  }
+  const hint = el.closest('.km-person-card')?.querySelector('[data-scroll-hint]');
+  if (hint) hint.hidden = room <= 8;
+}
+
+function wireKpiAutoScroll() {
+  const root = $('main');
+  if (!root) return;
+  root.querySelectorAll('[data-kpi-autoscroll]').forEach((el) => {
+    const key = el.getAttribute('data-scroll-key') || '';
+    const meta = scrollMetaOf(key);
+    const card = el.closest('.km-person-card');
+    const setPausedUi = (paused) => {
+      if (!card) return;
+      card.classList.toggle('is-paused', paused);
+      const lbl = card.querySelector('[data-scroll-label]');
+      if (lbl) lbl.textContent = paused ? 'Tạm dừng' : 'Tự cuộn';
+    };
+    const hoverTarget = card || el;
+    hoverTarget.addEventListener('mouseenter', () => {
+      meta.hovered = true;
+      setPausedUi(true);
+    });
+    hoverTarget.addEventListener('mouseleave', () => {
+      meta.hovered = false;
+      meta.pauseUntil = Math.max(meta.pauseUntil, Date.now() + 1500);
+      setPausedUi(false);
+    });
+    const pauseManual = () => {
+      meta.pauseUntil = Date.now() + CARD_MANUAL_PAUSE_MS;
+      setPausedUi(true);
+    };
+    el.addEventListener('wheel', pauseManual, { passive: true });
+    el.addEventListener('touchstart', pauseManual, { passive: true });
+    el.addEventListener('scroll', () => updateScrollDecor(el), { passive: true });
+    updateScrollDecor(el);
+  });
+  const refreshAll = () => root.querySelectorAll('[data-kpi-autoscroll]').forEach(updateScrollDecor);
+  requestAnimationFrame(refreshAll);
+  document.fonts?.ready?.then(refreshAll);
+}
+
+let lastScrollFrame = 0;
+function stepKpiCardScroll() {
+  const t = performance.now();
+  const dt = lastScrollFrame ? Math.min(t - lastScrollFrame, 500) : 0;
+  lastScrollFrame = t;
+  if (reducedMotion || document.hidden || prefs.tv) return;
+  const root = $('main');
+  if (!root) return;
+  const now = Date.now();
+  root.querySelectorAll('[data-kpi-autoscroll]').forEach((el) => {
+    const room = el.scrollHeight - el.clientHeight;
+    updateScrollDecor(el);
+    if (room <= 8) return;
+    const key = el.getAttribute('data-scroll-key') || '';
+    const meta = scrollMetaOf(key);
+    if (meta.hovered || now < meta.pauseUntil || now < meta.holdUntil) return;
+    const card = el.closest('.km-person-card');
+    if (card?.classList.contains('is-paused')) {
+      card.classList.remove('is-paused');
+      const lbl = card.querySelector('[data-scroll-label]');
+      if (lbl) lbl.textContent = 'Tự cuộn';
+    }
+    if (el.scrollTop >= room - 1) {
+      meta.holdUntil = now + CARD_HOLD_MS * 2 + 800;
+      meta.carry = 0;
+      setTimeout(() => {
+        if (meta.hovered || Date.now() < meta.pauseUntil) return;
+        const cur = $('main')?.querySelector(`[data-scroll-key="${CSS.escape(key)}"]`);
+        if (!cur) return;
+        cur.scrollTo({ top: 0, behavior: 'smooth' });
+        meta.holdUntil = Date.now() + CARD_HOLD_MS;
+      }, CARD_HOLD_MS);
+      return;
+    }
+    meta.carry += (CARD_SPEED * dt) / 1000;
+    const step = Math.floor(meta.carry);
+    if (step >= 1) {
+      meta.carry -= step;
+      el.scrollTop = Math.min(room, el.scrollTop + step);
+      updateScrollDecor(el);
+    }
+  });
+}
+
+setInterval(stepKpiCardScroll, 40);
 
 load();
