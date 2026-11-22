@@ -47,6 +47,89 @@ test('parseTimeSpec xử lý đủ 12 mốc dropdown và các định dạng gi�
   assert.equal(parseTimeSpec('00:20:00').durationSec, 1200);
   assert.equal(parseTimeSpec('2:30 CH').targetHour, 14);
   assert.equal(parseTimeSpec('').kind, 'none');
+
+  // Khoảng thời lượng (2-3 giờ, 10-15 phút) vẫn tính thời lượng, không nhận nhầm là ngày
+  assert.equal(parseTimeSpec('2-3 giờ').kind, 'duration');
+  assert.equal(parseTimeSpec('10-15 phút').kind, 'duration');
+});
+
+test('Ô Thời gian xử lý nhập ngày / mốc ngày thì chuyển sang trạng thái Đang xử lý (không đếm thời gian)', () => {
+  const dateInputs = [
+    '21/11',
+    '22/11/2026',
+    '2026-11-22',
+    '22-11-2026',
+    '22.11.2026',
+    'Ngày 23/11',
+    'Ngày 23',
+    '23 tháng 11',
+    'Date(2026,10,22)',
+    'Date(2026,10,22,0,0,0)',
+    'Nộp 21/11; có kết quả 22/11; được duyệt 23/11',
+    'Trình 21/11, chi tiền 22/11',
+    '21/11 (xác nhận hạn mức, gửi thử 400 tin)',
+  ];
+  const now = 1_700_000_000_000;
+
+  for (const raw of dateInputs) {
+    const spec = parseTimeSpec(raw);
+    assert.equal(spec.kind, 'processing', raw);
+    assert.deepEqual(resolveDeadlineFromSpec(spec, now), { totalSec: null, endAt: null }, raw);
+    assert.equal(
+      isCompleteWaitingRow({
+        stream: 'Dòng tiền 1: Bán 4 dự án',
+        group: 'Data',
+        issue: 'Mẫu Zalo',
+        timeRaw: raw,
+        owner: 'Xuân Thi',
+        supporter: 'DAIT',
+      }),
+      true,
+      raw,
+    );
+    // Kể cả khi bản ghi cũ còn sót endAt đã quá hạn trong cache, computeTiming vẫn trả mode/tier = processing
+    const timing = computeTiming({ timeRaw: raw, timeSpec: spec, startedAt: now - 7200_000, endAt: now - 3600_000 }, now);
+    assert.equal(timing.mode, 'processing', raw);
+    assert.equal(timing.tier, 'processing', raw);
+    assert.equal(timing.remainingSec, Number.POSITIVE_INFINITY, raw);
+  }
+
+  // Nhóm có toàn việc nhập ngày -> topTier = processing; có việc gấp đếm ngược thì việc gấp đứng trên
+  const dateItem = {
+    id: 'd1',
+    stream: 'Bán 4 dự án',
+    group: 'Data',
+    issue: 'Duyệt mẫu Zalo',
+    timeRaw: 'Nộp 21/11; có kết quả 22/11',
+    timeSpec: parseTimeSpec('Nộp 21/11; có kết quả 22/11'),
+    owner: 'Thi',
+    supporter: 'DAIT',
+    startedAt: now - 60_000,
+    totalSec: null,
+    endAt: null,
+    isClearing: false,
+  };
+  dateItem.timing = computeTiming(dateItem, now);
+  const urgentItem = {
+    id: 'u1',
+    stream: 'Bán 4 dự án',
+    group: 'Networking',
+    issue: 'Hư wifi',
+    timeRaw: '15 phút',
+    timeSpec: parseTimeSpec('15 phút'),
+    owner: 'Anh',
+    supporter: 'Chiến',
+    startedAt: now - 60_000,
+    totalSec: 900,
+    endAt: now + 840_000,
+    isClearing: false,
+  };
+  urgentItem.timing = computeTiming(urgentItem, now);
+
+  const grouped = groupItemsByPerson([dateItem, urgentItem]);
+  assert.equal(grouped[0].name, 'Chiến');
+  assert.equal(grouped[1].name, 'DAIT');
+  assert.equal(grouped[1].topTier, 'processing');
 });
 
 test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột thông tin, bỏ dòng thiếu bất kỳ trường nào', () => {

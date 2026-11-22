@@ -609,9 +609,26 @@
   color: var(--warning);
 }
 
-.wp-timeblock.t-ok {
+.wp-timeblock.t-ok,
+.wp-timeblock.t-processing {
   background: var(--info-bg);
   color: var(--info);
+}
+
+.wp-timeblock.t-processing {
+  align-items: center;
+}
+
+.wp-timeblock.t-processing b {
+  font-family: var(--font, inherit);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.wp-card.compact .wp-timeblock.t-processing b {
+  font-size: 12px;
 }
 
 .wp-timeblock.t-clear {
@@ -746,7 +763,8 @@
   box-shadow: 0 0 0 3px var(--warning-bg);
 }
 
-.wp-dot.t-ok {
+.wp-dot.t-ok,
+.wp-dot.t-processing {
   background: var(--info);
 }
 
@@ -853,6 +871,23 @@
 .wp-node-right.t-warn b,
 .wp-node-right.t-warn span { color: var(--warning); }
 .wp-node-right.t-ok b { color: var(--info); }
+.wp-node-right.t-processing {
+  display: flex;
+  align-items: center;
+  padding-top: 2px;
+}
+.wp-node-right.t-processing b {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
+  background: var(--info-bg);
+  color: var(--info);
+  font-family: var(--font, inherit);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
 .wp-node-right.t-clear b,
 .wp-node-right.t-clear span { color: var(--success); }
 

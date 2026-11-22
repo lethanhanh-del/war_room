@@ -51,6 +51,52 @@ export function todayKeyVN(nowMs = Date.now()) {
   return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, '0')}-${String(vn.getUTCDate()).padStart(2, '0')}`;
 }
 
+function hasCalendarDate(lower) {
+  // Định dạng ISO: 2026-11-22 hoặc 2026/11/22
+  if (/\b\d{4}[/-](?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])\b/.test(lower)) return true;
+
+  // Định dạng có dấu gạch chéo: 21/11, 22/11/2026, 11/22/2026, 22-23/11, "Trình 21/11, chi tiền 22/11"
+  const slashMatches = lower.matchAll(/(?:^|[^\d])(\d{1,2})\s*\/\s*(\d{1,2})(?:\s*\/\s*(\d{2,4}))?(?!\d)/g);
+  for (const m of slashMatches) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    const hasYear = Boolean(m[3]);
+    if ((a >= 1 && a <= 31 && b >= 1 && b <= 12) || (hasYear && a >= 1 && a <= 12 && b >= 1 && b <= 31)) {
+      return true;
+    }
+  }
+
+  // Định dạng có dấu gạch ngang 3 phần: 22-11-2026 hoặc 22-11-26
+  const dashFull = lower.matchAll(/(?:^|[^\d])(\d{1,2})-(\d{1,2})-(\d{2,4})(?!\d)/g);
+  for (const m of dashFull) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if ((a >= 1 && a <= 31 && b >= 1 && b <= 12) || (a >= 1 && a <= 12 && b >= 1 && b <= 31)) return true;
+  }
+
+  // Định dạng có dấu gạch ngang 2 phần (VD: 22-11), tránh nhầm khoảng thời lượng như "2-3 giờ" hay "10-15 phút"
+  const dashShort = lower.matchAll(/(?:^|[^\d])(\d{1,2})-(\d{1,2})(?!\d|\s*(?:phút|phut|giờ|gio|tiếng|tieng|giây|giay|ngày|ngay|min|mins|hr|hrs|sec|secs|day|days|h|g|p|m|s|d)(?!\p{L}))/gu);
+  for (const m of dashShort) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if (a >= 1 && a <= 31 && b >= 1 && b <= 12) return true;
+  }
+
+  // Định dạng dùng dấu chấm đủ 3 phần: 22.11.2026 hoặc 22.11.26 (không nhầm với số thập phân "1.5 giờ")
+  if (/\b(?:0?[1-9]|[12]\d|3[01])\.(?:0?[1-9]|1[0-2])\.(?:\d{2}|\d{4})\b/.test(lower)) return true;
+
+  // Cách ghi chữ tiếng Việt: "ngày 22", "ngày 22/11", "22 tháng 11", "22 thg 11"
+  if (/(?:^|\s)(?:ngày|ngay)\s+(?:0?[1-9]|[12]\d|3[01])(?:\b|\/|-)/.test(lower)) return true;
+  if (/\b(?:0?[1-9]|[12]\d|3[01])\s*(?:tháng|thang|thg)\s*(?:0?[1-9]|1[0-2])\b/.test(lower)) return true;
+
+  // Định dạng tháng tiếng Anh do Google Sheet tự format: "Nov 22, 2026", "22 Nov", "22-Nov-2026"
+  if (/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[\s.-]+(?:0?[1-9]|[12]\d|3[01])\b|\b(?:0?[1-9]|[12]\d|3[01])[\s.-]+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b/.test(lower)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function parseTimeSpec(rawInput) {
   const raw = String(rawInput || '').trim();
   if (!raw) return { kind: 'none', raw };
@@ -72,6 +118,10 @@ export function parseTimeSpec(rawInput) {
       }
       return { kind: 'deadline', targetHour: h, targetMin: m, raw };
     }
+    // Ô kiểu ngày thuần trên Google Sheet (không có giờ cụ thể) -> hiển thị "Đang xử lý", không đếm thời gian
+    if (gvizDate[4] === undefined || (h === 0 && m === 0 && s === 0)) {
+      return { kind: 'processing', raw };
+    }
     return { kind: 'timestamp', endAt: new Date(y, mo, d, h, m, s).getTime(), raw };
   }
 
@@ -85,8 +135,15 @@ export function parseTimeSpec(rawInput) {
     const h = parseInt(dtMatch[4], 10);
     const m = parseInt(dtMatch[5], 10);
     if (mon >= 0 && mon <= 11 && day >= 1 && day <= 31 && h <= 23 && m <= 59) {
+      if (h === 0 && m === 0) return { kind: 'processing', raw };
       return { kind: 'timestamp', endAt: new Date(yr, mon, day, h, m, 0).getTime(), raw };
     }
+  }
+
+  // Nếu ô Thời gian xử lý nhập ngày / mốc ngày (VD: 21/11, 22/11/2026, "Trình 21/11, chi tiền 22/11")
+  // thì không tính đồng hồ đếm ngược mà hiển thị trạng thái "Đang xử lý".
+  if (hasCalendarDate(lower)) {
+    return { kind: 'processing', raw };
   }
 
   const ampmMatch = lower.match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(sa|ch|am|pm)\b/);
@@ -173,7 +230,7 @@ export function parseTimeSpec(rawInput) {
 }
 
 export function resolveDeadlineFromSpec(spec, startedAt) {
-  if (!spec || spec.kind === 'none') return { totalSec: null, endAt: null };
+  if (!spec || spec.kind === 'none' || spec.kind === 'processing') return { totalSec: null, endAt: null };
   if (spec.kind === 'timestamp') {
     return { totalSec: Math.max(60, Math.round((spec.endAt - startedAt) / 1000)), endAt: spec.endAt };
   }
@@ -190,6 +247,16 @@ export function resolveDeadlineFromSpec(spec, startedAt) {
 }
 
 export function computeTiming(item, nowMs) {
+  const isProcessing = item.timeSpec?.kind === 'processing' || (!item.timeSpec && parseTimeSpec(item.timeRaw).kind === 'processing');
+  if (isProcessing) {
+    return {
+      mode: 'processing',
+      remainingSec: Number.POSITIVE_INFINITY,
+      elapsedSec: Math.max(0, Math.floor((nowMs - (item.startedAt || nowMs)) / 1000)),
+      pct: 100,
+      tier: 'processing',
+    };
+  }
   if (!item.endAt) {
     return {
       mode: 'elapsed',
@@ -541,7 +608,9 @@ export function groupItemsByPerson(visibleItems) {
               ? 'unassigned'
               : activeTasks.some((t) => t.timing.tier === 'ok')
                 ? 'ok'
-                : 'none';
+                : activeTasks.some((t) => t.timing.tier === 'processing')
+                  ? 'processing'
+                  : 'none';
     return { ...g, activeCount: activeTasks.length, burnCount, warnCount, minRemainingSec: minRem, topTier };
   });
 
@@ -1291,7 +1360,14 @@ if (typeof document !== 'undefined') {
         let updatedAt = fromServer?.updatedAt || stored?.updatedAt || now;
 
         const prevRawTime = fromServer?.rawTime ?? existing?.timeRaw ?? stored?.rawTime;
-        if (!existing && !stored) {
+        if (rawItem.timeSpec.kind === 'processing') {
+          if (totalSec !== null || endAt !== null || !stored) {
+            totalSec = null;
+            endAt = null;
+            updatedAt = now;
+            hasTimerDelta = true;
+          }
+        } else if (!existing && !stored) {
           const calc = resolveDeadlineFromSpec(rawItem.timeSpec, startedAt);
           totalSec = calc.totalSec;
           endAt = calc.endAt;
@@ -1530,6 +1606,10 @@ if (typeof document !== 'undefined') {
         heroClock = 'Xong';
         heroLabel = 'HOÀN TẤT';
         heroTier = 'clear';
+      } else if (topTask.timing.mode === 'processing') {
+        heroClock = 'Đang xử lý';
+        heroLabel = '';
+        heroTier = 'processing';
       } else if (topTask.timing.mode === 'elapsed') {
         heroClock = formatClock(topTask.timing.elapsedSec);
         heroLabel = 'ĐÃ CHỜ';
@@ -1555,18 +1635,22 @@ if (typeof document !== 'undefined') {
       const restMeta = [shortStreamName(tk.stream), tk.owner ? `PIC: ${tk.owner}` : ''].filter(Boolean).join(' · ');
       const clk = tk.isClearing
         ? 'Xong'
-        : tk.timing.mode === 'elapsed'
-          ? formatClock(tk.timing.elapsedSec)
-          : formatClock(tk.timing.remainingSec);
+        : tk.timing.mode === 'processing'
+          ? 'Đang xử lý'
+          : tk.timing.mode === 'elapsed'
+            ? formatClock(tk.timing.elapsedSec)
+            : formatClock(tk.timing.remainingSec);
       const sub = tk.isClearing
         ? 'Hoàn tất'
-        : tk.timing.mode === 'elapsed'
-          ? 'Đã chờ'
-          : tk.timing.tier === 'burn'
-            ? 'Quá hạn'
-            : tk.timing.tier === 'warn'
-              ? 'Sắp hết'
-              : tk.timeRaw || 'Còn lại';
+        : tk.timing.mode === 'processing'
+          ? ''
+          : tk.timing.mode === 'elapsed'
+            ? 'Đã chờ'
+            : tk.timing.tier === 'burn'
+              ? 'Quá hạn'
+              : tk.timing.tier === 'warn'
+                ? 'Sắp hết'
+                : tk.timeRaw || 'Còn lại';
 
       return `
         <article class="wp-node" data-task-id="${esc(tk.id)}" title="${esc(`${tk.issue}\n${tk.group} · ${restMeta}${tk.timeRaw ? ` · SLA: ${tk.timeRaw}` : ''}`)}">
@@ -1582,7 +1666,7 @@ if (typeof document !== 'undefined') {
           </div>
           <div class="wp-node-right t-${tier}">
             <b data-task-clock="${esc(tk.id)}">${esc(clk)}</b>
-            <span data-task-sub="${esc(tk.id)}" title="${esc(sub)}">${esc(sub)}</span>
+            ${sub ? `<span data-task-sub="${esc(tk.id)}" title="${esc(sub)}">${esc(sub)}</span>` : ''}
           </div>
         </article>
       `;
@@ -1608,7 +1692,7 @@ if (typeof document !== 'undefined') {
           </div>
           <div class="wp-timeblock t-${heroTier}" data-hero-person="${esc(person.key)}">
             <b data-hero-clock="${esc(person.key)}">${esc(heroClock)}</b>
-            <span data-hero-label="${esc(person.key)}">${esc(heroLabel)}</span>
+            ${heroLabel ? `<span data-hero-label="${esc(person.key)}">${esc(heroLabel)}</span>` : ''}
           </div>
         </header>
         <div class="wp-timeline">${rowsHtml}</div>
@@ -2014,9 +2098,11 @@ if (typeof document !== 'undefined') {
         if (heroClockEl) {
           heroClockEl.textContent = topTask.isClearing
             ? 'Xong'
-            : topTask.timing.mode === 'elapsed'
-              ? formatClock(topTask.timing.elapsedSec)
-              : formatClock(topTask.timing.remainingSec);
+            : topTask.timing.mode === 'processing'
+              ? 'Đang xử lý'
+              : topTask.timing.mode === 'elapsed'
+                ? formatClock(topTask.timing.elapsedSec)
+                : formatClock(topTask.timing.remainingSec);
         }
       }
       for (const tk of person.tasks) {
@@ -2024,9 +2110,11 @@ if (typeof document !== 'undefined') {
         const escId = CSS.escape(tk.id);
         const clkEl = ui.stage.querySelector(`[data-task-clock="${escId}"]`);
         if (clkEl) {
-          clkEl.textContent = tk.timing.mode === 'elapsed'
-            ? formatClock(tk.timing.elapsedSec)
-            : formatClock(tk.timing.remainingSec);
+          clkEl.textContent = tk.timing.mode === 'processing'
+            ? 'Đang xử lý'
+            : tk.timing.mode === 'elapsed'
+              ? formatClock(tk.timing.elapsedSec)
+              : formatClock(tk.timing.remainingSec);
         }
         const gaugeEl = ui.stage.querySelector(`[data-task-gauge="${escId}"]`);
         if (gaugeEl && tk.timing.mode === 'countdown') {
