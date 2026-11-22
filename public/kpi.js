@@ -29,7 +29,7 @@ const ICON = {
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
 const STATUS_ICON = { D: 'check', L: 'clock', K: 'x', N: 'dot', S: 'calendar', U: 'alert' };
-const UNAPPROVED_LABEL = 'Chưa được BOD duyệt';
+const UNAPPROVED_LABEL = 'BOD chưa duyệt';
 const chip = (st) => `<span class="k-chip st-${st}">${icon(STATUS_ICON[st])}${st === 'U' ? UNAPPROVED_LABEL : STATUS_LABEL[st]}</span>`;
 const initials = (n) => {
   const w = String(n || '').trim().split(/\s+/).filter(Boolean);
@@ -691,7 +691,7 @@ function tableHtml(x, { tv = false } = {}) {
       const c = count(list);
       let label = '—';
       let cls = 'muted';
-      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · Chưa BOD duyệt`; cls = 'review'; }
+      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · ${UNAPPROVED_LABEL}`; cls = 'review'; }
       else if (c.total && d.date > today) { label = tv ? '' : `${c.total} KPI sắp tới`; }
       else if (c.total) {
         const done = doneOf(c);
