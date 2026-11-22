@@ -23,6 +23,7 @@ import { toDashboard } from './dashboard.js';
 import { stampTicks } from './ticks.js';
 import { applyPlan, parsePlan } from './plan.js';
 import { applyCloses, auditReport, closeKpi } from './close.js'; // KPI-CLOSE: chốt sổ lúc 05:00
+import { applyVisibility, loadVisibility } from './visibility.js'; // Quản trị › Quản lý hiển thị nhiệm vụ: admin bật / tắt hiện KPI theo nhóm
 
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 // WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
@@ -172,6 +173,8 @@ export function attachPeople(streams, teams = [], imports = []) {
         name: g.name,
         pic,
         members: persons.filter((p) => !pic || loose(p) !== loose(pic.name)),
+        // Trạng thái duyệt KPI của BOD theo nhóm (src/kpi/sheet.js); dữ liệu cũ chưa có -> theo ô E1 của cả dòng tiền.
+        approval: g.approval || { code: s.bodApproved === false ? 'N' : 'A', label: s.bodApproved === false ? 'Chưa trình BOD' : 'BOD đã duyệt', source: 'e1' },
         rows: g.rows,
       };
     });
@@ -207,7 +210,8 @@ export async function kpiData(env, now = Date.now()) {
   await applyCloses(env, closeId, streams); // KPI-CLOSE: gắn kết quả chốt sổ (cell.closed) cho trình duyệt
   try { warnings = JSON.parse(r?.warnings || '[]'); } catch { /* bỏ qua */ }
   const [teams, imports] = await Promise.all([listTeams(env).catch(() => []), listImports(env, { withTasks: false }).catch(() => [])]);
-  const out = attachPeople(streams, teams, imports);
+  // Lựa chọn Hiện / Ẩn của admin theo nhóm được ưu tiên hơn trạng thái duyệt đọc từ sheet (visibility.js).
+  const out = applyVisibility(attachPeople(streams, teams, imports), await loadVisibility(env, closeId).catch(() => new Map()));
   const days = new Map();
   for (const s of out) for (const d of s.days) days.set(d.date, d);
   return {

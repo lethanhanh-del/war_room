@@ -1,45 +1,46 @@
-/* Trang Dòng tiền (/) và KPI & kết quả (/kpi, thêm kpi.css).
-   Style chung War Room v5 "Night Ops": docs/STYLE_GUIDE.md, token gốc FE/src/styles/tokens.css.
+/* Token chung của các trang War Room: KPI & kết quả (/kpi, thêm kpi.css), Zero Waiting Point, Điểm nghẽn.
+   Từ 23/11/2026 theo trang "Điểm nghẽn" trong Figma "War Room CT Homes · Dashboard KPI & Kết quả" (file
+   dyhUgSz6v8CcPSlY45UVHI, node 36:1033, biến "KPI · Màu" chế độ Tối): nền navy, chữ Roboto, xanh dương làm màu nhấn.
    - Màu = trạng thái, nghĩa cố định: --success Đạt / hoàn thành · --danger Không đạt / quá hạn · --info đang làm ·
      --upcoming chưa đến hạn · --warning cảnh báo mức giữa (% đạt 70–99, thiếu PIC…) · --blocker vướng mắc / đang chờ.
-   - Lime (--accent) chỉ cho trạng thái giao diện: đang chọn, hôm nay, điều hướng. Không dùng cho dữ liệu tốt / xấu.
-   - Chữ Be Vietnam Pro, mọi con số JetBrains Mono (--mono). Viền 1px, phân lớp bằng nền, không đổ bóng.
+   - Xanh dương (--accent) cho trạng thái giao diện: đang chọn, hôm nay, điều hướng.
+   - Chữ Roboto (theo Figma "Điểm nghẽn"), con số Roboto chữ số đều (--mono, tabular-nums). Viền 1px, phân lớp bằng nền, không đổ bóng.
    - Trang này cuộn được nên giữ thang chữ px (Desk / TV) thay cho thang rem co giãn của màn hình tường. */
 
 :root {
-  /* Giao diện tối (mặc định): đúng token Night Ops */
-  --bg-canvas: #07090d;      /* --bg */
-  --bg-surface: #0e1218;     /* --panel */
-  --bg-subtle: #151a23;      /* --panel-2 */
-  --bg-hover: #1b222d;
-  --border: #1c232e;         /* --line */
-  --border-strong: #2a3442;  /* --line-strong */
-  --track: #2a3442;          /* nền thanh % */
-  --text: #f3f6fa;
-  --text-2: #b6c0ce;
-  --muted: #8994a6;
-  --dim: #6e7a8c;
-  --accent: #c8ff4d;         /* lime */
-  --on-accent: #0a0d12;
-  --success: #2ee6a6;        /* --done */
-  --danger: #ff4d6d;         /* --late */
-  --info: #3da9fc;           /* --in_progress */
-  --upcoming: #8a94a8;
-  --warning: #ffb020;        /* --warn */
-  --blocker: #ff8a3d;
-  --review: #b8a6ff;         /* chờ duyệt (chỉ có ở trang Dòng tiền) */
-  --neutral-bg: #1c232e;
+  /* Giao diện tối (mặc định): biến "KPI · Màu" (Tối) trên Figma */
+  --bg-canvas: #060b15;      /* --bg */
+  --bg-surface: #0d1626;     /* --panel */
+  --bg-subtle: #121d30;      /* --panel-2 */
+  --bg-hover: #1a2740;
+  --border: #1e2b42;         /* --line */
+  --border-strong: #2b3c58;  /* --line-strong */
+  --track: #33456a;          /* nền thanh % */
+  --text: #eef2f8;
+  --text-2: #b4c0d2;
+  --muted: #7e8aa0;
+  --dim: #6b7790;
+  --accent: #4cc3ff;         /* xanh dương (accent/default) */
+  --on-accent: #04121e;
+  --success: #3ddc97;        /* --done */
+  --danger: #ff6b5e;         /* --late */
+  --info: #4cc3ff;           /* --in_progress */
+  --upcoming: #9aa6ba;
+  --warning: #ffc24d;        /* --warn */
+  --blocker: #ff8a4c;
+  --review: #b69cff;         /* chờ duyệt (chỉ có ở trang Dòng tiền) */
+  --neutral-bg: #1a2740;
   --pct-ok: #86efac;         /* chữ % đạt: >= 100% */
   --pct-mid: #fde047;        /* 70–99% */
   --pct-bad: #fca5a5;        /* < 70% */
-  --glow: rgba(200, 255, 77, 0.05);
+  --glow: transparent;
   --scrim: rgba(3, 5, 8, 0.72);
   --shadow-drawer: none;
-  --focus: 0 0 0 2px rgba(200, 255, 77, 0.6);
-  --font: "Be Vietnam Pro", "Segoe UI", Roboto, system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --focus: 0 0 0 2px rgba(76, 195, 255, 0.6);
+  --font: "Roboto", "Segoe UI", Roboto, system-ui, sans-serif;
+  --mono: "Roboto", ui-monospace, Consolas, monospace;
   color-scheme: dark;
-  --fs-page: 22px; --lh-page: 28px;
+  --fs-page: 28px; --lh-page: 34px;
   --fs-panel: 15px; --lh-panel: 22px;
   --fs-body: 13px; --lh-body: 20px;
   --fs-small: 12px; --lh-small: 18px;
@@ -86,7 +87,7 @@
   --text-2: #3a4555;
   --muted: #5a6577;
   --dim: #7c8797;
-  --accent: #4d7c0f;         /* lime đậm */
+  --accent: #0b6fa8;         /* xanh dương đậm */
   --on-accent: #ffffff;
   --success: #047857;
   --danger: #be123c;
@@ -101,13 +102,13 @@
   --pct-bad: #be123c;
   --glow: transparent;
   --scrim: rgba(11, 16, 24, 0.45);
-  --focus: 0 0 0 2px rgba(77, 124, 15, 0.45);
+  --focus: 0 0 0 2px rgba(11, 111, 168, 0.45);
   color-scheme: light;
 }
 
 /* Màn hình TV: chữ lớn hơn (Type Scale › TV), luôn dùng nền tối */
 :root[data-tv] {
-  --fs-page: 28px; --lh-page: 34px;
+  --fs-page: 34px; --lh-page: 40px;
   --fs-panel: 19px; --lh-panel: 26px;
   --fs-body: 16px; --lh-body: 24px;
   --fs-small: 14px; --lh-small: 20px;
@@ -147,7 +148,7 @@ a { color: inherit; }
 .page { padding: var(--s24) var(--page-x) 88px; display: flex; flex-direction: column; gap: var(--s24); max-width: 1920px; margin: 0 auto; }
 
 .head { display: flex; align-items: center; justify-content: space-between; gap: var(--s24); flex-wrap: wrap; }
-.head h1 { margin: 0; font-size: var(--fs-page); line-height: var(--lh-page); font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.head h1 { margin: 0; font-size: var(--fs-page); line-height: var(--lh-page); font-weight: 700; letter-spacing: -0.5px; }
 .head .sub { margin: var(--s4) 0 0; color: var(--text-2); }
 .head-actions { display: flex; align-items: center; gap: var(--s8); flex-wrap: wrap; }
 

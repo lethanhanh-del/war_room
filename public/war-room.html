@@ -7,34 +7,34 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23c8ff4d'/%3E%3Ctext x='16' y='21' font-family='Segoe UI,Arial,sans-serif' font-size='12' font-weight='800' fill='%230a0d12' text-anchor='middle'%3EWR%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
   <style>
     /* War Room v5 "Night Ops" (docs/STYLE_GUIDE.md, FE/src/styles/tokens.css): cùng token với trang Dòng tiền / KPI.
        Lime (--accent) chỉ cho trạng thái giao diện (đang chọn, hôm nay, điều hướng); màu trạng thái có nghĩa cố định. */
     :root {
       color-scheme: dark;
-      --bg: #07090d;
-      --surface: #0e1218;
-      --surface-subtle: #151a23;
-      --surface-hover: #1b222d;
-      --border: #1c232e;
-      --border-strong: #2a3442;
-      --navy-950: #0a0d12;
-      --navy-800: #151a23;
-      --navy-700: #1b222d;
-      --navy-100: #1c232e;
-      --text-primary: #f3f6fa;
-      --text-secondary: #b6c0ce;
-      --text-muted: #8994a6;
-      --accent: #c8ff4d;
-      --on-accent: #0a0d12;
-      --success: #2ee6a6;
-      --warning: #ffb020;
-      --danger: #ff4d6d;
-      --info: #3da9fc;
-      --blocker: #ff8a3d;
-      --review: #b8a6ff;
-      --upcoming: #8a94a8;
+      --bg: #060b15;
+      --surface: #0d1626;
+      --surface-subtle: #121d30;
+      --surface-hover: #1a2740;
+      --border: #1e2b42;
+      --border-strong: #2b3c58;
+      --navy-950: #04121e;
+      --navy-800: #121d30;
+      --navy-700: #1a2740;
+      --navy-100: #1e2b42;
+      --text-primary: #eef2f8;
+      --text-secondary: #b4c0d2;
+      --text-muted: #7e8aa0;
+      --accent: #4cc3ff;
+      --on-accent: #04121e;
+      --success: #3ddc97;
+      --warning: #ffc24d;
+      --danger: #ff6b5e;
+      --info: #4cc3ff;
+      --blocker: #ff8a4c;
+      --review: #b69cff;
+      --upcoming: #9aa6ba;
       --success-bg: color-mix(in srgb, var(--success) 16%, transparent);
       --success-border: color-mix(in srgb, var(--success) 60%, transparent);
       --warning-bg: color-mix(in srgb, var(--warning) 16%, transparent);
@@ -43,13 +43,13 @@
       --danger-border: color-mix(in srgb, var(--danger) 60%, transparent);
       --info-bg: color-mix(in srgb, var(--info) 16%, transparent);
       --info-border: color-mix(in srgb, var(--info) 60%, transparent);
-      --font-sans: 'Be Vietnam Pro', 'Segoe UI', Roboto, system-ui, sans-serif;
-      --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+      --font-sans: 'Roboto', 'Segoe UI', Roboto, system-ui, sans-serif;
+      --font-mono: 'Roboto', ui-monospace, Consolas, monospace;
     }
 
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text-primary); background: var(--bg); }
-    body { background-image: radial-gradient(circle at 0% 0%, rgba(200, 255, 77, 0.05), transparent 40%); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
+    body { background-image: radial-gradient(circle at 0% 0%, rgba(76, 195, 255, 0.05), transparent 40%); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
     .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
     .hidden { display: none !important; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -167,7 +167,7 @@
     .sticky-first th:first-child { background: var(--surface-subtle); }
     .sticky-first tbody tr:hover td:first-child { background: var(--surface-hover); }
     tr.row-flash, tr.row-flash > td:first-child { animation: rowFlash 2.2s ease-out; }
-    @keyframes rowFlash { 0% { background: rgba(46, 230, 166, 0.22); } 100% { background: transparent; } }
+    @keyframes rowFlash { 0% { background: rgba(61, 220, 151, 0.22); } 100% { background: transparent; } }
 
     .shift-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
     @media (max-width: 960px) { .shift-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

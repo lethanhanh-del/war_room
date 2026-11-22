@@ -97,10 +97,35 @@ export function resultCode(value) {
 }
 
 const link = (s) => (/^https?:\/\/\S+$/i.test(s) ? s : '');
+/** Tiêu đề cột trạng thái duyệt: "Trạng thái duyệt", "Trạng thái duyệt BOD", "Tình trạng phê duyệt KPI", "Duyệt BOD". */
+const isApprovalKey = (k) => !!k && ((k.includes('trang thai') || k.includes('tinh trang')) && (k.includes('duyet') || k.includes('bod')) || k === 'duyet bod' || k === 'bod duyet');
+/** Tiêu đề cột ghi chú của BOD về duyệt: "Ghi chú duyệt", "Ghi chú BOD", "Ý kiến BOD". */
+const isApprovalNoteKey = (k) => !!k && (k.includes('ghi chu duyet') || k.includes('ghi chu bod') || k.includes('y kien bod') || k.includes('y kien duyet'));
+
+/** Mã trạng thái duyệt BOD của nhóm. */
+export const APPROVAL_LABEL = { A: 'BOD đã duyệt', R: 'Cần điều chỉnh, bổ sung và trình lại', N: 'Chưa trình BOD' };
+
+/**
+ * Ô trạng thái duyệt -> 'A' (BOD đã duyệt) | 'R' (cần điều chỉnh, bổ sung và trình lại) | 'N' (chưa trình BOD) | '' (trống).
+ * Nhận cách ghi quen tay: "Đã được BOD duyệt", "Đã được BOD tạm duyệt", "Đã duyệt", ô tick TRUE = đã duyệt;
+ * "Cần điều chỉnh…", "Bổ sung…", "Trình lại", "Không duyệt" = cần trình lại; "Chưa trình", "Chưa duyệt", FALSE = chưa trình.
+ */
+export function approvalCode(value) {
+  const k = normKey(value);
+  if (!k) return '';
+  if (/dieu chinh|bo sung|trinh lai|khong duyet|tu choi/.test(k)) return 'R';
+  if (/chua trinh|chua duyet|chua gui|^false$/.test(k)) return 'N';
+  if (/duyet|^true$|^ok$|^dat$/.test(k)) return 'A';
+  return 'N';
+}
+
+/** Tiêu đề cột giờ thực hiện của KPI: "Thời gian", "Thời gian thực hiện", "Giờ", "Thời hạn", "Khung giờ". */
+const isTimeKey = (k) => !!k && (k.startsWith('thoi gian') || k.startsWith('gio') || k.startsWith('thoi han') || k.startsWith('khung gio'));
 
 /**
  * Một tab dòng tiền -> { sheet, name, pic, days: [{date, label}], groups: [{ name, rows }], warnings } hoặc { error }.
- * row: { row, stt, person, note, folder, folderText, cells: { 'YYYY-MM-DD': { kpi, res } } } — chỉ có ngày có KPI / kết quả.
+ * row: { row, stt, person, note, folder, folderText, cells: { 'YYYY-MM-DD': { kpi, res, time? } } } — chỉ có ngày có KPI / kết quả.
+ * time = giờ thực hiện ghi trên sheet (vd "09:00-10:00"): hạn của KPI là giờ kết thúc (public/kpi-model.js › dueAtOf).
  */
 export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label = `Tab “${String(sheet.name).trim()}”` } = {}) {
   const rows = sheet.rows || [];
@@ -118,8 +143,14 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
         group,
         pic,
         assignee: keys.findIndex((k) => k && (k.startsWith('nguoi phu trach') || k.startsWith('nguoi thuc hien'))),
-        note: keys.findIndex((k) => k && (k.includes('ghi chu') || k.includes('vuong mac'))),
+        note: keys.findIndex((k) => k && (k.includes('ghi chu') || k.includes('vuong mac')) && !isApprovalNoteKey(k)),
         folder: keys.findIndex((k) => k && k.includes('thu muc')),
+        // Trạng thái duyệt KPI của BOD theo nhóm (dropdown 3 giá trị, ghi ở dòng đầu mỗi nhóm) + chỉ đạo / ghi chú của BOD.
+        approval: keys.findIndex((k) => isApprovalKey(k)),
+        directive: keys.findIndex((k) => k && k.startsWith('chi dao')),
+        approvalNote: keys.findIndex((k) => isApprovalNoteKey(k)),
+        // Cột "Thời gian thực hiện" chung cho cả dòng (vd 09:00-10:00), dùng khi ngày không có cột giờ riêng.
+        time: keys.findIndex((k) => isTimeKey(k)),
       };
       break;
     }
@@ -140,9 +171,18 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
   if (!days.length) return { error: `${label}: dòng tiêu đề chưa có cột ngày (vd 21/11).` };
 
   // Dòng ngay dưới tiêu đề: KPI | Kết quả của từng ngày (csvSheet bỏ dòng trống nên so số dòng thật).
+  // Mỗi ngày có thể thêm cột giờ: KPI | Thời gian | Kết quả (hoặc KPI | Kết quả | Thời gian), vd "09:00-10:00".
   const next = rows[h + 1];
   const sub = next && next.r === rows[h].r + 1 && days.some((d) => normKey(text(next, d.kpi)) === 'kpi') ? next : null;
   if (sub) {
+    days.forEach((d, di) => {
+      const end = di + 1 < days.length ? days[di + 1].kpi : d.kpi + 3;
+      for (let i = d.kpi + 1; i < end && i <= d.kpi + 2; i++) {
+        const k = normKey(text(sub, i));
+        if (k.startsWith('ket qua')) d.res = i;
+        else if (isTimeKey(k)) d.time = i;
+      }
+    });
     const odd = days.filter((d) => normKey(text(sub, d.kpi)) !== 'kpi' || !normKey(text(sub, d.res)).startsWith('ket qua'));
     if (odd.length) warnings.push(`${label}: ngày ${odd.map((d) => d.label).join(', ')} chưa đúng mẫu 2 cột KPI | Kết quả.`);
   }
@@ -155,6 +195,13 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
   const groups = new Map();
   const unknown = new Set();
   let current = '';
+  // Trạng thái duyệt / chỉ đạo ghi ở dòng mục La Mã (dòng chỉ có tên nhóm) được giữ lại cho nhóm đó.
+  const headerApproval = new Map();
+  const approvalOf = (row) => ({
+    raw: map.approval >= 0 ? text(row, map.approval).slice(0, 120) : '',
+    directive: map.directive >= 0 ? text(row, map.directive).slice(0, 300) : '',
+    note: map.approvalNote >= 0 ? text(row, map.approvalNote).slice(0, 300) : '',
+  });
   for (let i = sub ? h + 2 : h + 1; i < rows.length; i++) {
     const row = rows[i];
     const stt = text(row, map.stt);
@@ -166,17 +213,23 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
     const rowPic = assignee && taskPic && normKey(assignee) !== normKey(taskPic) ? taskPic : '';
     const cells = {};
     let hasKpi = false;
+    const rowTime = map.time >= 0 ? text(row, map.time).slice(0, 40) : '';
     for (const d of days) {
       const kpi = text(row, d.kpi);
       const value = text(row, d.res);
       const res = resultCode(value);
       if (!kpi && !res) continue; // ô trống, hoặc ô tick chưa tick mà ngày đó không có KPI
       if (res === '?') unknown.add(value);
-      cells[d.date] = { kpi, res };
+      const time = (d.time >= 0 ? text(row, d.time).slice(0, 40) : '') || rowTime;
+      cells[d.date] = { kpi, res, ...(time ? { time } : {}) };
       if (kpi) hasKpi = true;
     }
     if (ROMAN_RE.test(stt) && !person && !hasKpi) {
-      if (gname) current = gname;
+      if (gname) {
+        current = gname;
+        const a = approvalOf(row);
+        if (a.raw || a.directive || a.note) headerApproval.set(normKey(gname), a);
+      }
       continue;
     }
     // Dòng mẫu (chỉ có Stt và ô tick, có khi bị tick nhầm) không có Nhóm, PIC, KPI: bỏ qua.
@@ -190,9 +243,16 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
     const key = normKey(name) || `dong ${row.r}`;
     let g = groups.get(key);
     if (!g) {
-      g = { name: name || 'Chưa ghi nhóm', rows: [] };
+      g = { name: name || 'Chưa ghi nhóm', rows: [], approvalRaw: '', directive: '', approvalNote: '' };
+      const ha = headerApproval.get(key);
+      if (ha) { g.approvalRaw = ha.raw; g.directive = ha.directive; g.approvalNote = ha.note; }
       groups.set(key, g);
     }
+    // Lấy giá trị đầu tiên có ghi trong nhóm (mẫu: ghi ở dòng đầu của nhóm).
+    const a = approvalOf(row);
+    if (!g.approvalRaw && a.raw) g.approvalRaw = a.raw;
+    if (!g.directive && a.directive) g.directive = a.directive;
+    if (!g.approvalNote && a.note) g.approvalNote = a.note;
     const folderText = text(row, map.folder);
     g.rows.push({
       row: row.r,
@@ -208,13 +268,29 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
   if (unknown.size) {
     warnings.push(`${label}: kết quả chưa hiểu (chỉ ghi Đạt hoặc Không đạt): ${[...unknown].slice(0, 5).map((s) => `“${s}”`).join(', ')}.`);
   }
+  // Trạng thái duyệt từng nhóm: có cột "Trạng thái duyệt" thì theo cột (trống = Chưa trình BOD);
+  // sheet chưa có cột thì cả dòng tiền theo ô tick E1 (đã tick = BOD đã duyệt, chưa tick = Chưa trình BOD).
+  const hasCol = map.approval >= 0;
+  const outGroups = [...groups.values()].map(({ approvalRaw, directive, approvalNote, ...g }) => {
+    const code = hasCol ? approvalCode(approvalRaw) || 'N' : bodApproved ? 'A' : 'N';
+    return {
+      ...g,
+      approval: {
+        code,
+        label: approvalRaw || APPROVAL_LABEL[code],
+        source: hasCol ? 'column' : 'e1',
+        ...(directive ? { directive } : {}),
+        ...(approvalNote ? { note: approvalNote } : {}),
+      },
+    };
+  });
   return {
     sheet: String(sheet.name).trim(),
     name: streamNameOf(sheet.name),
     pic,
-    bodApproved,
+    bodApproved: hasCol ? outGroups.length > 0 && outGroups.every((g) => g.approval.code === 'A') : bodApproved,
     days: days.map(({ date, label: l }) => ({ date, label: l })),
-    groups: [...groups.values()],
+    groups: outGroups,
     warnings,
   };
 }

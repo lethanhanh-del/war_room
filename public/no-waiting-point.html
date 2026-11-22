@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark light" />
+  <title>Zero Waiting Point · War Room</title>
+  <meta name="description" content="KPI đã được BOD duyệt nhưng quá hạn (05:00 sáng hôm sau) mà chưa hoàn thành, theo từng người, kèm hạn chót." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="/dong-tien.css" />
+  <link rel="stylesheet" href="/kpi.css" />
+  <link rel="stylesheet" href="/no-waiting-point.css" />
+  <script type="module" src="/no-waiting-point.js"></script>
+</head>
+<body>
+  <div class="page k-page nw-page">
+    <header class="head">
+      <div>
+        <h1 id="pageTitle">Zero Waiting Point</h1>
+        <p class="sub" id="pageSub">KPI đã được BOD duyệt nhưng đã quá hạn mà chưa hoàn thành, theo từng người</p>
+      </div>
+      <div class="head-actions">
+        <span class="sync" id="sync" data-state="loading" role="status"><span class="dot"></span><span id="syncText">Đang tải dữ liệu…</span></span>
+        <button class="btn" id="refreshBtn" type="button" title="Đọc ngay dữ liệu mới nhất">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+          <span id="refreshLabel">Cập nhật ngay</span>
+        </button>
+        <a class="btn" id="openKpi" href="/kpi">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+          Xem KPI & kết quả
+        </a>
+        <button class="btn" id="themeBtn" type="button" aria-label="Đổi giao diện sáng / tối">
+          <svg class="ic" id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg>
+          <span id="themeLabel">Giao diện sáng</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="filters" class="k-filters"></div>
+    <div id="notices" class="k-notices"></div>
+    <main id="main" class="k-main">
+      <section class="k-panel k-empty"><p class="hint">Đang tải KPI…</p></section>
+    </main>
+  </div>
+</body>
+</html>

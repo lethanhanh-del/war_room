@@ -3,30 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Quản trị – Tài khoản &amp; Nhật ký | WAR ROOM</title>
+  <title>Quản trị | WAR ROOM</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
   <style>
     /* War Room v5 "Night Ops" (docs/STYLE_GUIDE.md): cùng token với trang Dòng tiền / KPI / War Room.
        Lime (--accent) chỉ cho trạng thái giao diện (đang chọn, bây giờ, điều hướng); màu trạng thái có nghĩa cố định. */
     :root {
       color-scheme: dark;
-      --bg: #07090d; --surface: #0e1218; --surface-subtle: #151a23; --surface-hover: #1b222d;
-      --border: #1c232e; --border-strong: #2a3442;
-      --navy-950: #0a0d12; --navy-800: #151a23; --navy-700: #1b222d; --navy-100: color-mix(in srgb, #3da9fc 14%, #0e1218);
-      --text-primary: #f3f6fa; --text-secondary: #b6c0ce; --text-muted: #8994a6;
-      --accent: #c8ff4d; --on-accent: #0a0d12; --info: #3da9fc;
-      --success: #2ee6a6; --success-bg: color-mix(in srgb, #2ee6a6 16%, transparent); --success-border: color-mix(in srgb, #2ee6a6 60%, transparent);
-      --warning: #ffb020; --warning-bg: color-mix(in srgb, #ffb020 16%, transparent); --warning-border: color-mix(in srgb, #ffb020 60%, transparent);
-      --danger: #ff4d6d; --danger-bg: color-mix(in srgb, #ff4d6d 16%, transparent); --danger-border: color-mix(in srgb, #ff4d6d 60%, transparent);
-      --font-sans: 'Be Vietnam Pro', 'Segoe UI', Roboto, system-ui, sans-serif;
-      --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+      --bg: #060b15; --surface: #0d1626; --surface-subtle: #121d30; --surface-hover: #1a2740;
+      --border: #1e2b42; --border-strong: #2b3c58;
+      --navy-950: #04121e; --navy-800: #121d30; --navy-700: #1a2740; --navy-100: color-mix(in srgb, #4cc3ff 14%, #0d1626);
+      --text-primary: #eef2f8; --text-secondary: #b4c0d2; --text-muted: #7e8aa0;
+      --accent: #4cc3ff; --on-accent: #04121e; --info: #4cc3ff;
+      --success: #3ddc97; --success-bg: color-mix(in srgb, #3ddc97 16%, transparent); --success-border: color-mix(in srgb, #3ddc97 60%, transparent);
+      --warning: #ffc24d; --warning-bg: color-mix(in srgb, #ffc24d 16%, transparent); --warning-border: color-mix(in srgb, #ffc24d 60%, transparent);
+      --danger: #ff6b5e; --danger-bg: color-mix(in srgb, #ff6b5e 16%, transparent); --danger-border: color-mix(in srgb, #ff6b5e 60%, transparent);
+      --font-sans: 'Roboto', 'Segoe UI', Roboto, system-ui, sans-serif;
+      --font-mono: 'Roboto', ui-monospace, Consolas, monospace;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--text-primary); background: var(--bg); }
-    body { background-image: radial-gradient(circle at 0% 0%, rgba(200, 255, 77, 0.05), transparent 40%); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
+    body { background-image: radial-gradient(circle at 0% 0%, rgba(76, 195, 255, 0.05), transparent 40%); background-attachment: fixed; -webkit-font-smoothing: antialiased; }
     .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
     .topbar { background: var(--surface); border-bottom: 1px solid var(--border); color: var(--text-primary); }
     .topbar-inner, main { max-width: 1240px; margin: 0 auto; padding: 12px 20px; }
@@ -68,6 +68,53 @@
     .logs-wrap { max-height: 560px; overflow: auto; }
     .muted { color: var(--text-muted); }
     .toast { border: 1px solid var(--border-strong); position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--surface-subtle); color: var(--text-primary); padding: 10px 16px; border-radius: 8px; font-weight: 600; z-index: 100; display: none; }
+    /* Tab của trang Quản trị + tab "Quản lý hiển thị nhiệm vụ" (Hiện / Ẩn KPI theo nhóm, /api/admin/kpi-visibility) */
+    .tabs { max-width: 1240px; margin: 0 auto; padding: 0 20px; display: flex; gap: 24px; border-bottom: 1px solid var(--border); }
+    .tab { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 10px 4px 12px; font: 500 13.5px var(--font-sans); color: var(--text-secondary); cursor: pointer; }
+    .tab:hover { color: var(--text-primary); }
+    .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
+    .tab:focus-visible, .sw:focus-visible, .vis-reason input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .tabpane { display: flex; flex-direction: column; gap: 16px; }
+    .tabpane[hidden] { display: none; }
+    .vis-hint { margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .vis-sum { display: flex; gap: 14px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .vis-sum .on { color: var(--success); } .vis-sum .off { color: var(--text-secondary); }
+    .vis-stream { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface-subtle); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .vis-no { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 7px; background: var(--navy-100); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); font-weight: 700; font-size: 12.5px; }
+    .vis-stream b { font-size: 15px; }
+    .vis-table th { position: static; background: none; }
+    .vis-table td { vertical-align: middle; }
+    .vis-table tr.is-off .vis-name b, .vis-table tr.is-off .vis-kpis { color: var(--text-secondary); }
+    .vis-table tr.is-edit, .vis-table tr.vis-editor, .vis-table tr.vis-editor:hover { background: var(--surface-subtle); }
+    .vis-table tr.is-edit td { border-bottom: 0; }
+    .vis-name b { display: block; font-size: 14px; } .vis-name small { color: var(--text-muted); font-size: 12px; }
+    .vis-sw { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+    .vis-sw .lbl-on { color: var(--success); } .vis-sw .lbl-off { color: var(--text-muted); }
+    .sw { position: relative; width: 36px; height: 20px; border-radius: 10px; border: 0; padding: 0; background: #33456a; cursor: pointer; flex: none; transition: background .15s; }
+    .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-primary); transition: transform .15s; }
+    .sw[aria-checked="true"] { background: var(--success); }
+    .sw[aria-checked="true"]::after { transform: translateX(16px); background: var(--on-accent); }
+    .sw:disabled { opacity: .6; cursor: wait; }
+    .vis-note { color: var(--text-secondary); font-size: 12.5px; max-width: 300px; }
+    .vis-upd { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .linkbtn { background: none; border: 0; padding: 0; color: var(--accent); font: 600 12px var(--font-sans); cursor: pointer; }
+    .linkbtn:hover { text-decoration: underline; }
+    .vis-box { margin: 0 4px 8px; padding: 18px; border-radius: 12px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); display: flex; flex-direction: column; gap: 14px; }
+    .vis-box h3 { margin: 0; font-size: 15px; font-weight: 600; }
+    .vis-reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .vis-reason { position: relative; display: block; cursor: pointer; }
+    .vis-reason input { position: absolute; opacity: 0; }
+    .vis-reason span { display: block; padding: 12px 14px 12px 40px; border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface); }
+    .vis-reason span::before { content: ""; position: absolute; left: 12px; top: 13px; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--border-strong); box-sizing: border-box; }
+    .vis-reason input:checked + span { border-color: var(--accent); background: var(--navy-100); }
+    .vis-reason input:checked + span::before { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px); }
+    .vis-reason b { display: block; font-size: 13.5px; } .vis-reason small { color: var(--text-muted); font-size: 12px; }
+    .vis-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+    .vis-field textarea { font: 13.5px/1.5 var(--font-sans); min-height: 64px; resize: vertical; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg); color: var(--text-primary); }
+    .vis-field textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .vis-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .vis-foot small { color: var(--text-muted); font-size: 12px; }
+    @media (max-width: 760px) { .tabs { padding: 0 16px; overflow-x: auto; } .tab { white-space: nowrap; } .vis-reasons { grid-template-columns: 1fr; } }
     @media (max-width: 760px) {
       .topbar-inner, main { padding-left: 16px; padding-right: 16px; }
       .input { min-width: 0; flex: 1; }
@@ -78,9 +125,13 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div>
-        <div class="brand-title">🛡️ QUẢN TRỊ — TÀI KHOẢN &amp; NHẬT KÝ</div>
-        <div class="brand-sub">Tài khoản mới / vừa reset dùng mật khẩu mặc định CTG@2026 và bắt buộc đổi ở lần đăng nhập đầu</div>
+        <div class="brand-title">🛡️ QUẢN TRỊ</div>
+        <div class="brand-sub" id="brandSub">Tài khoản mới / vừa reset dùng mật khẩu mặc định CTG@2026 và bắt buộc đổi ở lần đăng nhập đầu</div>
       </div>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Mục quản trị">
+      <button class="tab" type="button" role="tab" id="tabBtnAccounts" aria-controls="tabAccounts" aria-selected="true" data-tab="accounts">Tài khoản &amp; nhật ký</button>
+      <button class="tab" type="button" role="tab" id="tabBtnVisibility" aria-controls="tabVisibility" aria-selected="false" data-tab="visibility">Quản lý hiển thị nhiệm vụ</button>
     </div>
   </header>
 
@@ -88,6 +139,7 @@
     <div id="errBanner" class="err-banner" hidden></div>
     <div id="onlineBox" class="online" hidden></div>
 
+    <div class="tabpane" id="tabAccounts" role="tabpanel" aria-labelledby="tabBtnAccounts">
     <section class="panel">
       <div class="panel-head">
         <h2 class="panel-title">Tài khoản <span id="userCount" class="panel-sub"></span></h2>
@@ -150,6 +202,21 @@
         </table>
       </div>
     </section>
+    </div>
+
+    <!-- Quản lý hiển thị nhiệm vụ: admin bật / tắt hiện KPI của từng nhóm (GET / POST / DELETE /api/admin/kpi-visibility). src/kpi/visibility.js -->
+    <div class="tabpane" id="tabVisibility" role="tabpanel" aria-labelledby="tabBtnVisibility" hidden>
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">Hiện / Ẩn KPI theo nhóm <span class="pill info">Chỉ admin</span></h2>
+            <p class="vis-hint">Bật <b>Hiện</b> khi BOD đã duyệt KPI của nhóm: KPI được hiện và tính trên dashboard. <b>Ẩn</b>: KPI không hiện, không tính, và phải chọn lý do. Lựa chọn ở đây được ưu tiên hơn trạng thái duyệt trên sheet.</p>
+          </div>
+          <div class="row"><span class="vis-sum" id="visSum"></span><button id="visReload" class="btn" type="button">Tải lại</button></div>
+        </div>
+        <div id="visBody"><p class="muted" style="padding:14px 16px;margin:0">Đang tải…</p></div>
+      </section>
+    </div>
   </main>
   <div id="toast" class="toast"></div>
 
@@ -170,6 +237,7 @@
       password_changed: ["Đổi mật khẩu", "ok"], password_change_failed: ["Đổi mật khẩu lỗi", "warn"], password_reset: ["Reset mật khẩu", "warn"],
       users_synced: ["Đồng bộ user", "info"], booking_created: ["Hẹn lịch BOD", "ok"], booking_blocked: ["Chặn lịch (BOD bận)", "warn"],
       booking_cancelled: ["Hủy lịch", "warn"], view: ["Xem trang", "info"],
+      kpi_visibility_show: ["Hiện KPI nhóm", "ok"], kpi_visibility_hide: ["Ẩn KPI nhóm", "warn"], kpi_visibility_reset: ["KPI nhóm theo sheet", "info"],
     };
     let users = [];
 
@@ -346,6 +414,143 @@
     }
     $("kpiCloseReload").addEventListener("click", load);
     load();
+  })();
+  </script>
+  <!-- Tab của trang Quản trị + tab "Quản lý hiển thị nhiệm vụ" (GET / POST / DELETE /api/admin/kpi-visibility) -->
+  <script>
+  (() => {
+    "use strict";
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const hm = (iso) => { const s = new Date(Date.parse(iso) + 7 * 3600e3).toISOString(); return `${s.slice(8, 10)}/${s.slice(5, 7)} ${s.slice(11, 16)}`; };
+    const LABEL = { A: "BOD đã duyệt", N: "Chưa trình BOD", R: "Cần điều chỉnh, bổ sung và trình lại" };
+    const TONE = { A: "ok", N: "bad", R: "warn" };
+    const SUB = {
+      accounts: "Tài khoản mới / vừa reset dùng mật khẩu mặc định CTG@2026 và bắt buộc đổi ở lần đăng nhập đầu",
+      visibility: "Bật / tắt hiện KPI của từng nhóm trong dòng tiền theo kết quả duyệt của BOD",
+    };
+    let streams = null;
+    let editing = null; // { stream, group, reason, note } của nhóm đang chọn lý do ẩn
+    let busy = false;
+
+    // ----- tab -----
+    function showTab(name) {
+      const vis = name === "visibility";
+      $("tabAccounts").hidden = vis;
+      $("tabVisibility").hidden = !vis;
+      $("tabBtnAccounts").setAttribute("aria-selected", String(!vis));
+      $("tabBtnVisibility").setAttribute("aria-selected", String(vis));
+      $("brandSub").textContent = SUB[vis ? "visibility" : "accounts"];
+      document.title = `Quản trị – ${vis ? "Quản lý hiển thị nhiệm vụ" : "Tài khoản & Nhật ký"} | WAR ROOM`;
+      if (vis && !streams) load();
+    }
+    document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
+      history.replaceState(null, "", b.dataset.tab === "visibility" ? "#hien-thi" : location.pathname);
+      showTab(b.dataset.tab);
+    }));
+
+    // ----- dữ liệu -----
+    async function call(method, body) {
+      const res = await fetch("/api/admin/kpi-visibility", { method, headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+      if (res.status === 401) { location.reload(); throw new Error("Phiên đăng nhập đã hết hạn."); }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Lỗi ${res.status}`);
+      return data;
+    }
+    async function load() {
+      try { streams = (await call("GET")).streams; render(); }
+      catch (e) { $("visBody").innerHTML = `<p class="muted" style="padding:14px 16px;margin:0">${esc(e.message)}</p>`; }
+    }
+    async function save(method, body, done) {
+      if (busy) return;
+      busy = true; render();
+      try { streams = (await call(method, body)).streams; editing = null; toast(done); }
+      catch (e) { toast(e.message); }
+      busy = false; render();
+    }
+    function toast(msg) {
+      const t = $("toast"); t.textContent = msg; t.style.display = "block";
+      clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.style.display = "none"), 2800);
+    }
+
+    // ----- hiển thị -----
+    function editorHtml(s, g) {
+      const r = (code, title, desc) => `<label class="vis-reason"><input type="radio" name="visReason" value="${code}"${editing.reason === code ? " checked" : ""} /><span><b>${title}</b><small>${desc}</small></span></label>`;
+      return `<tr class="vis-editor"><td colspan="6"><div class="vis-box">
+        <h3>Ẩn KPI của nhóm “${esc(g.name)}” vì sao?</h3>
+        <div class="vis-reasons" role="radiogroup" aria-label="Lý do ẩn">
+          ${r("N", LABEL.N, "Nhóm chưa gửi KPI cho BOD duyệt.")}
+          ${r("R", LABEL.R, "BOD đã xem nhưng chưa duyệt, nhóm phải sửa rồi trình lại.")}
+        </div>
+        <label class="vis-field">Ghi chú cho nhóm (không bắt buộc)<textarea id="visNote" maxlength="300" placeholder="Ví dụ: BOD yêu cầu bổ sung chỉ tiêu theo ngày, trình lại trước 24/11.">${esc(editing.note)}</textarea></label>
+        <div class="vis-foot"><small>Sau khi lưu: ${g.kpis} KPI của nhóm không hiện và không tính vào % của dòng tiền.</small>
+          <span class="row"><button class="btn" type="button" data-vis-cancel>Hủy</button><button class="btn btn-primary" type="button" data-vis-save${editing.reason ? "" : " disabled"}>Lưu và ẩn KPI</button></span></div>
+      </div></td></tr>`;
+    }
+    function render() {
+      if (!streams) return;
+      const all = streams.flatMap((s) => s.groups);
+      const on = all.filter((g) => g.show).length;
+      $("visSum").innerHTML = all.length ? `<span class="on">${on} nhóm đang hiện</span><span class="off">${all.length - on} nhóm đang ẩn</span>` : "";
+      if (!all.length) { $("visBody").innerHTML = '<p class="muted" style="padding:14px 16px;margin:0">Chưa có nhóm nào trong dữ liệu KPI.</p>'; return; }
+      $("visBody").innerHTML = streams.filter((s) => s.groups.length).map((s) => {
+        const rows = s.groups.map((g) => {
+          const ed = editing && editing.stream === s.key && editing.group === g.key;
+          const id = `data-s="${esc(s.key)}" data-g="${esc(g.key)}"`;
+          const status = ed ? '<span class="linkbtn" style="cursor:default">Chọn lý do bên dưới</span>' : `<span class="pill ${TONE[g.code] || "bad"}">${esc(LABEL[g.code] || g.label)}</span>`;
+          const note = ed ? "" : `${esc(g.note) || '<span class="muted">—</span>'}${!g.show ? ` <button class="linkbtn" type="button" data-vis-edit ${id}>Sửa lý do</button>` : ""}`;
+          const upd = ed ? "Đang sửa…" : g.source === "admin"
+            ? `${esc(g.by)} · ${g.at ? hm(g.at) : ""}<br><button class="linkbtn" type="button" data-vis-reset ${id} title="Bỏ lựa chọn của admin, quay về trạng thái trên sheet (${esc(LABEL[g.sheetCode] || "")})">Theo sheet</button>`
+            : "Theo sheet";
+          return `<tr class="${g.show ? "" : "is-off"}${ed ? " is-edit" : ""}">
+            <td class="vis-name"><b>${esc(g.name)}</b>${g.pic ? `<small>PIC ${esc(g.pic)}</small>` : ""}</td>
+            <td class="vis-kpis nowrap">${g.kpis} KPI</td>
+            <td><span class="vis-sw"><button class="sw" type="button" role="switch" aria-checked="${g.show && !ed}" aria-label="Hiện KPI của nhóm ${esc(g.name)}" data-vis-toggle ${id}${busy ? " disabled" : ""}></button><span class="${g.show && !ed ? "lbl-on" : "lbl-off"}">${g.show && !ed ? "Đang hiện" : "Đang ẩn"}</span></span></td>
+            <td>${status}</td><td class="vis-note">${note}</td><td class="vis-upd">${upd}</td></tr>${ed ? editorHtml(s, g) : ""}`;
+        }).join("");
+        return `<div class="vis-stream">${s.no ? `<span class="vis-no">${s.no}</span>` : s.code ? `<span class="vis-no">${esc(s.code)}</span>` : ""}<b>${esc(s.name)}</b><span class="muted">${s.pic ? `PIC ${esc(s.pic)} · ` : ""}${s.groups.length} nhóm</span></div>
+          <div class="table-wrap"><table class="vis-table"><thead><tr><th>Nhóm</th><th>Số KPI</th><th>Hiển thị KPI</th><th>Trạng thái duyệt</th><th>Ghi chú của admin</th><th>Cập nhật</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      }).join("");
+    }
+    const find = (el) => {
+      const s = streams.find((x) => x.key === el.dataset.s);
+      return { s, g: s && s.groups.find((x) => x.key === el.dataset.g) };
+    };
+    const openEditor = (s, g) => { editing = { stream: s.key, group: g.key, reason: g.show ? "" : g.code, note: g.source === "admin" && !g.show ? g.note : "" }; render(); const n = $("visNote"); if (n) n.closest(".vis-box").scrollIntoView({ block: "nearest", behavior: "smooth" }); };
+
+    $("visBody").addEventListener("click", (e) => {
+      const t = e.target.closest("[data-vis-toggle]");
+      if (t) {
+        const { s, g } = find(t);
+        if (!g) return;
+        if (g.show) openEditor(s, g); // Hiện -> Ẩn: phải chọn lý do
+        else save("POST", { stream: s.key, group: g.key, show: true }, `Đã hiện KPI của nhóm ${g.name}`);
+        return;
+      }
+      const ed = e.target.closest("[data-vis-edit]");
+      if (ed) { const { s, g } = find(ed); if (g) openEditor(s, g); return; }
+      const rs = e.target.closest("[data-vis-reset]");
+      if (rs) {
+        const { s, g } = find(rs);
+        if (g && confirm(`Bỏ lựa chọn của admin cho nhóm “${g.name}” và quay về trạng thái trên sheet (${LABEL[g.sheetCode] || "chưa rõ"})?`)) save("DELETE", { stream: s.key, group: g.key }, `Nhóm ${g.name} quay về trạng thái trên sheet`);
+        return;
+      }
+      if (e.target.closest("[data-vis-cancel]")) { editing = null; render(); return; }
+      if (e.target.closest("[data-vis-save]") && editing?.reason) {
+        const s = streams.find((x) => x.key === editing.stream);
+        const g = s.groups.find((x) => x.key === editing.group);
+        save("POST", { stream: editing.stream, group: editing.group, show: false, reason: editing.reason, note: $("visNote").value }, `Đã ẩn KPI của nhóm ${g.name}`);
+      }
+    });
+    $("visBody").addEventListener("change", (e) => {
+      if (e.target.name !== "visReason" || !editing) return;
+      editing.reason = e.target.value;
+      document.querySelector("[data-vis-save]").disabled = false;
+    });
+    $("visBody").addEventListener("input", (e) => { if (e.target.id === "visNote" && editing) editing.note = e.target.value; });
+    $("visReload").addEventListener("click", () => { editing = null; load(); });
+
+    showTab(location.hash === "#hien-thi" ? "visibility" : "accounts");
   })();
   </script>
 </body>
