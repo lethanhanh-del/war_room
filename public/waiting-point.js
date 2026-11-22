@@ -248,7 +248,7 @@ export function resolveDeadlineFromSpec(spec, startedAt) {
 
 export function computeTiming(item, nowMs) {
   const isProcessing = item.timeSpec?.kind === 'processing' || (!item.timeSpec && parseTimeSpec(item.timeRaw).kind === 'processing');
-  if (isProcessing) {
+  if (isProcessing || !item.endAt) {
     return {
       mode: 'processing',
       remainingSec: Number.POSITIVE_INFINITY,
@@ -295,13 +295,12 @@ export function formatClock(sec) {
 export function isCompleteWaitingRow(row) {
   if (!row) return false;
   const stream = String(row.stream || '').trim();
-  const group = String(row.group || '').trim();
   const issue = String(row.issue || '').trim();
-  const timeRaw = String(row.timeRaw || '').trim();
   const owner = String(row.owner || '').trim();
   const supporter = String(row.supporter || '').trim();
-  if (!stream || !group || !issue || !timeRaw || !owner || !supporter) return false;
-  return parseTimeSpec(timeRaw).kind !== 'none';
+  // Hiển thị Điểm nghẽn ngay khi có Dòng tiền + Vấn đề gặp phải + (Người phụ trách hoặc Người hỗ trợ).
+  // Thời gian xử lý & Người hỗ trợ có thể để trống (tự hiển thị "Đang xử lý" / "Chưa có người hỗ trợ").
+  return Boolean(stream && issue && (owner || supporter));
 }
 
 function buildItemsFromRows(rawRows, picName) {
@@ -339,7 +338,7 @@ function buildItemsFromRows(rawRows, picName) {
     }
 
     const stream = r.stream;
-    const group = r.group;
+    const group = r.group || 'Chung';
 
     const baseKey = `${normalizeText(stream)}|${normalizeText(group)}|${normalizeText(r.issue)}`;
     const occ = (dupCount.get(baseKey) || 0) + 1;
@@ -1371,7 +1370,7 @@ if (typeof document !== 'undefined') {
         let updatedAt = fromServer?.updatedAt || stored?.updatedAt || now;
 
         const prevRawTime = fromServer?.rawTime ?? existing?.timeRaw ?? stored?.rawTime;
-        if (rawItem.timeSpec.kind === 'processing') {
+        if (rawItem.timeSpec.kind === 'processing' || rawItem.timeSpec.kind === 'none') {
           if (totalSec !== null || endAt !== null || !stored) {
             totalSec = null;
             endAt = null;

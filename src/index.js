@@ -306,13 +306,17 @@ async function handleWaitingPoint(request, env, ctx) {
   }
   if (request.method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const next = mergeWaitingPointState(await readCurrent(), body && typeof body === "object" ? body : {});
-    await env.DB.prepare(
-      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    )
-      .bind(KEY, JSON.stringify(next))
-      .run();
-    if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+    const current = await readCurrent();
+    const next = mergeWaitingPointState(current, body && typeof body === "object" ? body : {});
+    const stripTs = (s) => JSON.stringify({ ...s, updatedAt: 0 });
+    if (stripTs(current) !== stripTs(next)) {
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      )
+        .bind(KEY, JSON.stringify(next))
+        .run();
+      if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+    }
     return json(next);
   }
   return json({ error: "Chỉ hỗ trợ GET và POST." }, 405);

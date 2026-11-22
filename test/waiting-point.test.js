@@ -133,7 +133,7 @@ test('Ô Thời gian xử lý nhập ngày / mốc ngày thì chuyển sang tr�
   assert.equal(grouped[1].topTier, 'processing');
 });
 
-test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột thông tin, bỏ dòng thiếu bất kỳ trường nào', () => {
+test('parseGvizPayload & parseCsvText nhận Điểm nghẽn có Dòng tiền + Vấn đề + (Người phụ trách hoặc Người hỗ trợ), kể cả trống Thời gian / Người hỗ trợ', () => {
   const full = {
     stt: '',
     stream: 'Dòng tiền 1: Bán 4 dự án',
@@ -145,12 +145,13 @@ test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột th
   };
   assert.equal(isCompleteWaitingRow(full), true);
   assert.equal(isCompleteWaitingRow({ ...full, stream: '' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, group: '' }), false);
   assert.equal(isCompleteWaitingRow({ ...full, issue: '' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: '' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: 'chưa rõ' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, owner: '' }), false);
-  assert.equal(isCompleteWaitingRow({ ...full, supporter: '' }), false);
+  assert.equal(isCompleteWaitingRow({ ...full, owner: '', supporter: '' }), false);
+  // Trống Thời gian xử lý / Người hỗ trợ / Nhóm vẫn hiển thị Điểm nghẽn ("Đang xử lý" / "Chưa có người hỗ trợ")
+  assert.equal(isCompleteWaitingRow({ ...full, timeRaw: '' }), true);
+  assert.equal(isCompleteWaitingRow({ ...full, supporter: '' }), true);
+  assert.equal(isCompleteWaitingRow({ ...full, group: '' }), true);
+  assert.equal(isCompleteWaitingRow({ ...full, owner: '' }), true);
 
   const gviz = `google.visualization.Query.setResponse(${JSON.stringify({
     status: 'ok',
@@ -170,38 +171,60 @@ test('parseGvizPayload & parseCsvText chỉ nhận dòng nhập đủ 6 cột th
         { c: [{ v: 1 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Hư wifi' }, { v: '15 phút' }, { v: 'Thành anh' }, { v: 'Chiến' }] },
         // Đủ 6 cột thông tin (trống STT) -> vẫn nhận
         { c: [null, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Data' }, { v: 'Thiếu file' }, { v: '10 phút' }, { v: 'Mai' }, { v: 'Tuấn' }] },
-        // Thiếu Dòng tiền (không carry-forward) -> loại
+        // Thiếu Dòng tiền -> loại
         { c: [null, null, { v: 'Networking' }, { v: 'Hư máy lạnh' }, { v: '5 phút' }, { v: 'Phong' }, { v: 'Tuấn' }] },
-        // Thiếu Người hỗ trợ -> loại
+        // Thiếu Người hỗ trợ (vẫn có Người phụ trách) -> vẫn nhận vào "Chưa có người hỗ trợ"
         { c: [{ v: 3 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Đang nhập dở' }, { v: '15 phút' }, { v: 'Phong' }, null] },
-        // Thiếu Thời gian xử lý -> loại
+        // Thiếu Thời gian xử lý -> vẫn nhận ở chế độ "Đang xử lý"
         { c: [{ v: 4 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Chưa chọn giờ' }, null, { v: 'Phong' }, { v: 'Chiến' }] },
-        // Thiếu Người phụ trách -> loại
-        { c: [{ v: 5 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Chưa điền PIC' }, { v: '20 phút' }, null, { v: 'Chiến' }] },
-        // Thiếu Nhóm công việc -> loại
-        { c: [{ v: 6 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, null, { v: 'Chưa chọn nhóm' }, { v: '20 phút' }, { v: 'Phong' }, { v: 'Chiến' }] },
+        // Thiếu cả Người phụ trách lẫn Người hỗ trợ -> loại
+        { c: [{ v: 5 }, { v: 'Dòng tiền 1: Bán 4 dự án' }, { v: 'Networking' }, { v: 'Chưa có ai' }, { v: '20 phút' }, null, null] },
       ],
     },
   })});`;
 
   const parsed = parseGvizPayload(gviz);
-  assert.equal(parsed.items.length, 2);
-  assert.equal(parsed.incompleteCount, 5);
+  assert.equal(parsed.items.length, 4);
+  assert.equal(parsed.incompleteCount, 2);
   assert.equal(parsed.items[0].supporter, 'Chiến');
   assert.equal(parsed.items[1].supporter, 'Tuấn');
+  assert.equal(parsed.items[2].supporter, '');
+  assert.equal(parsed.items[3].timeRaw, '');
 
   const csv = [
     'PIC phụ trách: Hoàng Thị Quỳnh Mai,,,,,,',
     'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
     '1,"Dòng tiền 1: Bán 4 dự án","Hồ sơ, giấy tờ khác","Thiếu sổ hồng",10 phút,Mai,Hùng',
     '2,,"Networking","Thiếu dòng tiền",5 phút,TÂN,Chiến',
-    '3,"Dòng tiền 1: Bán 4 dự án","Networking","Thiếu người hỗ trợ",5 phút,TÂN,',
+    '3,"Dòng tiền 1: Bán 4 dự án","Networking","Thiếu người hỗ trợ",,TÂN,',
   ].join('\n');
   const csvParsed = parseCsvText(csv);
-  assert.equal(csvParsed.items.length, 1);
-  assert.equal(csvParsed.incompleteCount, 2);
+  assert.equal(csvParsed.items.length, 2);
+  assert.equal(csvParsed.incompleteCount, 1);
   assert.equal(csvParsed.items[0].group, 'Hồ sơ, giấy tờ khác');
   assert.equal(csvParsed.items[0].supporter, 'Hùng');
+  assert.equal(csvParsed.items[1].supporter, '');
+  assert.equal(countWaitingPointPeopleFromCsv(csv).peopleCount, 2);
+});
+
+test('mergeWaitingPointState giữ nguyên totalSec: null và endAt: null cho việc Đang xử lý (không biến thành 0 gây vòng lặp WebSocket)', () => {
+  const now = Date.UTC(2026, 10, 22, 9, 0, 0);
+  const s1 = mergeWaitingPointState(
+    emptyWaitingPointState(now),
+    { timers: { p1: { startedAt: now - 5000, totalSec: null, endAt: null, rawTime: 'Trình 21/11', lastSupporter: 'DAIT', lastOwner: 'Long' } } },
+    now,
+  );
+  assert.equal(s1.timers.p1.totalSec, null);
+  assert.equal(s1.timers.p1.endAt, null);
+  // Tự sửa bản ghi cũ bị hỏng totalSec=0, endAt=0 về null
+  const corrupted = { ...s1, timers: { p1: { ...s1.timers.p1, totalSec: 0, endAt: 0 } } };
+  const healed = mergeWaitingPointState(
+    corrupted,
+    { timers: { p1: { startedAt: now - 5000, totalSec: null, endAt: null, rawTime: 'Trình 21/11', lastSupporter: 'DAIT', lastOwner: 'Long' } } },
+    now + 1000,
+  );
+  assert.equal(healed.timers.p1.totalSec, null);
+  assert.equal(healed.timers.p1.endAt, null);
 });
 
 test('groupItemsByPerson gom theo người hỗ trợ, xếp việc gấp nhất lên đầu và chia lưới hợp lý', () => {
@@ -435,8 +458,8 @@ test('Tự động chuyển tab: KPI (3p) ↔ Waiting Point (10s/người, bỏ 
     { upcomingCount: 2, nextSlot: '2026-11-22T14:30', sec: 30 },
   );
 
-  // Đếm người từ CSV Waiting Point: bỏ dòng thiếu cột, mỗi người +10s
-  const emptyCsv = 'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ\n1,Dòng tiền 1: Bán 4 dự án,Networking,Thiếu người,10 phút,Mai,\n';
+  // Đếm người từ CSV Waiting Point: bỏ dòng chưa có vấn đề hoặc thiếu cả người phụ trách lẫn người hỗ trợ, mỗi người +10s
+  const emptyCsv = 'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ\n1,Dòng tiền 1: Bán 4 dự án,Networking,,,,\n';
   assert.deepEqual(countWaitingPointPeopleFromCsv(emptyCsv), { peopleCount: 0, itemCount: 0, sec: 0 });
   const activeCsv = [
     'STT,Dòng tiền,Nhóm công việc,Vấn đề gặp phải,Thời gian xử lý,Người phụ trách,Người hỗ trợ',
