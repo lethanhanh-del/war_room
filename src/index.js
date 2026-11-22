@@ -98,6 +98,9 @@ export default {
     if (path === "/api/waiting-point") return handleWaitingPoint(request, env, ctx);
     if (path === "/api/waiting-point/status") return handleWaitingPointStatus(request, env);
     if (path === "/api/waiting-point/sheet") return handleWaitingPointSheet(request, env);
+    // Trang Zero Waiting Point › tab "Zero Waiting Point": sheet "Zero Waiting Point" + trạng thái đã tháo gỡ riêng.
+    if (path === "/api/zero-waiting-point/sheet") return handleWaitingPointSheet(request, env, ZWP_SHEET_NAME);
+    if (path === "/api/zero-waiting-point") return handleWaitingPoint(request, env, ctx, ZWP_STATE);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
@@ -235,37 +238,43 @@ const WP_STATUS_SHEET_ID = "1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0";
 const WP_STATUS_SHEET_NAME = "Điểm nghẽn";
 const WP_STATUS_GID = "2043772221";
 let wpStatusCache = { at: 0, data: null };
-let wpCsvCache = { at: 0, csv: "", source: "" };
+// Tab "Zero Waiting Point" của trang Zero Waiting Point (/no-waiting-point): sheet "Zero Waiting Point" trong cùng file master,
+// cùng 13 cột với tab "Điểm nghẽn". Trạng thái "đã tháo gỡ hôm nay" lưu riêng, không lẫn với trang Điểm nghẽn.
+const ZWP_SHEET_NAME = "Zero Waiting Point";
+const ZWP_STATE = { key: "zero_waiting_point_state", scope: "zero-waiting-point" };
+const wpCsvCache = new Map(); // tên sheet -> { at, csv, source }
 
-async function fetchWaitingPointCsv(env) {
+async function fetchWaitingPointCsv(env, sheetName = WP_STATUS_SHEET_NAME) {
   const now = Date.now();
   if (isSharePointConfigured(env)) {
-    const csv = await fetchSharePointSheetCsv(env, sharePointMasterUrl(env), WP_STATUS_SHEET_NAME, now);
+    const csv = await fetchSharePointSheetCsv(env, sharePointMasterUrl(env), sheetName, now);
     return { csv, source: "sharepoint" };
   }
-  if (wpCsvCache.csv && now - wpCsvCache.at < 2000) {
-    return { csv: wpCsvCache.csv, source: wpCsvCache.source };
+  const cached = wpCsvCache.get(sheetName);
+  if (cached?.csv && now - cached.at < 2000) {
+    return { csv: cached.csv, source: cached.source };
   }
   const urls = [
-    `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(WP_STATUS_SHEET_NAME)}&_t=${now}`,
-    `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/export?format=csv&gid=${WP_STATUS_GID}&_t=${now}`,
+    `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}&_t=${now}`,
+    // Dự phòng theo gid chỉ có cho tab "Điểm nghẽn".
+    ...(sheetName === WP_STATUS_SHEET_NAME ? [`https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/export?format=csv&gid=${WP_STATUS_GID}&_t=${now}`] : []),
   ];
   for (const csvUrl of urls) {
     try {
       const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
       const csv = await res.text();
-      wpCsvCache = { at: now, csv, source: "google" };
+      wpCsvCache.set(sheetName, { at: now, csv, source: "google" });
       return { csv, source: "google" };
     } catch { /* thử nguồn dự phòng */ }
   }
-  throw new Error("Không đọc được sheet Điểm nghẽn.");
+  throw new Error(`Không đọc được sheet ${sheetName}.`);
 }
 
-async function handleWaitingPointSheet(request, env) {
+async function handleWaitingPointSheet(request, env, sheetName = WP_STATUS_SHEET_NAME) {
   if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
   try {
-    const { csv, source } = await fetchWaitingPointCsv(env);
+    const { csv, source } = await fetchWaitingPointCsv(env, sheetName);
     return new Response(csv, {
       status: 200,
       headers: {
@@ -296,8 +305,7 @@ async function handleWaitingPointStatus(request, env) {
 }
 
 // Đồng bộ trạng thái đếm ngược & thống kê theo ngày của trang Waiting Point lưu trong bảng settings (D1).
-async function handleWaitingPoint(request, env, ctx) {
-  const KEY = "waiting_point_state";
+async function handleWaitingPoint(request, env, ctx, { key: KEY = "waiting_point_state", scope = "waiting-point" } = {}) {
   const readCurrent = async () => {
     const row = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(KEY).first();
     if (!row?.value) return emptyWaitingPointState();
@@ -322,7 +330,7 @@ async function handleWaitingPoint(request, env, ctx) {
       )
         .bind(KEY, JSON.stringify(next))
         .run();
-      if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+      if (ctx) ctx.waitUntil(notifyLive(env, { scope }));
     }
     return json(next);
   }
