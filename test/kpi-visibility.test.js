@@ -25,7 +25,7 @@ test('applyVisibility: lựa chọn của admin được ưu tiên hơn sheet, g
   ]));
   const [a, b] = out[0].groups;
   assert.deepEqual([a.approval.code, a.approval.source, a.approval.note, a.approval.sheet.code], ['R', 'admin', 'bổ sung chỉ tiêu', 'A']);
-  assert.deepEqual([b.approval.code, b.approval.label, b.approval.sheet.code], ['A', 'BOD đã duyệt', 'N']);
+  assert.deepEqual([b.approval.code, b.approval.label, b.approval.sheet.code], ['A', 'BOD đã duyệt KPI', 'N']);
   assert.equal(out[0].bodApproved, false);
   // Trình duyệt: chỉ tính KPI của nhóm đang Hiện.
   const m = buildModel({ streams: out, days: out[0].days, today: '2026-11-21', now: Date.UTC(2026, 10, 21, 3) });

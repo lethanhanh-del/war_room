@@ -15,7 +15,7 @@ import { log } from '../db.js';
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
 
-export const VISIBILITY_LABEL = { A: 'BOD đã duyệt', R: 'Cần điều chỉnh, bổ sung và trình lại', N: 'Chưa trình BOD' };
+export const VISIBILITY_LABEL = { A: 'BOD đã duyệt KPI', R: 'Cần điều chỉnh, bổ sung và trình lại KPI', N: 'Chưa trình KPI cho BOD' };
 const NOTE_MAX = 300;
 
 let ready = false;
@@ -118,13 +118,13 @@ export async function handleKpiVisibility(request, env, user) {
   } else {
     const show = body.show === true;
     const code = show ? 'A' : String(body.reason || '');
-    if (!show && code !== 'N' && code !== 'R') return json({ error: 'Cần chọn lý do ẩn: Chưa trình BOD, hoặc Cần điều chỉnh, bổ sung và trình lại.' }, 400);
+    if (!show && code !== 'N' && code !== 'R') return json({ error: 'Cần chọn lý do ẩn: Chưa trình KPI cho BOD, hoặc Cần điều chỉnh, bổ sung và trình lại KPI.' }, 400);
     const note = show ? '' : String(body.note || '').trim().slice(0, NOTE_MAX);
     await env.DB.prepare(
       `INSERT INTO kpi_group_visibility (sheet, stream, grp, code, note, by, at) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(sheet, stream, grp) DO UPDATE SET code = excluded.code, note = excluded.note, by = excluded.by, at = excluded.at`
     ).bind(id, s.key, g.key, code, note, user.username, new Date().toISOString()).run();
-    await log(env, request, user.username, show ? 'kpi_visibility_show' : 'kpi_visibility_hide', `${where}: ${show ? 'Hiện KPI (BOD đã duyệt)' : `Ẩn KPI · ${VISIBILITY_LABEL[code]}${note ? ` · ${note}` : ''}`}`);
+    await log(env, request, user.username, show ? 'kpi_visibility_show' : 'kpi_visibility_hide', `${where}: ${show ? `Hiện KPI (${VISIBILITY_LABEL.A})` : `Ẩn KPI · ${VISIBILITY_LABEL[code]}${note ? ` · ${note}` : ''}`}`);
   }
   await notifyLive(env, { scope: 'kpi' }).catch(() => {}); // các màn hình đang mở tải lại KPI
   return json({ ok: true, streams: visibilityList((await kpiData(env)).streams) });

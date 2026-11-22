@@ -103,7 +103,7 @@ const isApprovalKey = (k) => !!k && ((k.includes('trang thai') || k.includes('ti
 const isApprovalNoteKey = (k) => !!k && (k.includes('ghi chu duyet') || k.includes('ghi chu bod') || k.includes('y kien bod') || k.includes('y kien duyet'));
 
 /** Mã trạng thái duyệt BOD của nhóm. */
-export const APPROVAL_LABEL = { A: 'BOD đã duyệt', R: 'Cần điều chỉnh, bổ sung và trình lại', N: 'Chưa trình BOD' };
+export const APPROVAL_LABEL = { A: 'BOD đã duyệt KPI', R: 'Cần điều chỉnh, bổ sung và trình lại KPI', N: 'Chưa trình KPI cho BOD' };
 
 /**
  * Ô trạng thái duyệt -> 'A' (BOD đã duyệt) | 'R' (cần điều chỉnh, bổ sung và trình lại) | 'N' (chưa trình BOD) | '' (trống).

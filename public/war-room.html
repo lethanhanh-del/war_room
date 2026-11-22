@@ -491,7 +491,7 @@
       5: "Dòng tiền Equity / IPO",
       6: "Dòng tiền trái phiếu",
       7: "Dòng tiền Tài chính 57",
-      8: "Nhóm thanh lý",
+      8: "Thanh lý",
     };
     function canonicalStreamName(streamNo, rawName) {
       if (streamNo != null && OFFICIAL_STREAMS[streamNo]) return OFFICIAL_STREAMS[streamNo];
@@ -499,7 +499,7 @@
       const nk = normKey(clean);
       if (!nk) return "Chưa phân nhóm";
       if (nk === "dong tien thu truoc han qua han" || nk === "thu truoc han qua han") return "Dòng tiền thu trước hạn quá hạn";
-      if (nk === "thanh ly" || nk === "nhom thanh ly") return "Nhóm thanh lý";
+      if (nk === "thanh ly" || nk === "nhom thanh ly") return "Thanh lý";
       if (nk === "trai phieu") return "Dòng tiền trái phiếu";
       if (nk.includes("tai chinh 57")) return "Dòng tiền Tài chính 57";
       if (nk.includes("equity") && nk.includes("ipo")) return "Dòng tiền Equity / IPO";
