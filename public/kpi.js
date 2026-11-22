@@ -28,8 +28,9 @@ const ICON = {
   up: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
-const STATUS_ICON = { D: 'check', L: 'clock', K: 'x', N: 'dot', S: 'calendar' };
-const chip = (st) => `<span class="k-chip st-${st}">${icon(STATUS_ICON[st])}${STATUS_LABEL[st]}</span>`;
+const STATUS_ICON = { D: 'check', L: 'clock', K: 'x', N: 'dot', S: 'calendar', U: 'alert' };
+const UNAPPROVED_LABEL = 'Chưa được BOD duyệt';
+const chip = (st) => `<span class="k-chip st-${st}">${icon(STATUS_ICON[st])}${st === 'U' ? UNAPPROVED_LABEL : STATUS_LABEL[st]}</span>`;
 const initials = (n) => {
   const w = String(n || '').trim().split(/\s+/).filter(Boolean);
   if (!w.length) return '?';
@@ -426,18 +427,21 @@ function personTasksForView(personItems, f) {
 }
 
 function taskRowHtml(it, notes, showDate, isCarryOver) {
+  const unapproved = it.bodApproved === false;
+  const displaySt = unapproved ? 'U' : it.status;
   const dateTag = showDate || isCarryOver
     ? `<span class="kl-date${isCarryOver ? ' is-back' : ''}" title="${isCarryOver ? `Tồn đọng từ ngày ${esc(it.label)}` : `Ngày ${esc(it.label)}`}">${esc(it.label)}</span>`
     : '';
   const extra = [
     it.taskPic ? `<span class="kl-pic" title="PIC chịu trách nhiệm: ${esc(it.taskPic)}">PIC: ${esc(it.taskPic)}</span>` : '',
     notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : '',
-    lateNote(it),
+    !unapproved ? lateNote(it) : '',
   ].filter(Boolean).join('');
-  return `<li class="kmt-item st-${it.status}" title="${esc(it.taskPic ? `${it.kpi} · PIC: ${it.taskPic}` : it.kpi)}">
-      <span class="kmt-ic">${icon(STATUS_ICON[it.status])}</span>
+  const tipParts = [it.kpi, it.taskPic ? `PIC: ${it.taskPic}` : '', unapproved ? UNAPPROVED_LABEL : ''].filter(Boolean);
+  return `<li class="kmt-item st-${displaySt}${unapproved ? ' is-unapproved' : ''}" title="${esc(tipParts.join(' · '))}">
+      <span class="kmt-ic">${icon(STATUS_ICON[displaySt])}</span>
       <span class="kmt-body"><span class="kmt-title">${dateTag}<b class="kl-kpi">${esc(it.kpi)}</b></span>${extra}</span>
-      ${chip(it.status)}
+      ${chip(displaySt)}
     </li>`;
 }
 
@@ -468,11 +472,12 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       badges.push(`<span class="kmp-stat is-idle">Chưa có KPI</span>`);
     }
     const emptyText = isAll ? 'Chưa có task nào' : `Không có task ngày ${esc(labelOf(f.day))}`;
+    const unapproved = card.bodApproved === false;
     const hasBacklog = tasks.some((it) => it.status === 'K');
     const hasLate = !hasBacklog && tasks.some((it) => it.status === 'L');
     const allDone = !hasBacklog && !hasLate && tasks.length > 0 && tasks.every((it) => it.status === 'D');
     const isIdleCard = !tasks.length;
-    const toneCls = hasBacklog ? ' has-backlog' : hasLate ? ' has-late' : allDone ? ' is-all-done' : '';
+    const toneCls = unapproved ? ' is-unapproved' : hasBacklog ? ' has-backlog' : hasLate ? ' has-late' : allDone ? ' is-all-done' : '';
     const scrollKey = `pc:${streamKey}/${groupName}/${p.name}`;
 
     const denom = Math.max(1, p.total || tasks.length);
@@ -488,8 +493,12 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       folderHtml || (!cardPics.length ? `<span>${tasks.length} đầu việc</span>` : ''),
     ].filter(Boolean).join('');
 
+    const meterHtml = unapproved
+      ? `<div class="kpc-meter" aria-hidden="true"><i class="m-bad" style="width:100%"></i></div>`
+      : `<div class="kpc-meter" aria-hidden="true">${okW ? `<i class="m-ok" style="width:${okW}%"></i>` : ''}${lateW ? `<i class="m-late" style="width:${lateW}%"></i>` : ''}${badW ? `<i class="m-bad" style="width:${badW}%"></i>` : ''}</div>`;
+
     const bodyHtml = tasks.length
-      ? `<div class="kpc-meter" aria-hidden="true">${okW ? `<i class="m-ok" style="width:${okW}%"></i>` : ''}${lateW ? `<i class="m-late" style="width:${lateW}%"></i>` : ''}${badW ? `<i class="m-bad" style="width:${badW}%"></i>` : ''}</div>
+      ? `${meterHtml}
          <div class="kpc-scroll-wrap">
            <div class="kpc-scroll" data-kpi-autoscroll="1" data-scroll-key="${esc(scrollKey)}">
              <ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll, !isAll && it.date < f.day)).join('')}</ul>
@@ -579,6 +588,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
             personCards.push({
               p,
               groupName: g.name,
+              bodApproved: s.bodApproved !== false,
               tasks,
               notes,
               folderHtml: personFolderLinks(g, p.name),
@@ -606,20 +616,23 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         `${sum.people.size} người`,
       ].join(' · ');
       const badgeNum = streamBadgeNo(s, isSpecial ? '' : String(si + 1));
+      const unapproved = s.bodApproved === false;
+      const bodTag = unapproved ? `<span class="kms-bod-warn" title="Ô E1 trên sheet chưa được BOD tick duyệt">${icon('alert')}${UNAPPROVED_LABEL}</span>` : '';
       const head = `<header class="km-stream">
         <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
-          <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
+          <div class="kms-name"><div class="kms-title-row"><h3>${esc(s.name)}</h3>${bodTag}</div>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
         <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.doing, 'N', 'Đang làm')}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
     const body = personCards.length
         ? packMasonry(personCards, maxCols, f, s.key)
         : isSpecial
-          ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
-        : `<p class="k-none">Chưa có thành viên nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
-    return `<section class="km-block${personCards.length ? '' : ' is-empty'}" id="stream-${esc(s.key)}" aria-label="${esc(s.name)}">${head}${body}</section>`;
+          ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật.</p>`
+        : `<p class="k-none">Chưa có thành viên nào có KPI cho dòng tiền này.</p>`;
+    return `<section class="km-block${personCards.length ? '' : ' is-empty'}${unapproved ? ' is-unapproved' : ''}" id="stream-${esc(s.key)}" aria-label="${esc(s.name)}">${head}${body}</section>`;
   }).join('');
 
-  const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
+  const hasUnapproved = streams.some((s) => s.bodApproved === false);
+  const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền & nhóm';
   const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện task ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
   return `<section class="k-panel k-members" id="k-groups" aria-labelledby="k-mem-t"><header class="k-phead"><div><h2 id="k-mem-t">Theo dõi Dòng tiền · Thành viên &amp; Task · ${esc(viewScope)}</h2>
       <p class="hint">${esc(scope)} · ${people.size} người (${groupCount} nhóm). Tổng chỉ số tính ${esc(range)}.${filterNote}</p></div></header>
@@ -628,6 +641,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         <li class="st-N"><i class="kd st-N"></i><span><b>Đang làm</b>: KPI hôm nay chưa tick (hạn ${DUE_LABEL} sáng hôm sau).</span></li>
         <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick sau ${DUE_LABEL} sáng hôm sau (áp dụng từ 22/11).</span></li>
         <li class="st-K"><i class="kd st-K"></i><span><b>Không đạt / Tồn đọng</b>: quá hạn mà chưa tick.</span></li>
+        ${hasUnapproved ? `<li class="st-U"><i class="kd st-U"></i><span><b>${UNAPPROVED_LABEL}</b>: ô E1 trên sheet chưa tick duyệt, toàn bộ task &amp; viền dòng tiền cảnh báo đỏ.</span></li>` : ''}
       </ul>
       ${blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>'}</section>`;
 }
@@ -671,18 +685,24 @@ function tableHtml(x, { tv = false } = {}) {
   const hl = f.day === 'all' ? today : f.day;
   const head = m.days.map((d) => `<div class="kt-c kt-day${d.date === hl ? ' is-hl' : ''}" role="columnheader">${esc(d.weekday)} ${esc(d.label)}${d.date === today ? ' <span class="k-today-tag">Hôm nay</span>' : ''}</div>`).join('');
   const rows = streams.map((s) => {
+    const unapproved = s.bodApproved === false;
     const cells = m.days.map((d) => {
       const list = onDate(s.items, d.date).sort((a, b) => ORDER[a.status] - ORDER[b.status]);
       const c = count(list);
       let label = '—';
       let cls = 'muted';
-      if (c.total && d.date > today) { label = tv ? '' : `${c.total} KPI sắp tới`; }
+      if (c.total && unapproved) { label = tv ? `${c.total} chưa duyệt` : `${c.total} KPI · Chưa BOD duyệt`; cls = 'bad'; }
+      else if (c.total && d.date > today) { label = tv ? '' : `${c.total} KPI sắp tới`; }
       else if (c.total) {
         const done = doneOf(c);
         label = tv ? `${done}/${c.total}` : `${done}/${c.total} xong${c.L ? ` · ${c.L} trễ` : ''}`;
         cls = c.K ? 'bad' : c.L ? 'warn' : done === c.total ? 'ok' : 'muted';
       }
-      return `<div class="kt-c kt-day${d.date === hl ? ' is-hl' : ''}" role="cell"><span class="k-dots">${list.map((it) => `<i class="kd st-${it.status}" title="${esc(`${it.group} · ${it.person}${it.taskPic ? ` (PIC: ${it.taskPic})` : ''}: ${it.kpi} (${STATUS_LABEL[it.status]})`)}"></i>`).join('')}</span>${label ? `<span class="kt-lab ${cls}">${esc(label)}</span>` : ''}</div>`;
+      return `<div class="kt-c kt-day${d.date === hl ? ' is-hl' : ''}" role="cell"><span class="k-dots">${list.map((it) => {
+        const dotSt = unapproved ? 'U' : it.status;
+        const dotLabel = unapproved ? UNAPPROVED_LABEL : STATUS_LABEL[it.status];
+        return `<i class="kd st-${dotSt}" title="${esc(`${it.group} · ${it.person}${it.taskPic ? ` (PIC: ${it.taskPic})` : ''}: ${it.kpi} (${dotLabel})`)}"></i>`;
+      }).join('')}</span>${label ? `<span class="kt-lab ${cls}">${esc(label)}</span>` : ''}</div>`;
     }).join('');
     const due = upTo(s.items, ref);
     const c = count(due);
@@ -690,8 +710,9 @@ function tableHtml(x, { tv = false } = {}) {
     const backlog = c.K;
     const no = streamBadgeNo(s);
     const name = tv ? `<b title="${esc(s.name)}">${no ? `${no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${no ? `<span class="k-code">${esc(no)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
-    return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
-        <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
+    const bodSmall = unapproved ? `<span class="kt-bod-tag">${icon('alert')}${UNAPPROVED_LABEL}</span>` : '';
+    return `<div class="kt-row${unapproved ? ' is-unapproved' : ''}" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${bodSmall}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
+        <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${unapproved ? 'bad' : tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${unapproved ? 'bad' : tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
   const legend = STATUSES.map((st) => `<span><i class="kd st-${st}"></i>${STATUS_LABEL[st]}</span>`).join('');
   const isSp = isSpecialTab(f.tab);

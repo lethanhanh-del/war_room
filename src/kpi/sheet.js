@@ -149,6 +149,8 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
 
   // PIC dòng tiền ghi phía trên bảng, vd "DÒNG TIỀN: BÁN 4 DỰ ÁN\nPIC: HOÀNG THỊ QUỲNH MAI".
   const pic = picAbove(rows, h);
+  // Ô checkbox duyệt KPI của BOD ở E1 (cột E = chỉ số 4, dòng 1 đứng trên tiêu đề bảng).
+  const bodApproved = parseBodApproved(rows, h);
 
   const groups = new Map();
   const unknown = new Set();
@@ -210,10 +212,28 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
     sheet: String(sheet.name).trim(),
     name: streamNameOf(sheet.name),
     pic,
+    bodApproved,
     days: days.map(({ date, label: l }) => ({ date, label: l })),
     groups: [...groups.values()],
     warnings,
   };
+}
+
+/**
+ * Đọc checkbox duyệt KPI của BOD tại ô E1 (dòng 1, cột E = chỉ số 4, phải nằm phía trên dòng tiêu đề bảng).
+ * - Sheet có ô E1 (hoặc nhãn "duyệt" ở D1) và đã tick (TRUE / Đã duyệt) -> true.
+ * - Sheet có ô E1 / nhãn "duyệt" ở D1 nhưng FALSE hoặc để trống -> false (chưa được BOD duyệt).
+ * - Sheet cũ chưa có ô E1 -> true (không đánh cảnh báo nhầm).
+ */
+export function parseBodApproved(rows, headerIdx) {
+  const r1 = rows.find((r) => r.r === 1);
+  if (!r1 || !rows[headerIdx] || r1.r >= rows[headerIdx].r) return true;
+  const e1 = text(r1, 4);
+  const d1 = normKey(text(r1, 3));
+  if (!e1 && !d1.includes('duyet')) return true;
+  const k = normKey(e1);
+  if (k === 'true' || k === '1' || /^(da duyet|duyet|ok|yes|co|x)$/.test(k) || /^[✓✔☑]$/.test(e1)) return true;
+  return false;
 }
 
 /** "PIC: …" / "PIC phụ trách: …" trong các dòng phía trên dòng tiêu đề (hoặc vài dòng đầu tab task). */

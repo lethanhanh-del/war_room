@@ -185,6 +185,7 @@ export function attachPeople(streams, teams = [], imports = []) {
       ...(s.desc ? { desc: s.desc } : {}),
       code: s.kind === 'support' ? 'HT' : s.kind === 'liquidation' ? 'TL' : s.no ? `DT${String(s.no).padStart(2, '0')}` : imp?.code || '',
       pic: s.pic || imp?.pic || tgroups[0]?.lead?.name || '',
+      bodApproved: s.bodApproved !== false,
       days: s.days,
       groups,
     };

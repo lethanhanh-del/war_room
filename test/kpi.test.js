@@ -534,3 +534,32 @@ test('cột D "Người phụ trách": ưu tiên phân task theo Người phụ 
   const oldClosed = [{ s: tList[0].s, g: tList[0].g, p: 'hoang thi quynh mai', k: tList[0].k, v: 'D' }];
   assert.equal(findTask(oldClosed, tList[0])?.v, 'D');
 });
+
+test('ô E1 duyệt KPI của BOD: FALSE -> bodApproved=false (đánh đỏ chưa được BOD duyệt); TRUE / sheet cũ -> bodApproved=true', async () => {
+  const { attachPeople } = await kpi();
+  const mkCsv = (r1) => [
+    r1,
+    'Stt,Nhóm,PIC,Người phụ trách,22/11,,',
+    ',,,,KPI,Kết quả,',
+    '1,Networking,Hoàng Thị Quỳnh Mai,,Gặp 5 khách VIP,TRUE,',
+  ].join('\n');
+
+  const unapproved = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,FALSE,,')), { year: 2026 });
+  assert.equal(unapproved.bodApproved, false);
+
+  const blankAfterLabel = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,,,')), { year: 2026 });
+  assert.equal(blankAfterLabel.bodApproved, false);
+
+  const approved = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,TRUE,,')), { year: 2026 });
+  assert.equal(approved.bodApproved, true);
+
+  const legacy = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('BẢNG KPI,,,,,,')), { year: 2026 });
+  assert.equal(legacy.bodApproved, true);
+
+  const attached = attachPeople([unapproved, approved]);
+  const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: unapproved.days, streams: attached });
+  assert.equal(model.streams[0].bodApproved, false);
+  assert.equal(model.streams[0].items[0].bodApproved, false);
+  assert.equal(model.streams[1].bodApproved, true);
+  assert.equal(model.streams[1].items[0].bodApproved, true);
+});

@@ -45,7 +45,8 @@ details.notice summary::-webkit-details-marker {
   --st-bd: var(--success-border);
 }
 
-.st-K {
+.st-K,
+.st-U {
   --st: var(--danger);
   --st-bg: var(--danger-bg);
   --st-bd: var(--danger-border);
@@ -863,6 +864,106 @@ details.notice summary::-webkit-details-marker {
 
 .km-block.is-empty {
   border-left-color: var(--border-strong);
+}
+
+/* ---------- Cảnh báo đỏ nổi bật khi sheet KPI chưa được BOD duyệt (ô E1 = FALSE) ---------- */
+.km-block.is-unapproved {
+  border-color: color-mix(in srgb, var(--danger) 68%, var(--border-strong));
+  border-left: 4px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.km-block.is-unapproved .km-stream {
+  border-bottom-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+}
+
+.km-block.is-unapproved .kms-code {
+  background: var(--danger);
+  color: #ffffff;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 48%, transparent);
+}
+
+.kms-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.kms-bod-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 18%, var(--bg-surface));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.kms-bod-warn .ic,
+.kt-bod-tag .ic {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.3;
+  flex: none;
+}
+
+.km-person-card.is-unapproved::before {
+  background: var(--danger);
+}
+
+.km-person-card.is-unapproved {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+}
+
+.kmt-item.st-U,
+.kmt-item.is-unapproved {
+  border-color: color-mix(in srgb, var(--danger) 58%, transparent);
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-surface));
+}
+
+.kmt-item.st-U .kl-kpi {
+  color: color-mix(in srgb, var(--danger) 22%, var(--text));
+}
+
+.kmt-item.st-U .k-chip {
+  font-weight: 700;
+  border-color: var(--danger);
+}
+
+.kt-row.is-unapproved {
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
+
+.kt-row.is-unapproved .k-code {
+  background: var(--danger);
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.kt-bod-tag {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 65%, transparent);
+  border-radius: 999px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 15px;
+  font-weight: 700;
 }
 
 .kms-stats {
