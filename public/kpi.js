@@ -97,6 +97,8 @@ const S = {
     result: params.get('kq') || 'all',
   },
   groupStream: '',
+  // Khối "Theo dõi Dòng tiền": ô số đang bấm của 1 dòng tiền -> { st: 'done' | 'N' | 'L' | 'K', g: khoá nhóm ('' = cả dòng tiền) }
+  taskFilter: {},
   apFilter: '', // khối "Phê duyệt KPI của BOD": '' = nhóm chưa được duyệt, 'A' / 'R' / 'N' = lọc theo ô số đang bấm
   groupFilter: {}, // khoá dòng tiền -> khoá nhóm đang lọc ở khối "Theo dõi Dòng tiền" ('all' / không có = tất cả nhóm)
   timer: null,
@@ -492,6 +494,22 @@ function personTasksForView(personItems, f) {
   return list;
 }
 
+// Ô số bấm được ở khối "Theo dõi Dòng tiền": lọc task theo đúng cách ô số đó được đếm (tính đến ngày đang xem).
+const TASK_FILTER = {
+  done: { label: 'Đã hoàn thành', test: (it) => isDone(it) },
+  N: { label: 'Đang làm', test: (it) => it.status === 'N' },
+  L: { label: 'Hoàn thành trễ hạn', test: (it) => it.status === 'L' },
+  K: { label: 'Tồn đọng', test: (it) => it.status === 'K' },
+};
+/** Task của 1 người khớp ô số đang bấm: mọi task đến ngày `cut` có trạng thái đó (kèm bộ lọc Kết quả của trang), xếp theo ngày. */
+function personTasksByStatus(personItems, st, cut, f) {
+  let list = personItems.filter((it) => it.date <= cut && TASK_FILTER[st].test(it)).sort(byDate);
+  if (f.result === 'D') list = list.filter((it) => it.status === 'D');
+  else if (f.result === 'L') list = list.filter((it) => it.status === 'L');
+  else if (f.result === 'T') list = list.filter(isOutstanding);
+  return list;
+}
+
 function taskRowHtml(it, notes, showDate, isCarryOver) {
   const unapproved = it.bodApproved === false;
   const displaySt = unapproved ? 'U' : it.status;
@@ -567,7 +585,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       ? `${meterHtml}
          <div class="kpc-scroll-wrap">
            <div class="kpc-scroll" data-kpi-autoscroll="1" data-scroll-key="${esc(scrollKey)}">
-             <ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll, !isAll && it.date < f.day)).join('')}</ul>
+             <ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll || card.allDates, !card.allDates && !isAll && it.date < f.day)).join('')}</ul>
            </div>
          </div>
          <footer class="kpc-foot">
@@ -631,6 +649,8 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       const sum = { done: 0, late: 0, backlog: 0, doing: 0, total: 0, groups: 0, people: new Set() };
         // KPI gom theo nhóm; thanh lọc "Nhóm" của từng dòng tiền chọn 1 nhóm để xem (S.groupFilter). Tổng của dòng tiền không đổi theo bộ lọc này.
         const sel = s.groups.some((g) => g.key === S.groupFilter[s.key]) ? S.groupFilter[s.key] : 'all';
+        // Ô số đang bấm: của cả dòng tiền (tf.g = '') hoặc của riêng 1 nhóm (tf.g = khoá nhóm).
+        const tf = TASK_FILTER[S.taskFilter[s.key]?.st] ? S.taskFilter[s.key] : null;
         const groupSecs = [];
         const groupChips = [];
         const pendingGroups = [];
@@ -655,11 +675,12 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
             if (!byPerson.has(key)) byPerson.set(key, []);
             byPerson.get(key).push(it);
           }
+          const gst = tf && (!tf.g || tf.g === g.key) ? tf.st : '';
           const cards = [];
           for (const p of allMembers) {
             const key = p.name.toLocaleLowerCase('vi');
-            const tasks = personTasksForView(byPerson.get(key) || [], f);
-            if (f.result !== 'all' && !tasks.length) continue;
+            const tasks = gst ? personTasksByStatus(byPerson.get(key) || [], gst, cut, f) : personTasksForView(byPerson.get(key) || [], f);
+            if ((f.result !== 'all' || gst) && !tasks.length) continue;
             people.add(key);
             cards.push({
               p,
@@ -668,10 +689,11 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
               tasks,
               notes,
               folderHtml: personFolderLinks(g, p.name),
+              allDates: !!gst, // đang lọc theo ô số: hiện ngày của từng task
               order: cards.length,
             });
           }
-          if (!cards.length) continue;
+          if (!cards.length && !(tf && tf.g === g.key)) continue; // nhóm đang bấm ô số mà không còn task khớp: vẫn hiện để bỏ lọc
           groupCount++;
           sum.groups++;
           cardsAll += cards.length;
@@ -681,7 +703,10 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         }
         if (!cardsAll && f.result !== 'all' && !pendingAll) return '';
 
-      const stat = (n, st, label, extra = '') => `<span class="kms-stat st-${st}${n ? '' : ' is-zero'}"><b>${n}${extra}</b><small>${label}</small></span>`;
+      const stat = (n, st, label, extra = '', key = st) => {
+        const on = !!tf && !tf.g && tf.st === key;
+        return `<button type="button" class="kms-stat st-${st}${n ? '' : ' is-zero'}" data-task-filter="${key}" data-stream="${esc(s.key)}" aria-pressed="${on}"${n || on ? '' : ' disabled'} title="${on ? 'Bấm lần nữa để bỏ lọc' : `Chỉ xem task ${TASK_FILTER[key].label.toLocaleLowerCase('vi')} của dòng tiền này`}"><b>${n}${extra}</b><small>${label}</small></button>`;
+      };
       const p = pct(sum.done, sum.total);
       const sheetNote = s.kpiSheet || s.sheet;
       const isSpecial = s.kind === 'support' || s.kind === 'liquidation';
@@ -699,18 +724,31 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
       const head = `<header class="km-stream">
         <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
           <div class="kms-name"><div class="kms-title-row"><h3>${esc(s.name)}</h3>${bodTag}</div>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
-        <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.doing, 'N', 'Đang làm')}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
+        <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`, 'done')}${stat(sum.doing, 'N', 'Đang làm')}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
     const pendingHtml = pendingGroups.length
       ? `<ul class="ka-list km-pending">${pendingGroups.map((g) => `<li class="ap-${g.approval.code}"><span class="ka-where"><b>${esc(g.name)}</b>${g.pic?.name ? `<small>PIC ${esc(g.pic.name)}</small>` : ''}</span>${apChip(g.approval)}${g.approval.note || g.approval.directive ? `<span class="ka-note">${esc(g.approval.note || g.approval.directive)}</span>` : ''}</li>`).join('')}</ul>`
       : '';
-    const kstat = (n, st, label) => (n ? `<span class="kmp-stat st-${st}"><b>${n}</b> ${label}</span>` : '');
+    // Ô số của nhóm cũng bấm được: lọc task của riêng nhóm đó.
+    const gstat = (g, n, st, text, key = st, title = '') => {
+      const on = !!tf && tf.g === g.key && tf.st === key;
+      if (!n && !on) return '';
+      return `<button type="button" class="kmp-stat st-${st}" data-task-filter="${key}" data-stream="${esc(s.key)}" data-group="${esc(g.key)}" aria-pressed="${on}" title="${on ? 'Bấm lần nữa để bỏ lọc' : `${title ? `${title}. ` : ''}Bấm để chỉ xem task ${TASK_FILTER[key].label.toLocaleLowerCase('vi')} của nhóm`}">${text}</button>`;
+    };
+    // Mỗi nhóm 1 khung riêng (Figma "Theo dõi dòng tiền · tiêu đề nhóm"): tiêu đề nền xanh đậm (Nhóm i/N, tên, PIC nhóm, số người,
+    // số KPI, % lớn) + thanh tiến độ của nhóm ngay bên dưới + các thẻ thành viên nằm trong khung.
     const groupsHtml = groupSecs.map(({ g, gs, cards, members }) => {
       const gp = pct(gs.done, gs.total);
+      const idx = s.groups.indexOf(g) + 1;
+      const onTime = Math.max(0, gs.done - gs.late);
+      const rest = Math.max(0, gs.total - gs.done - gs.backlog - gs.doing);
+      const seg = (n, cls) => (n ? `<i class="${cls}" style="flex-grow:${n}"></i>` : '');
+      const bar = gs.total ? `<div class="kmg-bar" aria-hidden="true">${seg(onTime, 'st-D')}${seg(gs.late, 'st-L')}${seg(gs.backlog, 'st-K')}${seg(gs.doing, 'st-N')}${seg(rest, 'is-rest')}</div>` : '<div class="kmg-bar" aria-hidden="true"></div>';
+      const picHtml = g.pic?.name ? `<span class="kmg-pic"><span class="av pic">${esc(initials(g.pic.name))}</span><small>PIC nhóm</small><b>${esc(g.pic.name)}</b></span>` : '';
       return `<section class="km-group" aria-label="Nhóm ${esc(g.name)}"><header class="kmg-head">
-          <div class="kmg-id"><h4>${esc(g.name)}</h4><small>${g.pic?.name ? `PIC nhóm ${esc(g.pic.name)} · ` : ''}${members} người</small></div>
-          <div class="kmg-stats">${gs.total ? `<span class="kmp-stat st-D" title="Đã hoàn thành / tổng KPI của nhóm đến ngày đang xem"><b>${gs.done}/${gs.total}</b> xong</span>` : '<span class="kmp-stat is-idle">Chưa có KPI</span>'}${kstat(gs.doing, 'N', 'đang làm')}${kstat(gs.late, 'L', 'trễ')}${kstat(gs.backlog, 'K', 'tồn đọng')}${gp == null ? '' : `<span class="kpc-pct ${tone(gp)}">${gp}%</span>`}</div>
-        </header>${packMasonry(cards, maxCols, f, s.key)}</section>`;
+          <div class="kmg-id"><span class="kmg-ix">Nhóm ${idx}/${s.groups.length}</span><h4>${esc(g.name)}</h4>${picHtml}<small class="kmg-n">${members} người</small></div>
+          <div class="kmg-stats">${gs.total ? (gstat(g, gs.done, 'D', `<b>${gs.done}/${gs.total}</b> xong`, 'done', 'Đã hoàn thành / tổng KPI của nhóm đến ngày đang xem') || `<span class="kmp-stat st-D"><b>0/${gs.total}</b> xong</span>`) : '<span class="kmp-stat is-idle">Chưa có KPI</span>'}${gstat(g, gs.doing, 'N', `<b>${gs.doing}</b> đang làm`)}${gstat(g, gs.late, 'L', `<b>${gs.late}</b> trễ`)}${gstat(g, gs.backlog, 'K', `<b>${gs.backlog}</b> tồn đọng`)}${gp == null ? '' : `<b class="kmg-pct ${tone(gp)}" title="Tỷ lệ KPI của nhóm đã hoàn thành">${gp}%</b>`}</div>
+        </header>${bar}<div class="kmg-body">${cards.length ? packMasonry(cards, maxCols, f, s.key) : '<p class="k-none">Nhóm này không có task khớp ô số đang chọn.</p>'}</div></section>`;
     }).join('');
     const chipBtn = (key, inner) => `<button type="button" class="kf-chip" data-group-filter="${esc(key)}" data-stream="${esc(s.key)}" aria-pressed="${sel === key}">${inner}</button>`;
     const filterBar = s.groups.length > 1
@@ -718,7 +756,11 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         ? `<i class="kt-dot ap-${g.approval.code}" title="${esc(APPROVAL_LABEL[g.approval.code])}"></i>${esc(g.name)}`
         : `${esc(g.name)}<b title="Đã hoàn thành / tổng KPI đến ngày đang xem">${gs.done}/${gs.total}</b>`)).join('')}</div></div>`
       : '';
-    const body = filterBar + (groupSecs.length
+    const tfGroup = tf?.g ? s.groups.find((g) => g.key === tf.g) : null;
+    const tfNote = tf
+      ? `<p class="km-tfilter">Đang xem task <b>${esc(TASK_FILTER[tf.st].label)}</b> ${tfGroup ? `của nhóm <b>${esc(tfGroup.name)}</b>` : 'của cả dòng tiền'} · tính ${esc(range)}<button type="button" class="ka-clear" data-task-filter="" data-stream="${esc(s.key)}">Bỏ lọc</button></p>`
+      : '';
+    const body = filterBar + tfNote + (groupSecs.length
         ? groupsHtml
         : pendingGroups.length
           ? ''
@@ -894,12 +936,21 @@ $('filters').addEventListener('change', (e) => {
   render();
 });
 $('main').addEventListener('click', (e) => {
+  const tk = e.target.closest('[data-task-filter]');
+  if (tk) { // ô số của dòng tiền / của nhóm ở khối Theo dõi Dòng tiền: bấm để lọc task, bấm lại (hoặc "Bỏ lọc") để bỏ
+    const { stream, taskFilter: st, group = '' } = tk.dataset;
+    const cur = S.taskFilter[stream];
+    if (!st || (cur && cur.st === st && cur.g === group)) delete S.taskFilter[stream]; else S.taskFilter[stream] = { st, g: group };
+    render();
+    [...$('main').querySelectorAll('[data-task-filter]')].find((b) => b.dataset.stream === stream && b.dataset.taskFilter === st && (b.dataset.group || '') === group)?.focus({ preventScroll: true });
+    return;
+  }
   const af = e.target.closest('[data-ap-filter]');
   if (af) { // ô số ở khối Phê duyệt KPI của BOD: bấm để lọc, bấm lại (hoặc "Bỏ lọc") để bỏ
     const code = af.dataset.apFilter;
     S.apFilter = S.apFilter === code ? '' : code;
     render();
-    (code && $('main').querySelector(`.ka-stat[data-ap-filter="${code}"]`))?.focus({ preventScroll: true });
+    if (code) $('main').querySelector(`.ka-stat[data-ap-filter="${code}"]`)?.focus({ preventScroll: true });
     return;
   }
   const gf = e.target.closest('[data-group-filter]');
