@@ -873,3 +873,32 @@ button.dn-kpi:focus-visible {
 .dn-status {
   white-space: nowrap;
 }
+
+/* ---------- Bảng nhúng trong trang khác (tab "Zero Waiting Point" của trang Zero Waiting Point): bỏ khung trang riêng ---------- */
+.dn-embed {
+  min-height: 0;
+}
+
+.dn-embed .dn-body {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dn-embed-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--s12);
+}
+
+.dn-embed-top .dn-sync {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px 10px;
+}
+
+.dn-embed-top .dn-sync p {
+  margin: 0;
+}

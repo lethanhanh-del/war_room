@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
   <link rel="stylesheet" href="/dong-tien.css" />
   <link rel="stylesheet" href="/kpi.css" />
+  <link rel="stylesheet" href="/diem-nghen.css" />
   <link rel="stylesheet" href="/no-waiting-point.css" />
   <script type="module" src="/no-waiting-point.js"></script>
 </head>
@@ -38,11 +39,22 @@
       </div>
     </header>
 
-    <div id="filters" class="k-filters"></div>
-    <div id="notices" class="k-notices"></div>
-    <main id="main" class="k-main">
-      <section class="k-panel k-empty"><p class="hint">Đang tải KPI…</p></section>
-    </main>
+    <!-- 2 tab: "KPI quá hạn" (màn hình sẵn có, từ sheet KPI) · "Zero Waiting Point" (sheet "Zero Waiting Point", bảng giống trang Điểm nghẽn) -->
+    <div class="nw-tabs" role="tablist" aria-label="Zero Waiting Point">
+      <button type="button" class="nw-tab" role="tab" id="tabOverdue" aria-controls="paneOverdue" aria-selected="true" data-tab="overdue">KPI quá hạn<b id="tabOverdueN" title="Số KPI quá hạn chưa hoàn thành">–</b></button>
+      <button type="button" class="nw-tab" role="tab" id="tabBoard" aria-controls="paneBoard" aria-selected="false" data-tab="board">Zero Waiting Point<b id="tabBoardN" title="Số điểm chờ đang mở trên sheet Zero Waiting Point">–</b></button>
+    </div>
+
+    <div class="nw-pane" id="paneOverdue" role="tabpanel" aria-labelledby="tabOverdue">
+      <div id="filters" class="k-filters"></div>
+      <div id="notices" class="k-notices"></div>
+      <main id="main" class="k-main">
+        <section class="k-panel k-empty"><p class="hint">Đang tải KPI…</p></section>
+      </main>
+    </div>
+    <div class="nw-pane" id="paneBoard" role="tabpanel" aria-labelledby="tabBoard" hidden>
+      <div id="zwpBoard" class="dn-shell dn-embed"><section class="k-panel k-empty"><p class="hint">Đang đọc sheet “Zero Waiting Point”…</p></section></div>
+    </div>
   </div>
 </body>
 </html>

@@ -8,6 +8,7 @@
 // Dữ liệu: cùng GET /api/kpi với trang /kpi (src/kpi/); cách gom tính ở kpi-model.js › noWaitingPoint (có test Node).
 // Dòng tiền chưa trình BOD (E1 chưa tick) không được tính, trang ghi rõ ở mục lưu ý.
 import { DUE_LABEL, buildModel, dueLabel, noWaitingPoint, overdueText, timeLabel } from './kpi-model.js';
+import { parseBlockers, summarize } from './diem-nghen-model.js';
 const SOON_MS = 60 * 60 * 1000; // còn dưới 1 giờ: tô vàng
 
 const $ = (id) => document.getElementById(id);
@@ -98,7 +99,7 @@ async function load({ force = false } = {}) {
     if (pendingReload) { pendingReload = false; load(); } else S.timer = setTimeout(() => load(), POLL_MS);
   }
 }
-$('refreshBtn').addEventListener('click', () => load({ force: true }));
+$('refreshBtn').addEventListener('click', () => { load({ force: true }); if (S.tab === 'board') globalThis.DN_CONFIG?.reload?.(); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 // "Quá hạn / còn bao lâu" chạy theo phút kể cả khi dữ liệu không đổi.
 setInterval(() => { if (S.model && !document.hidden) render(); }, 60000);
@@ -119,6 +120,7 @@ setInterval(() => { if (S.model && !document.hidden) render(); }, 60000);
 // ---------- vẽ trang ----------
 function syncUrl() {
   const p = new URLSearchParams(location.search);
+  if (S.tab === 'board') p.set('tab', BOARD_TAB_PARAM); else p.delete('tab');
   if (S.stream && S.stream !== 'all') p.set('dong', S.stream); else p.delete('dong');
   if (S.view !== 'overdue') p.set('xem', VIEW_PARAM[S.view]); else p.delete('xem');
   const q = p.toString();
@@ -177,6 +179,7 @@ function render() {
   const m = S.model;
   const now = nowMs();
   const all = noWaitingPoint(m, now);
+  $('tabOverdueN').textContent = all.total;
   renderNotices(all);
   $('filters').innerHTML = m.streams.length ? filtersHtml(all) : '';
   $('streamSelect')?.addEventListener('change', (e) => { S.stream = e.target.value || 'all'; syncUrl(); render(); });
@@ -297,4 +300,59 @@ function guideHtml() {
     </ul></section>`;
 }
 
+// ---------- 2 tab: "KPI quá hạn" (màn hình trên) · "Zero Waiting Point" (sheet "Zero Waiting Point") ----------
+// Tab thứ hai dùng lại nguyên bảng của trang Điểm nghẽn (public/diem-nghen.js) cho sheet "Zero Waiting Point": cùng 13 cột, cùng
+// cách đọc (diem-nghen-model.js). Bảng chỉ được nạp khi mở tab lần đầu, và tạm ngừng đọc sheet khi tab đang ẩn.
+const BOARD_TAB_PARAM = 'diem-cho';
+const PAGE_SUB = {
+  overdue: 'KPI đã được BOD duyệt nhưng đã quá hạn mà chưa hoàn thành, theo từng người',
+  board: 'Vướng mắc đang chờ người khác hỗ trợ xử lý, từ sheet “Zero Waiting Point”',
+};
+S.tab = params.get('tab') === BOARD_TAB_PARAM ? 'board' : 'overdue';
+let boardMounted = false;
+
+function showTab(tab) {
+  S.tab = tab === 'board' ? 'board' : 'overdue';
+  const board = S.tab === 'board';
+  $('paneOverdue').hidden = board;
+  $('paneBoard').hidden = !board;
+  $('tabOverdue').setAttribute('aria-selected', String(!board));
+  $('tabBoard').setAttribute('aria-selected', String(board));
+  $('pageSub').textContent = PAGE_SUB[S.tab];
+  if (!board) return;
+  if (boardMounted) { globalThis.DN_CONFIG?.reload?.(); return; }
+  boardMounted = true;
+  globalThis.DN_CONFIG = {
+    root: 'zwpBoard',
+    embedded: true,
+    sheetUrl: '/api/zero-waiting-point/sheet',
+    stateUrl: '/api/zero-waiting-point',
+    liveScope: 'zero-waiting-point',
+    sheetName: 'Zero Waiting Point',
+    noun: 'điểm chờ',
+    Noun: 'Điểm chờ',
+    isActive: () => S.tab === 'board',
+    onCount: (n, loadedAt) => { if (loadedAt) $('tabBoardN').textContent = n; },
+  };
+  import('./diem-nghen.js').catch((e) => {
+    boardMounted = false;
+    $('zwpBoard').innerHTML = `<section class="k-panel k-empty"><h2>Chưa mở được tab này</h2><p class="hint">${esc(e.message || String(e))}</p></section>`;
+  });
+}
+document.querySelectorAll('.nw-tab').forEach((b) => b.addEventListener('click', () => { showTab(b.dataset.tab); syncUrl(); }));
+
+/** Số điểm chờ đang mở trên nhãn tab khi bảng chưa được mở (mở rồi thì bảng tự báo qua onCount). */
+async function loadBoardCount() {
+  if (boardMounted || document.hidden) return;
+  try {
+    const res = await fetch('/api/zero-waiting-point/sheet', { cache: 'no-store' });
+    if (!res.ok || !(res.headers.get('Content-Type') || '').includes('csv')) return;
+    const parsed = parseBlockers(await res.text(), Date.now());
+    if (!parsed.error && !boardMounted) $('tabBoardN').textContent = summarize(parsed.items, Date.now()).counts.open;
+  } catch { /* để "–" */ }
+}
+
+showTab(S.tab);
+loadBoardCount();
+setInterval(loadBoardCount, 60000);
 load();

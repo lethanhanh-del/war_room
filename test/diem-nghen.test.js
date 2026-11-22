@@ -123,6 +123,16 @@ test('Điểm nghẽn: đọc đúng layout 13 cột trên SharePoint (đơn v�
   assert.deepEqual(at('22-25/11/2026'), ['11-22', '11-25']);
 });
 
+test('Sheet "Zero Waiting Point" (tab Zero Waiting Point): cùng 13 cột, tiêu đề "Phân loại Waiting Point" và "Nội dung"', () => {
+  const csv = SP_CSV.replace('Phân loại điểm nghẽn,Nội dung điểm nghẽn,', 'Phân loại Waiting Point,Nội dung ,');
+  assert.notEqual(csv, SP_CSV);
+  const r = parseBlockers(csv, NOW);
+  assert.equal(r.error, undefined);
+  assert.deepEqual([r.columns.kind, r.columns.content, r.columns.supportContent, r.columns.owner, r.columns.supporter], [3, 4, 10, 5, 7]);
+  assert.deepEqual(r.items.map((it) => [it.stt, it.kind, it.content.slice(0, 12)]).slice(0, 2), [['1', 'Internal', 'Chưa quảng c'], ['2', 'External', 'Thiếu nguồn ']]);
+  assert.deepEqual(summarize(r.items, NOW).counts, summarize(parseBlockers(SP_CSV, NOW).items, NOW).counts);
+});
+
 test('Báo cáo phê duyệt KPI: 1 dòng / nhóm theo mẫu, giữ chữ trạng thái trên sheet, file .xlsx hợp lệ', () => {
   const rows = approvalRows([
     { name: 'Dòng tiền bán 4 dự án', groups: [
