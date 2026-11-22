@@ -8,19 +8,19 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com" />
 
 const CSS = `
   :root { color-scheme: dark; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #07090d radial-gradient(circle at 0% 0%, rgba(200, 255, 77, .05), transparent 40%) fixed; font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; color: #f3f6fa; -webkit-font-smoothing: antialiased; }
-  form { width: min(380px, calc(100vw - 32px)); background: #0e1218; border: 1px solid #1c232e; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 12px; }
-  h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #c8ff4d; }
-  p { margin: 0; font-size: 13px; color: #8994a6; }
-  p b { color: #f3f6fa; }
-  label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #8994a6; }
-  input { box-sizing: border-box; width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #2a3442; border-radius: 8px; font-family: inherit; background: #151a23; color: #f3f6fa; text-transform: none; letter-spacing: 0; }
-  input:focus { outline: 2px solid #c8ff4d; outline-offset: 1px; }
-  button { margin-top: 4px; width: 100%; padding: 10px; font-size: 15px; font-weight: 700; color: #0a0d12; background: #c8ff4d; border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #060b15 radial-gradient(circle at 0% 0%, rgba(76, 195, 255, .05), transparent 40%) fixed; font-family: 'Roboto', 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif; color: #eef2f8; -webkit-font-smoothing: antialiased; }
+  form { width: min(380px, calc(100vw - 32px)); background: #0d1626; border: 1px solid #1e2b42; border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 12px; }
+  h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; color: #4cc3ff; }
+  p { margin: 0; font-size: 13px; color: #7e8aa0; }
+  p b { color: #eef2f8; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #7e8aa0; }
+  input { box-sizing: border-box; width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #2b3c58; border-radius: 8px; font-family: inherit; background: #121d30; color: #eef2f8; text-transform: none; letter-spacing: 0; }
+  input:focus { outline: 2px solid #4cc3ff; outline-offset: 1px; }
+  button { margin-top: 4px; width: 100%; padding: 10px; font-size: 15px; font-weight: 700; color: #04121e; background: #4cc3ff; border: 0; border-radius: 8px; cursor: pointer; font-family: inherit; }
   button:hover { filter: brightness(1.08); }
-  .err { color: #ff4d6d; font-size: 13px; font-weight: 600; }
-  .info { color: #ffb020; background: rgba(255, 176, 32, .12); border: 1px solid rgba(255, 176, 32, .5); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
-  a { color: #c8ff4d; font-size: 13px; }
+  .err { color: #ff6b5e; font-size: 13px; font-weight: 600; }
+  .info { color: #ffc24d; background: rgba(255, 194, 77, .12); border: 1px solid rgba(255, 194, 77, .5); border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  a { color: #4cc3ff; font-size: 13px; }
 `;
 
 function page(title, body, status = 200) {
@@ -85,13 +85,14 @@ export const NAV_PAGES = [
   ["/kpi", "KPI & kết quả"],
   ["/lich-truc", "Lịch trực 24/7"],
   ["/lich", "Hẹn lịch BOD"],
-  ["/waiting-point", "Waiting Point"],
+  ["/waiting-point", "Điểm nghẽn"],
+  ["/no-waiting-point", "Zero Waiting Point"],
 ];
 
 export const WP_SEC_PER_PERSON = 10;
 export const BOOKING_ROTATE_SEC = 30;
 
-/** Thời lượng hiển thị Waiting Point (giây): 0 người -> 0s (bỏ qua), mỗi người +10s. */
+/** Thời lượng hiển thị Điểm nghẽn (/waiting-point, giây): 0 người -> 0s (bỏ qua), mỗi người +10s. */
 export function waitingPointRotateSec(peopleCount) {
   const n = Math.max(0, Math.floor(Number(peopleCount) || 0));
   return n * WP_SEC_PER_PERSON;
@@ -99,15 +100,15 @@ export function waitingPointRotateSec(peopleCount) {
 
 // Danh sách 3 tab hỗ trợ tự động chuyển luân phiên trên màn hình War Room:
 // - KPI & kết quả: 3 phút (180s)
-// - Waiting Point: 0 người -> bỏ qua / rời ngay về KPI; có người -> mỗi người +10s.
+// - Điểm nghẽn (/waiting-point): 0 người -> bỏ qua / rời ngay về KPI; có người -> mỗi người +10s.
 // - Hẹn lịch BOD: không có lịch họp sắp tới -> bỏ qua; có người đặt lịch họp -> tự bật lên 30s cho cấp trên xem.
 export const AUTO_ROTATE_TABS = [
   { href: "/kpi", label: "KPI & kết quả", sec: 180 },
-  { href: "/waiting-point", label: "Waiting Point", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
+  { href: "/waiting-point", label: "Điểm nghẽn", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
   { href: "/lich", label: "Hẹn lịch BOD", sec: BOOKING_ROTATE_SEC, whenHasData: true },
 ];
 
-/** Tính tab kế tiếp khi bật tự động chuyển tab; tự bỏ qua Waiting Point nếu 0 người và Hẹn lịch BOD nếu 0 lịch họp sắp tới. */
+/** Tính tab kế tiếp khi bật tự động chuyển tab; tự bỏ qua Điểm nghẽn nếu 0 người và Hẹn lịch BOD nếu 0 lịch họp sắp tới. */
 export function nextRotateTarget(currentPath, enabledMap = {}, wpPeopleCount = null, bookingCount = null) {
   const active = AUTO_ROTATE_TABS.filter((t) => enabledMap[t.href] !== false);
   if (active.length < 2) return null;
@@ -125,67 +126,67 @@ export function nextRotateTarget(currentPath, enabledMap = {}, wpPeopleCount = n
 }
 
 const NAV_STYLE = `<style>
-.wr-nav{position:relative;z-index:9000;display:flex;align-items:stretch;gap:2px;height:44px;margin:0;padding:0 16px;box-sizing:border-box;background:#0e1218;border-bottom:1px solid #1c232e;color:#b6c0ce;font:500 13px/1.2 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;letter-spacing:0;text-transform:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-font-smoothing:antialiased}
+.wr-nav{position:relative;z-index:9000;display:flex;align-items:stretch;gap:2px;height:44px;margin:0;padding:0 16px;box-sizing:border-box;background:#0d1626;border-bottom:1px solid #1e2b42;color:#b4c0d2;font:500 13px/1.2 'Roboto','Segoe UI',system-ui,sans-serif;letter-spacing:0;text-transform:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-font-smoothing:antialiased}
 .wr-nav::-webkit-scrollbar{display:none}
 .wr-nav a{text-decoration:none}
-.wr-brand{display:flex;align-items:center;gap:8px;margin-right:12px;color:#f3f6fa;font-weight:800;letter-spacing:.04em;white-space:nowrap}
-.wr-brand i{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:#c8ff4d;color:#0a0d12;font-size:10.5px;font-style:normal;font-weight:800;letter-spacing:0}
-.wr-link{display:flex;align-items:center;padding:0 12px;border-bottom:2px solid transparent;color:#b6c0ce;white-space:nowrap}
-.wr-link:hover{color:#f3f6fa}
-.wr-link[aria-current=page]{border-bottom-color:#c8ff4d;color:#f3f6fa;font-weight:600}
+.wr-brand{display:flex;align-items:center;gap:8px;margin-right:12px;color:#eef2f8;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.wr-brand i{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:#4cc3ff;color:#04121e;font-size:10.5px;font-style:normal;font-weight:800;letter-spacing:0}
+.wr-link{display:flex;align-items:center;padding:0 12px;border-bottom:2px solid transparent;color:#b4c0d2;white-space:nowrap}
+.wr-link:hover{color:#eef2f8}
+.wr-link[aria-current=page]{border-bottom-color:#4cc3ff;color:#eef2f8;font-weight:600}
 .wr-sp{flex:1 0 12px}
-.wr-auto{display:flex;align-items:center;gap:8px;margin:8px 8px 8px 0;padding:0 12px;border:1px solid #2a3442;border-radius:999px;background:#151a23;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
-.wr-auto:hover{border-color:#c8ff4d;color:#f3f6fa}
-.wr-auto i{position:relative;width:28px;height:16px;border-radius:999px;background:#2a3442;flex:none;transition:background .2s}
-.wr-auto i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#8994a6;transition:transform .2s,background .2s}
-.wr-auto[aria-pressed=true]{border-color:#c8ff4d;color:#f3f6fa}
-.wr-auto[aria-pressed=true] i{background:color-mix(in srgb,#c8ff4d 30%,#151a23)}
-.wr-auto[aria-pressed=true] i::after{transform:translateX(12px);background:#c8ff4d}
+.wr-auto{display:flex;align-items:center;gap:8px;margin:8px 8px 8px 0;padding:0 12px;border:1px solid #2b3c58;border-radius:999px;background:#121d30;color:#b4c0d2;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.wr-auto:hover{border-color:#4cc3ff;color:#eef2f8}
+.wr-auto i{position:relative;width:28px;height:16px;border-radius:999px;background:#2b3c58;flex:none;transition:background .2s}
+.wr-auto i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#7e8aa0;transition:transform .2s,background .2s}
+.wr-auto[aria-pressed=true]{border-color:#4cc3ff;color:#eef2f8}
+.wr-auto[aria-pressed=true] i{background:color-mix(in srgb,#4cc3ff 30%,#121d30)}
+.wr-auto[aria-pressed=true] i::after{transform:translateX(12px);background:#4cc3ff}
 .wr-auto[hidden]{display:none}
-.wr-rot-grp{display:inline-flex;align-items:stretch;margin:8px 12px 8px 0;border:1px solid #2a3442;border-radius:999px;background:#151a23;overflow:hidden;flex:none}
-.wr-rot-grp[data-on=true]{border-color:#c8ff4d}
-.wr-rot-btn{display:flex;align-items:center;gap:7px;padding:0 10px 0 11px;border:0;background:transparent;color:#b6c0ce;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
-.wr-rot-btn:hover{color:#f3f6fa}
-.wr-rot-btn i{position:relative;width:28px;height:16px;border-radius:999px;background:#2a3442;flex:none;transition:background .2s}
-.wr-rot-btn i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#8994a6;transition:transform .2s,background .2s}
-.wr-rot-btn[aria-pressed=true]{color:#f3f6fa}
-.wr-rot-btn[aria-pressed=true] i{background:color-mix(in srgb,#c8ff4d 30%,#151a23)}
-.wr-rot-btn[aria-pressed=true] i::after{transform:translateX(12px);background:#c8ff4d}
-.wr-rot-cd{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;color:#c8ff4d}
+.wr-rot-grp{display:inline-flex;align-items:stretch;margin:8px 12px 8px 0;border:1px solid #2b3c58;border-radius:999px;background:#121d30;overflow:hidden;flex:none}
+.wr-rot-grp[data-on=true]{border-color:#4cc3ff}
+.wr-rot-btn{display:flex;align-items:center;gap:7px;padding:0 10px 0 11px;border:0;background:transparent;color:#b4c0d2;font:inherit;font-size:12.5px;white-space:nowrap;cursor:pointer}
+.wr-rot-btn:hover{color:#eef2f8}
+.wr-rot-btn i{position:relative;width:28px;height:16px;border-radius:999px;background:#2b3c58;flex:none;transition:background .2s}
+.wr-rot-btn i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#7e8aa0;transition:transform .2s,background .2s}
+.wr-rot-btn[aria-pressed=true]{color:#eef2f8}
+.wr-rot-btn[aria-pressed=true] i{background:color-mix(in srgb,#4cc3ff 30%,#121d30)}
+.wr-rot-btn[aria-pressed=true] i::after{transform:translateX(12px);background:#4cc3ff}
+.wr-rot-cd{font-family:'Roboto',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;color:#4cc3ff}
 .wr-rot-cd:empty{display:none}
-.wr-rot-cfg{display:inline-flex;align-items:center;justify-content:center;width:26px;padding:0;border:0;border-left:1px solid #2a3442;background:transparent;color:#8994a6;font:inherit;font-size:11px;cursor:pointer}
-.wr-rot-cfg:hover,.wr-rot-cfg[aria-expanded=true]{background:#1b222d;color:#f3f6fa}
-.wr-rot-pop{position:fixed;top:48px;right:16px;z-index:9500;width:296px;padding:12px;border:1px solid #2a3442;border-radius:12px;background:#0e1218;color:#f3f6fa;font:500 13px/1.35 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;box-shadow:0 16px 36px rgba(0,0,0,.55);box-sizing:border-box}
+.wr-rot-cfg{display:inline-flex;align-items:center;justify-content:center;width:26px;padding:0;border:0;border-left:1px solid #2b3c58;background:transparent;color:#7e8aa0;font:inherit;font-size:11px;cursor:pointer}
+.wr-rot-cfg:hover,.wr-rot-cfg[aria-expanded=true]{background:#1a2740;color:#eef2f8}
+.wr-rot-pop{position:fixed;top:48px;right:16px;z-index:9500;width:296px;padding:12px;border:1px solid #2b3c58;border-radius:12px;background:#0d1626;color:#eef2f8;font:500 13px/1.35 'Roboto','Segoe UI',system-ui,sans-serif;box-shadow:0 16px 36px rgba(0,0,0,.55);box-sizing:border-box}
 .wr-rot-pop[hidden]{display:none}
-.wr-rot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1c232e}
-.wr-rot-head b{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#f3f6fa}
-.wr-rot-head span{font-size:11px;color:#8994a6}
+.wr-rot-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1e2b42}
+.wr-rot-head b{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#eef2f8}
+.wr-rot-head span{font-size:11px;color:#7e8aa0}
 .wr-rot-list{display:flex;flex-direction:column;gap:6px}
-.wr-rot-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid #1c232e;border-radius:8px;background:#151a23;cursor:pointer;user-select:none}
-.wr-rot-item:hover{border-color:#2a3442;background:#1b222d}
+.wr-rot-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid #1e2b42;border-radius:8px;background:#121d30;cursor:pointer;user-select:none}
+.wr-rot-item:hover{border-color:#2b3c58;background:#1a2740}
 .wr-rot-item-l{display:flex;align-items:center;gap:9px;min-width:0}
-.wr-rot-item input{width:15px;height:15px;margin:0;accent-color:#c8ff4d;cursor:pointer;flex:none}
-.wr-rot-item strong{font-size:13px;font-weight:600;color:#f3f6fa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wr-rot-item em{font-style:normal;font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:600;color:#c8ff4d;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,#c8ff4d 12%,transparent);white-space:nowrap}
-.wr-rot-item.is-off strong{color:#6e7a8c}
-.wr-rot-item.is-off em{color:#6e7a8c;background:#1c232e}
-.wr-rot-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #1c232e;font-size:11.5px;color:#8994a6}
-.wr-rot-next{padding:4px 9px;border:1px solid #2a3442;border-radius:6px;background:#151a23;color:#f3f6fa;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
-.wr-rot-next:hover:not(:disabled){border-color:#c8ff4d;color:#c8ff4d}
+.wr-rot-item input{width:15px;height:15px;margin:0;accent-color:#4cc3ff;cursor:pointer;flex:none}
+.wr-rot-item strong{font-size:13px;font-weight:600;color:#eef2f8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wr-rot-item em{font-style:normal;font-family:'Roboto',ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:600;color:#4cc3ff;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,#4cc3ff 12%,transparent);white-space:nowrap}
+.wr-rot-item.is-off strong{color:#6b7790}
+.wr-rot-item.is-off em{color:#6b7790;background:#1e2b42}
+.wr-rot-foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:9px;border-top:1px solid #1e2b42;font-size:11.5px;color:#7e8aa0}
+.wr-rot-next{padding:4px 9px;border:1px solid #2b3c58;border-radius:6px;background:#121d30;color:#eef2f8;font:inherit;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.wr-rot-next:hover:not(:disabled){border-color:#4cc3ff;color:#4cc3ff}
 .wr-rot-next:disabled{opacity:.4;cursor:default}
-.wr-user{display:flex;align-items:center;gap:12px;color:#8994a6;font-size:12.5px;white-space:nowrap}
-.wr-user b{color:#f3f6fa;font-weight:600}
-.wr-user a{color:#b6c0ce}
-.wr-user a:hover,.wr-user a[aria-current=page]{color:#c8ff4d}
+.wr-user{display:flex;align-items:center;gap:12px;color:#7e8aa0;font-size:12.5px;white-space:nowrap}
+.wr-user b{color:#eef2f8;font-weight:600}
+.wr-user a{color:#b4c0d2}
+.wr-user a:hover,.wr-user a[aria-current=page]{color:#4cc3ff}
 .wr-nav~#root{height:calc(100% - 44px)}.wr-nav~#root .wall{height:calc(100vh - 44px)}
-.wr-bk-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9600;display:flex;align-items:center;gap:12px;max-width:min(760px,calc(100vw - 24px));padding:10px 16px;border:1px solid #c8ff4d;border-radius:12px;background:#0e1218;color:#f3f6fa;font:500 13.5px/1.35 'Be Vietnam Pro','Segoe UI',system-ui,sans-serif;box-shadow:0 16px 40px rgba(0,0,0,.65)}
+.wr-bk-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9600;display:flex;align-items:center;gap:12px;max-width:min(760px,calc(100vw - 24px));padding:10px 16px;border:1px solid #4cc3ff;border-radius:12px;background:#0d1626;color:#eef2f8;font:500 13.5px/1.35 'Roboto','Segoe UI',system-ui,sans-serif;box-shadow:0 16px 40px rgba(0,0,0,.65)}
 .wr-bk-bar[hidden]{display:none}
-.wr-bk-tag{padding:2px 8px;border-radius:999px;background:#c8ff4d;color:#0a0d12;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.wr-bk-tag{padding:2px 8px;border-radius:999px;background:#4cc3ff;color:#04121e;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
 .wr-bk-txt{min-width:0;flex:1}
-.wr-bk-txt b{color:#c8ff4d}
-.wr-bk-cd{font-family:'JetBrains Mono',ui-monospace,Consolas,monospace;font-weight:800;color:#c8ff4d;white-space:nowrap}
-.wr-bk-stay{padding:5px 10px;border:1px solid #2a3442;border-radius:8px;background:#151a23;color:#f3f6fa;font:600 12px inherit;cursor:pointer;white-space:nowrap}
-.wr-bk-stay:hover{border-color:#c8ff4d;color:#c8ff4d}
+.wr-bk-txt b{color:#4cc3ff}
+.wr-bk-cd{font-family:'Roboto',ui-monospace,Consolas,monospace;font-weight:800;color:#4cc3ff;white-space:nowrap}
+.wr-bk-stay{padding:5px 10px;border:1px solid #2b3c58;border-radius:8px;background:#121d30;color:#eef2f8;font:600 12px inherit;cursor:pointer;white-space:nowrap}
+.wr-bk-stay:hover{border-color:#4cc3ff;color:#4cc3ff}
 :root[data-tv] .wr-nav,:root[data-theme=tv] .wr-nav,:root[data-tv] .wr-rot-pop,:root[data-theme=tv] .wr-rot-pop{display:none}
 @media (max-width:760px){.wr-nav{padding:0 8px}.wr-brand span,.wr-name,.wr-auto span,.wr-rot-lbl{display:none}}
 @media (prefers-reduced-motion:reduce){.wr-auto i,.wr-auto i::after,.wr-rot-btn i,.wr-rot-btn i::after{transition:none}}
@@ -267,7 +268,7 @@ const AUTO_SCROLL = `<script>(() => {
   if (on) set(true);
 })();</script>`;
 
-// Nút "Tự chuyển tab": xoay vòng giữa KPI & kết quả (3p), Waiting Point (10s/người; bỏ qua khi trống) và Hẹn lịch BOD (30s khi có lịch họp; bỏ qua khi trống).
+// Nút "Tự chuyển tab": xoay vòng giữa KPI & kết quả (3p), Điểm nghẽn (10s/người; bỏ qua khi trống) và Hẹn lịch BOD (30s khi có lịch họp; bỏ qua khi trống).
 // Khi có người vừa đặt lịch họp mới (WebSocket scope="bookings", event="created", kind="meeting"), màn hình đang bật Chuyển tab lập tức mở /lich trong 30 giây cho cấp trên thấy rồi tự quay lại.
 const AUTO_ROTATE = `<script>(() => {
   const TABS = ${JSON.stringify(AUTO_ROTATE_TABS)};
@@ -457,8 +458,8 @@ const AUTO_ROTATE = `<script>(() => {
     for (const cand of candidates) {
       if (cand.href === "/waiting-point") {
         const n = await fetchWpStatus();
-        if (n === 0) { skipped.push("Waiting Point trống"); continue; }
-        if (n === null && !manual) { skipped.push("chưa kiểm tra được Waiting Point"); continue; }
+        if (n === 0) { skipped.push("Điểm nghẽn trống"); continue; }
+        if (n === null && !manual) { skipped.push("chưa kiểm tra được Điểm nghẽn"); continue; }
       } else if (cand.href === "/lich") {
         const n = await fetchBookingStatus();
         if (n === 0) { skipped.push("chưa có lịch họp"); continue; }
@@ -571,7 +572,7 @@ const AUTO_ROTATE = `<script>(() => {
       ? (skipNote || (flash && onLich ? "Lịch họp mới: tự quay lại sau " + fmtSec(remainSec) : "Đang tự chuyển sang " + (next?.label || "KPI") + (remainSec === null ? "" : " sau " + fmtSec(remainSec)) + ". Bấm để tắt."))
       : st.on && active.length < 2
         ? "Cần bật ít nhất 2 tab để tự chuyển."
-        : "Tự chuyển: KPI (3p) ↔ Waiting Point (10s/người) ↔ Hẹn lịch BOD (30s khi có lịch họp mới / sắp tới).";
+        : "Tự chuyển: KPI (3p) ↔ Điểm nghẽn (10s/người) ↔ Hẹn lịch BOD (30s khi có lịch họp mới / sắp tới).";
 
     pop.querySelectorAll("input[data-rot-href]").forEach((cb) => {
       const h = cb.getAttribute("data-rot-href");

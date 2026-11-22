@@ -75,6 +75,464 @@ details.notice summary::-webkit-details-marker {
   --st-bd: color-mix(in srgb, var(--upcoming) 60%, transparent);
 }
 
+/* ---------- trạng thái duyệt KPI của BOD theo nhóm: đã duyệt xanh lá · cần trình lại vàng · chưa trình đỏ ---------- */
+.ap-A {
+  --st: var(--success);
+  --st-bg: var(--success-bg);
+  --st-bd: var(--success-border);
+}
+
+.ap-R {
+  --st: var(--warning);
+  --st-bg: var(--warning-bg);
+  --st-bd: var(--warning-border);
+}
+
+.ap-N {
+  --st: var(--danger);
+  --st-bg: var(--danger-bg);
+  --st-bd: var(--danger-border);
+}
+
+.ap-R-t,
+.kt-lab.ap-R-t {
+  color: var(--warning);
+}
+
+.kt-lab.ap-N-t {
+  color: var(--danger);
+}
+
+.k-approval .k-phead .btn {
+  flex: none;
+}
+
+.ka-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s12);
+}
+
+.ka-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--st-bd);
+  border-radius: var(--r-md);
+  background: var(--st-bg);
+}
+
+.ka-stat b {
+  color: var(--st);
+  font-family: var(--mono);
+  font-size: 22px;
+  line-height: 26px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ka-stat small {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-stat.is-zero {
+  border-color: var(--border);
+  background: none;
+}
+
+.ka-stat.is-zero b {
+  color: var(--muted);
+}
+
+/* Phê duyệt KPI của BOD (Figma "bản mới"): tổng quan + ô số bấm được để lọc + bảng gom theo dòng tiền. */
+.ka-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s16) 28px;
+}
+
+.ka-overall {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 300px;
+  max-width: 100%;
+}
+
+.ka-overall .kt-seg {
+  height: 8px;
+  border-radius: 4px;
+}
+
+.ka-ratio {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ka-ratio b {
+  font-family: var(--mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ka-ratio small {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 28px;
+  border-left: 1px solid var(--border-strong);
+}
+
+.ka-filter .ka-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ka-filter .ka-sub .ic {
+  width: 12px;
+  height: 12px;
+}
+
+button.ka-stat {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: box-shadow .12s, border-color .12s, background .12s;
+}
+
+button.ka-stat:hover:not(:disabled) {
+  border-color: var(--st);
+}
+
+button.ka-stat[aria-pressed="true"] {
+  border-color: var(--st);
+  background: var(--st-bg);
+  box-shadow: 0 0 0 1px var(--st);
+}
+
+button.ka-stat[aria-pressed="true"] small {
+  color: var(--text);
+}
+
+button.ka-stat:disabled {
+  cursor: default;
+}
+
+.ka-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-view b {
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 500;
+}
+
+.ka-clear {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ka-clear:hover {
+  text-decoration: underline;
+}
+
+.ka-table {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.ka-row {
+  display: flex;
+  border-top: 1px solid var(--border);
+}
+
+.ka-row:first-child {
+  border-top: 0;
+}
+
+.ka-scell {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 300px;
+  padding: 14px 16px;
+}
+
+.ka-scell small {
+  padding-left: 36px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 0 36px;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-mini .kt-seg {
+  flex: none;
+  width: 72px;
+  height: 4px;
+}
+
+.ka-groups {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+}
+
+.ka-groups.is-one {
+  justify-content: center;
+}
+
+.ka-grow {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(160px, 1fr) minmax(120px, 200px) 270px minmax(100px, 200px);
+  align-items: center;
+  gap: 4px 16px;
+  min-width: 0;
+  padding: 11px 16px;
+}
+
+.ka-groups .ka-grow {
+  flex: none;
+}
+
+.ka-groups .ka-grow+.ka-grow {
+  border-top: 1px solid var(--border);
+}
+
+.ka-gname {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ka-gname .kt-dot {
+  width: 6px;
+  height: 6px;
+  transform: translateY(-2px);
+}
+
+.ka-gname b {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.ka-gpic {
+  color: var(--text-2);
+}
+
+.ka-gnote {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  overflow-wrap: anywhere;
+}
+
+.ka-grow .muted {
+  color: var(--muted);
+}
+
+.ka-thead {
+  background: var(--bg-subtle);
+  color: var(--muted);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.ka-thead .ka-scell,
+.ka-thead .ka-grow {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.ka-thead .ka-grow {
+  border-left: 1px solid transparent;
+}
+
+.ka-full {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-full .ic {
+  width: 14px;
+  height: 14px;
+  color: var(--success);
+}
+
+.ka-full b {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+@media (max-width: 900px) {
+  .ka-filter {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .ka-thead {
+    display: none;
+  }
+
+  .ka-row {
+    flex-direction: column;
+  }
+
+  .ka-scell {
+    width: auto;
+    padding-bottom: 8px;
+  }
+
+  .ka-groups {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
+  .ka-grow {
+    grid-template-columns: 1fr auto;
+  }
+}
+
+.ka-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ka-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--s8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ka-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--st-bd);
+  border-left: 3px solid var(--st);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--st) 6%, var(--bg-surface));
+}
+
+.ka-where {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 140px;
+}
+
+.ka-where b {
+  font-weight: 500;
+}
+
+.ka-where small {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.ka-note {
+  flex-basis: 100%;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.km-pending {
+  margin-top: var(--s12);
+}
+
+.kms-ap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kt-ap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+}
+
+.kt-ap .kd {
+  width: 9px;
+  height: 9px;
+}
+
+@media (max-width: 560px) {
+  .ka-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 .kd {
   display: inline-block;
   width: 12px;
@@ -394,11 +852,10 @@ details.notice summary::-webkit-details-marker {
 
 .k-phead h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 24px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .k-phead .hint {
@@ -407,11 +864,10 @@ details.notice summary::-webkit-details-marker {
 
 .k-empty h2 {
   margin: 0;
-  font-size: 17px;
+  font-size: 18px;
   line-height: 24px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 
 .k-none {
@@ -1152,6 +1608,76 @@ details.notice summary::-webkit-details-marker {
   min-width: 0;
 }
 
+/* ---------- KPI gom theo nhóm trong từng dòng tiền + thanh lọc theo nhóm ---------- */
+.km-gfilter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.km-gfilter .kf-chip b {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.km-gfilter .kf-chip[aria-pressed="true"] b {
+  color: inherit;
+}
+
+.km-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s12);
+  min-width: 0;
+}
+
+.km-group+.km-group {
+  margin-top: var(--s8, 8px);
+}
+
+.kmg-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+}
+
+.kmg-id {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+
+.kmg-id h4 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.kmg-id small {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.kmg-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
 /* ---------- Lưới các khối nhân sự đồng cao (trải đều, cuộn mượt bên trong từng khối) ---------- */
 .km-card-grid {
   display: grid;
@@ -1654,6 +2180,11 @@ details.notice summary::-webkit-details-marker {
   line-height: 16px;
 }
 
+.kl-date.kl-time {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
 .kl-date.is-back {
   background: var(--danger-bg);
   color: var(--danger);
@@ -1996,6 +2527,201 @@ details.notice summary::-webkit-details-marker {
   color: var(--muted);
   font-size: var(--fs-small);
   line-height: var(--lh-small);
+}
+
+/* Bản mới (Figma "Kết quả theo dòng tiền · bản mới"): thanh trạng thái theo tỷ lệ thay cho các ô vuông từng KPI. */
+.kt-row>* {
+  grid-row: 1;
+}
+
+.kt-name b,
+.kt-stream>b {
+  font-size: 16px;
+  line-height: 22px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.kt-name {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.kt-name::after {
+  content: "›";
+  margin-left: 2px;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.kt-name:hover::after {
+  color: var(--accent);
+}
+
+.kt-name .k-code {
+  flex: none;
+  min-width: 26px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-small);
+  line-height: 22px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.kt-partial {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  padding: 1px 8px 1px 6px;
+  border-radius: 999px;
+  background: var(--st-bg);
+  color: var(--st);
+  font-size: var(--fs-label);
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.kt-partial i,
+.kt-note i,
+.kt-dot {
+  display: inline-block;
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st);
+}
+
+.kt-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.kt-dot.st-S {
+  background: var(--neutral-bar, color-mix(in srgb, var(--upcoming) 55%, transparent));
+}
+
+.kt-num {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 20px;
+}
+
+.kt-num b {
+  margin-right: 2px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.kt-num.is-future b {
+  color: var(--text-2);
+}
+
+.kt-seg {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--neutral-bg);
+}
+
+.kt-seg i {
+  flex: 1 1 0;
+  min-width: 3px;
+  background: var(--st);
+}
+
+.kt-seg i.st-S {
+  background: color-mix(in srgb, var(--upcoming) 55%, transparent);
+}
+
+.kt-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--st);
+  font-size: var(--fs-label);
+  line-height: 16px;
+  font-weight: 500;
+}
+
+.kt-ban {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.kt-ban-in {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 14px 9px 12px;
+  border: 1px dashed var(--border-strong, var(--border));
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: 20px;
+}
+
+.kt-ban-in .ic {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--st);
+}
+
+.kt-ban-in b {
+  color: var(--st);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.kt-ban-in span::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--muted);
+}
+
+.kt-sum {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.kt-pct {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.kt-sum b {
+  font-size: 26px;
+  line-height: 30px;
+}
+
+.kt-sum .k-bar {
+  width: 100%;
+  height: 6px;
+}
+
+.kt-head .kt-c {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 /* ---------- Kế hoạch & kết quả theo nhóm ---------- */
@@ -2536,6 +3262,19 @@ details.notice summary::-webkit-details-marker {
   display: none;
 }
 
+/* TV: ô ngày chỉ còn "x/y" và thanh trạng thái. */
+:root[data-tv] .kt-num b {
+  font-size: 18px;
+}
+
+:root[data-tv] .kt-seg {
+  height: 8px;
+}
+
+:root[data-tv] .kt-ban {
+  padding: 8px 12px;
+}
+
 :root[data-tv] .kt-sum b {
   font-size: 28px;
   line-height: 32px;
@@ -2714,4 +3453,14 @@ details.notice summary::-webkit-details-marker {
     grid-column: 1 / -1;
     padding-bottom: 8px;
   }
+}
+/* Lưu ý từ sheet: summary phải là con đầu tiên của <details> (không thì trình duyệt chỉ hiện chữ "Chi tiết") */
+details.nw-ap-notice {
+  display: block;
+}
+
+details.nw-ap-notice summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s12);
 }

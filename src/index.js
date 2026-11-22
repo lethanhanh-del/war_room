@@ -7,6 +7,9 @@
 //   /kpi        KPI & kết quả (public/kpi.html)
 //   /lich-truc  Lịch trực 24/7 (public/war-room.html; /war-room chuyển về đây)
 //   /lich       Hẹn lịch BOD (public/lich.html)
+//   /waiting-point     Điểm nghẽn: vướng mắc cần hỗ trợ từ sheet "Điểm nghẽn" (public/waiting-point.html)
+//   /no-waiting-point  Zero Waiting Point: KPI đã được BOD duyệt nhưng quá hạn, theo từng người (public/no-waiting-point.html,
+//                      cùng dữ liệu GET /api/kpi với trang /kpi)
 //   /admin      Quản trị tài khoản & nhật ký (chỉ admin)
 //
 // Đăng nhập:
@@ -42,6 +45,8 @@ import { handleSheetSync, sheetSyncStatus, syncSheet } from "./excel/sheet-sync.
 import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
 import { handleKpiReview } from "./kpi/close.js"; // KPI-CLOSE: admin xác nhận đúng hạn
 import { handleKpiCloseExport } from "./kpi/close-export.js"; // KPI-CLOSE: tải Excel chốt sổ
+import { handleApprovalReport } from "./kpi/approval-report.js";
+import { handleKpiVisibility } from "./kpi/visibility.js";
 import { sharedLoader } from "./excel/gsheet.js";
 import { fetchSharePointSheetCsv, isSharePointConfigured, sharePointMasterUrl } from "./excel/sharepoint.js";
 import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
@@ -49,9 +54,9 @@ import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPoi
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
 
-const VIEW_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/admin"]);
+const VIEW_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/no-waiting-point", "/admin"]);
 // Trang được chèn thanh điều hướng chung (navBar) vào đầu <body>.
-const NAV_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/admin"]);
+const NAV_PAGES = new Set(["/", "/kpi", "/lich-truc", "/lich", "/waiting-point", "/no-waiting-point", "/admin"]);
 // Trang không trùng tên file trong public/: đường dẫn -> file phục vụ.
 const PAGE_ASSET = { "/": "/app/", "/lich-truc": "/war-room" };
 
@@ -105,6 +110,8 @@ export default {
     }
     // Đồng bộ task từ Google Sheet WR - MASTER TASK (src/excel/sheet-sync.js): GET trạng thái, POST đồng bộ ngay.
     if (path === "/api/excel/sync") return handleSheetSync(request, env);
+    // Báo cáo nhanh tình trạng phê duyệt KPI của BOD theo nhóm (Excel, src/kpi/approval-report.js): nút trên trang /kpi.
+    if (path === "/api/kpi/approval-report") return handleApprovalReport(request, env, user);
     // KPI & kết quả 5 ngày từ Google Sheet KPI (src/kpi/): trang /kpi.
     if (path === "/api/kpi" || path === "/api/kpi/sync" || path === "/api/kpi/audit") return handleKpi(request, env, url, ctx); // KPI-CLOSE: + /api/kpi/audit
     // Màn hình War Room dòng tiền (app React FE/) ở trang "/": cùng dữ liệu KPI, theo định dạng của app.
@@ -116,6 +123,7 @@ export default {
       if (user.role !== "admin") return text("Chỉ dành cho quản trị viên.", 403);
       if (path === "/api/admin/kpi-review") return handleKpiReview(request, env, url, user); // KPI-CLOSE
       if (path === "/api/admin/kpi-close") return handleKpiCloseExport(request, env, url, user); // KPI-CLOSE: tải Excel chốt sổ
+      if (path === "/api/admin/kpi-visibility") return handleKpiVisibility(request, env, user); // Quản lý hiển thị nhiệm vụ: Hiện / Ẩn KPI theo nhóm
       if (path.startsWith("/api/admin/")) return handleAdmin(request, env, url, user);
     }
 

@@ -1834,10 +1834,10 @@ if (typeof document !== 'undefined') {
     app.innerHTML = `
       <header class="wp-head">
         <div class="wp-brand">
-          <span class="wp-brand-badge" aria-hidden="true">WP</span>
+          <span class="wp-brand-badge" aria-hidden="true">ĐN</span>
           <div class="wp-brand-txt">
-            <h1>Waiting Point</h1>
-            <p class="wp-brand-note">Nơi hiển thị trực tiếp các <b>vướng mắc công việc cần hỗ trợ</b>, cập nhật theo thời gian thực.</p>
+            <h1>Điểm nghẽn</h1>
+            <p class="wp-brand-note">Nơi hiển thị trực tiếp các <b>điểm nghẽn / vướng mắc công việc cần hỗ trợ</b> từ sheet <b>“Điểm nghẽn”</b>, cập nhật theo thời gian thực.</p>
           </div>
         </div>
         <div class="wp-actions">
@@ -2172,7 +2172,7 @@ if (typeof document !== 'undefined') {
         <section class="wp-empty">
           <div class="wp-empty-ring">${SVG.checkBig}</div>
           <h2>Hiện không có điểm nghẽn / điểm chờ cần hỗ trợ</h2>
-          <p class="wp-empty-note">Waiting Point cũng chính là bảng hiển thị các <b>điểm nghẽn trong công việc</b>. Khi phát sinh vướng mắc cần hỗ trợ, nhập trực tiếp vào sheet <b>“Điểm nghẽn”</b> để hiển thị ngay tại đây.</p>
+          <p class="wp-empty-note">Trang này hiển thị các <b>điểm nghẽn trong công việc</b>. Khi phát sinh vướng mắc cần hỗ trợ, nhập trực tiếp vào sheet <b>“Điểm nghẽn”</b> để hiển thị ngay tại đây.</p>
           <div class="wp-empty-bar">
             <span class="wp-empty-status">
               <span class="wp-live-dot ${state.isOnline ? '' : 'offline'}"></span>

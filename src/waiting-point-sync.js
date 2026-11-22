@@ -30,28 +30,32 @@ export function countWaitingPointPeopleFromCsv(csv) {
   }
   if (cur.length || row.length) { row.push(cur.replace(/\r$/, '')); rows.push(row); }
 
+  // Dòng tiêu đề: từng ô (không gộp cả dòng — ô "HƯỚNG DẪN" phía trên cũng có chữ "Dòng tiền", "Vấn đề gặp phải").
+  const ISSUE_RE = /^(vấn\s*đề|van\s*de|nội\s*dung|noi\s*dung)/i;
   let headerIdx = -1;
-  for (let i = 0; i < Math.min(rows.length, 6); i++) {
-    const joined = rows[i].join(' ');
-    if (/vấn\s*đề|van\s*de/i.test(joined) && /dòng\s*tiền|dong\s*tien/i.test(joined)) {
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const cells = rows[i].map((c) => String(c || '').trim());
+    if (cells.some((c) => ISSUE_RE.test(c)) && cells.some((c) => /^(dòng\s*tiền|dong\s*tien)$/i.test(c))) {
       headerIdx = i;
       break;
     }
   }
   if (headerIdx < 0) return { peopleCount: 0, itemCount: 0, sec: 0 };
 
-  const headerRow = rows[headerIdx];
+  const headerRow = rows[headerIdx].map((c) => String(c || '').trim());
   const findCol = (re, fb) => {
-    const idx = headerRow.findIndex((h) => re.test(String(h || '')));
+    const idx = headerRow.findIndex((h) => re.test(h));
     return idx >= 0 ? idx : fb;
   };
-  const iStt = findCol(/stt/i, 0);
-  const iStream = findCol(/dòng\s*tiền|dong\s*tien/i, 1);
-  const iGroup = findCol(/nhóm\s*công\s*việc|nhom\s*cong\s*viec/i, 2);
-  const iIssue = findCol(/vấn\s*đề|van\s*de/i, 3);
+  const iStt = findCol(/^stt$/i, 0);
+  const iStream = findCol(/^(dòng\s*tiền|dong\s*tien)$/i, 1);
+  const iGroup = findCol(/^(nhóm|nhom)/i, 2);
+  const iIssue = findCol(ISSUE_RE, 3);
   const iTime = findCol(/thời\s*gian|thoi\s*gian/i, 4);
   const iOwner = findCol(/người\s*phụ\s*trách|nguoi\s*phu\s*trach/i, 5);
   const iSupporter = findCol(/người\s*hỗ\s*trợ|nguoi\s*ho\s*tro/i, 6);
+  const iStatus = findCol(/^(trạng\s*thái|trang\s*thai|tình\s*trạng)/i, -1);
+  const DONE_RE = /^(đã\s*xử\s*lý|hoàn\s*thành|đã\s*tháo\s*gỡ|đã\s*giải\s*quyết|xong|đã\s*xong|done)/i;
 
   const people = new Set();
   let itemCount = 0;
@@ -64,6 +68,7 @@ export function countWaitingPointPeopleFromCsv(csv) {
     if (/^vấn\s*đề\s*gặp\s*phải$/i.test(issue) || (/^stt$/i.test(stt) && /^dòng\s*tiền$/i.test(stream))) continue;
     // Chỉ cần có Dòng tiền + Vấn đề gặp phải + (Người phụ trách hoặc Người hỗ trợ) là hiển thị Điểm nghẽn.
     if (!stream || !issue || (!owner && !supporter)) continue;
+    if (iStatus >= 0 && DONE_RE.test(String(r[iStatus] || '').trim())) continue; // điểm nghẽn đã xử lý: không còn mở
     itemCount += 1;
     people.add(supporter ? norm(supporter) : '__unassigned__');
   }

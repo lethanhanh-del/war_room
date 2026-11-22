@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { csvSheet, parseCsv } from '../src/excel/gsheet.js';
-import { isKpiTab, isLiquidationTab, isSupportTab, parseKpiBook, parseKpiTab, personName, resultCode, streamNameOf } from '../src/kpi/sheet.js';
-import { buildModel, count, defaultDay, isLateTick, memberStats, noteTargets, refDate, statusOf, weekday } from '../public/kpi-model.js';
+import { approvalCode, isKpiTab, isLiquidationTab, isSupportTab, parseKpiBook, parseKpiTab, personName, resultCode, streamNameOf } from '../src/kpi/sheet.js';
+import { buildModel, count, defaultDay, dueAt, dueAtOf, dueLabel, isLateTick, memberStats, noWaitingPoint, noteTargets, overdueText, parseTimeWindow, refDate, statusOf, timeLabel, weekday } from '../public/kpi-model.js';
 import { stampTicks } from '../src/kpi/ticks.js';
 import { DEMO } from '../public/kpi-demo.js';
 import { DatabaseSync, fakeD1 } from './fixtures/d1.js';
@@ -308,9 +308,119 @@ test('toDashboard: dữ liệu /api/kpi -> định dạng app React (FE/): nhóm
   assert.deepEqual([data2.group, data2.placeholder, data2.days.map((x) => x.task)], ['Data', true, [null, null]]);
 });
 
+test('noWaitingPoint: KPI đã duyệt & quá hạn chưa xong, gom theo người; bỏ dòng tiền chưa trình BOD, KPI chưa tới hạn, đã tick', () => {
+  const now = Date.parse('2026-11-23T03:00:00Z'); // 10:00 23/11 giờ VN: KPI ngày 21 và 22 đã quá hạn (05:00 22/11, 05:00 23/11), ngày 23 chưa
+  const days = [{ date: '2026-11-21', label: '21/11' }, { date: '2026-11-22', label: '22/11' }, { date: '2026-11-23', label: '23/11' }];
+  const row = (person, cells, extra = {}) => ({ row: 1, person, cells, ...extra });
+  const data = {
+    today: '2026-11-23', now, days,
+    streams: [
+      { key: 'ban4', name: 'Dòng tiền bán 4 dự án', bodApproved: true, days, groups: [
+        { key: 'g1', name: 'Networking', pic: { name: 'Mai' }, rows: [
+          row('An', { '2026-11-21': { kpi: 'Gọi 10 khách', res: '' }, '2026-11-22': { kpi: 'Gặp 3 khách', res: '' }, '2026-11-23': { kpi: 'Chốt 1 deal', res: '' } }, { note: 'Khách bận' }),
+          row('Bình', { '2026-11-21': { kpi: 'Đã xong', res: 'D' }, '2026-11-22': { kpi: 'Ghi không đạt', res: 'K' } }),
+          row('', { '2026-11-22': { kpi: 'Không ghi người', res: '' } }),
+        ] },
+      ] },
+      { key: 'bank', name: 'Dòng tiền Banking', bodApproved: true, days, groups: [
+        { key: 'g1', name: 'Tín dụng', rows: [row('an', { '2026-11-22': { kpi: 'Nộp hồ sơ', res: '' } })] },
+      ] },
+      { key: 'tp', name: 'Dòng tiền trái phiếu', bodApproved: false, days, groups: [
+        { key: 'g1', name: 'TP', rows: [row('Cường', { '2026-11-21': { kpi: 'Quá hạn nhưng chưa trình BOD', res: '' } })] },
+      ] },
+    ],
+  };
+  const r = noWaitingPoint(buildModel(data), now);
+  assert.deepEqual(r.unapproved.map((u) => [u.stream, u.group, u.code]), [['Dòng tiền trái phiếu', 'TP', 'N']]);
+  assert.equal(r.total, 5);
+  // Sắp đến hạn: KPI 23/11 của An chưa tick, hạn 05:00 24/11 (còn 19 giờ)
+  assert.deepEqual(r.upcoming.map((it) => [it.person, it.kpi, it.leftMs]), [['An', 'Chốt 1 deal', dueAt('2026-11-23') - now]]);
+  // An (3: 21, 22 ở bán 4 dự án + 22 ở Banking, "an" gộp cùng người) > Bình (1: ghi Không đạt) = Mai (1: dòng không ghi người -> PIC nhóm)
+  assert.deepEqual(r.people.map((p) => [p.name, p.count]), [['An', 3], ['Bình', 1], ['Mai', 1]]);
+  const an = r.people[0];
+  assert.deepEqual(an.groups, ['Dòng tiền bán 4 dự án · Networking', 'Dòng tiền Banking · Tín dụng']);
+  assert.deepEqual(an.items.map((it) => [it.date, it.kpi, it.due, it.overdueMs]), [
+    ['2026-11-21', 'Gọi 10 khách', dueAt('2026-11-21'), now - dueAt('2026-11-21')],
+    ['2026-11-22', 'Gặp 3 khách', dueAt('2026-11-22'), now - dueAt('2026-11-22')],
+    ['2026-11-22', 'Nộp hồ sơ', dueAt('2026-11-22'), now - dueAt('2026-11-22')],
+  ]);
+  assert.equal(an.oldestDue, dueAt('2026-11-21'));
+  assert.equal(an.items[0].note, 'Khách bận');
+  // Tick xong -> rời khỏi trang
+  data.streams[0].groups[0].rows[0].cells['2026-11-21'].res = 'D';
+  assert.equal(noWaitingPoint(buildModel(data), now).people[0].count, 2);
+  // Trước 05:00 23/11 giờ VN: KPI ngày 22 chưa quá hạn
+  const early = Date.parse('2026-11-22T21:30:00Z');
+  const r2 = noWaitingPoint(buildModel({ ...data, today: '2026-11-22', now: early }), early);
+  assert.deepEqual(r2.people, []);
+  assert.equal(r2.total, 0); // KPI 21/11 của An đã tick, ngày 22 chưa tới hạn, Bình ghi Không đạt ngày 22 cũng chưa tới hạn
+  // Tất cả KPI chưa xong (kể cả ghi Không đạt, kể cả ngày sau) đều ở danh sách sắp đến hạn, hạn gần nhất trước
+  assert.deepEqual(r2.upcoming.map((it) => [it.person, it.date]), [['an', '2026-11-22'], ['An', '2026-11-22'], ['Bình', '2026-11-22'], ['Mai', '2026-11-22'], ['An', '2026-11-23']]);
+});
+
+test('Cột thời gian thực hiện (09:00-10:00): hạn = giờ kết thúc; sheet có cột giờ riêng từng ngày hoặc chung cả dòng', () => {
+  assert.deepEqual(parseTimeWindow('09:00-10:00'), { start: '09:00', end: '10:00' });
+  assert.deepEqual(parseTimeWindow('9h-10h30'), { start: '09:00', end: '10:30' });
+  assert.deepEqual(parseTimeWindow('8h30 đến 9h'), { start: '08:30', end: '09:00' });
+  assert.deepEqual(parseTimeWindow('trước 16:00'), { start: '', end: '16:00' });
+  assert.equal(parseTimeWindow('21/11'), null);
+  assert.equal(parseTimeWindow('Sáng'), null);
+  assert.equal(timeLabel('09:00-10:00'), '09:00–10:00');
+  assert.equal(timeLabel('16h'), 'đến 16:00');
+  assert.equal(timeLabel(''), '');
+  // Hạn: 10:00 ngày 22/11 giờ VN = 03:00Z; không ghi giờ -> 05:00 sáng 23/11
+  assert.equal(dueAtOf({ time: '09:00-10:00' }, '2026-11-22'), Date.parse('2026-11-22T03:00:00Z'));
+  assert.equal(dueAtOf({ time: 'Sáng' }, '2026-11-22'), dueAt('2026-11-22'));
+  assert.equal(dueLabel('2026-11-22', dueAtOf({ time: '09:00-10:00' }, '2026-11-22')), '10:00 22/11');
+  // Trạng thái theo giờ: 09:30 đang làm, 10:00 quá hạn; tick lúc 10:05 = trễ hạn, tick 09:50 = đúng hạn
+  const cell = { kpi: 'Gọi khách', res: '', time: '09:00-10:00' };
+  assert.equal(statusOf(cell, '2026-11-22', '2026-11-22', Date.parse('2026-11-22T02:30:00Z')), 'N');
+  assert.equal(statusOf(cell, '2026-11-22', '2026-11-22', Date.parse('2026-11-22T03:00:00Z')), 'K');
+  assert.equal(statusOf({ ...cell, res: 'D', at: '2026-11-22T03:05:00Z' }, '2026-11-22', '2026-11-22'), 'L');
+  assert.equal(statusOf({ ...cell, res: 'D', at: '2026-11-22T02:50:00Z' }, '2026-11-22', '2026-11-22'), 'D');
+  // Sheet: mỗi ngày 3 cột KPI | Thời gian | Kết quả
+  const csv3 = [
+    'PIC phụ trách: Hoàng Thị Quỳnh Mai,,,,,,,,,',
+    'Stt,Nhóm,PIC,Người phụ trách,21/11,,,22/11,,',
+    ',,,,KPI,Thời gian,Kết quả,KPI,Thời gian,Kết quả',
+    '1,Networking,Mai,An,Gọi 10 khách,09:00-10:00,TRUE,Gặp khách,14h-15h,',
+    '2,Networking,Mai,Bình,Soạn hợp đồng,,FALSE,,,',
+  ].join('\n');
+  const s3 = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', csv3), { year: 2026 });
+  assert.equal(s3.error, undefined);
+  assert.deepEqual(s3.warnings, []);
+  assert.deepEqual(s3.days.map((d) => d.date), ['2026-11-21', '2026-11-22']);
+  const [an, binh] = s3.groups[0].rows;
+  assert.deepEqual(an.cells, { '2026-11-21': { kpi: 'Gọi 10 khách', res: 'D', time: '09:00-10:00' }, '2026-11-22': { kpi: 'Gặp khách', res: '', time: '14h-15h' } });
+  assert.deepEqual(binh.cells, { '2026-11-21': { kpi: 'Soạn hợp đồng', res: '' } });
+  // Sheet: 1 cột "Thời gian thực hiện" chung cho cả dòng, mỗi ngày vẫn 2 cột KPI | Kết quả
+  const csvRow = [
+    'Stt,Nhóm,PIC,Người phụ trách,Thời gian thực hiện,21/11,,22/11,',
+    ',,,,,KPI,Kết quả,KPI,Kết quả',
+    '1,Networking,Mai,An,08:00-09:00,Gọi 10 khách,,Gặp khách,TRUE',
+  ].join('\n');
+  const sr = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', csvRow), { year: 2026 });
+  assert.deepEqual(sr.groups[0].rows[0].cells, { '2026-11-21': { kpi: 'Gọi 10 khách', res: '', time: '08:00-09:00' }, '2026-11-22': { kpi: 'Gặp khách', res: 'D', time: '08:00-09:00' } });
+  // Không có cột giờ: không có trường time
+  const s0 = parseKpiTab(tab('DÒNG TIỀN BÁN 4 DỰ ÁN', TAB_CSV), { year: 2026 });
+  assert.equal(s0.groups[0].rows[0].cells['2026-11-21'].time, undefined);
+});
+
+test('dueLabel / overdueText: hạn 05:00 hôm sau giờ VN, quá hạn tính ngày / giờ / phút', () => {
+  assert.equal(dueLabel('2026-11-21'), '05:00 22/11');
+  assert.equal(dueLabel('2026-11-30'), '05:00 01/12');
+  assert.equal(overdueText(0), 'vừa quá hạn');
+  assert.equal(overdueText(15 * 60000), '15 phút');
+  assert.equal(overdueText(5 * 3600000 + 20 * 60000), '5 giờ 20 phút');
+  assert.equal(overdueText(3 * 3600000), '3 giờ');
+  assert.equal(overdueText(2 * 86400000 + 3 * 3600000 + 59 * 60000), '2 ngày 3 giờ');
+  assert.equal(overdueText(86400000), '1 ngày');
+});
+
 test('navBar: 4 trang (ẩn Dòng tiền) + tài khoản, đánh dấu trang đang mở', async () => {
   const { navBar, NAV_PAGES } = await import('../src/pages.js');
-  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/kpi', '/lich-truc', '/lich', '/waiting-point']);
+  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/kpi', '/lich-truc', '/lich', '/waiting-point', '/no-waiting-point']);
+  assert.deepEqual(NAV_PAGES.slice(3).map(([, label]) => label), ['Điểm nghẽn', 'Zero Waiting Point']);
   const html = navBar({ role: 'user', fullName: 'Võ <Đào>' }, '/kpi');
   assert.match(html, /<a class="wr-link" href="\/kpi" aria-current="page">KPI & kết quả<\/a>/);
   assert.equal((html.match(/aria-current="page"/g) || []).length, 1);
@@ -558,8 +668,45 @@ test('ô E1 duyệt KPI của BOD: FALSE -> bodApproved=false (đánh đỏ chư
 
   const attached = attachPeople([unapproved, approved]);
   const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: unapproved.days, streams: attached });
+  // Sheet chưa có cột "Trạng thái duyệt": cả dòng tiền theo ô E1. Chưa duyệt -> nhóm "Chưa trình BOD", không hiện KPI.
   assert.equal(model.streams[0].bodApproved, false);
-  assert.equal(model.streams[0].items[0].bodApproved, false);
+  assert.deepEqual(model.streams[0].groups.map((g) => [g.name, g.approval.code, g.approval.label]), [['Networking', 'N', 'Chưa trình BOD']]);
+  assert.equal(model.streams[0].items.length, 0);
   assert.equal(model.streams[1].bodApproved, true);
   assert.equal(model.streams[1].items[0].bodApproved, true);
+  assert.deepEqual(model.streams[1].approval, { A: 1, R: 0, N: 0, total: 1, pending: 0 });
+});
+
+test('Cột "Trạng thái duyệt" theo nhóm: 3 trạng thái, chỉ tính KPI nhóm BOD đã duyệt; ghi ở dòng đầu nhóm hoặc dòng mục La Mã', async () => {
+  const { attachPeople } = await kpi();
+  for (const [v, code] of [['Đã được BOD duyệt', 'A'], ['Đã được BOD tạm duyệt', 'A'], ['BOD đã duyệt', 'A'], ['TRUE', 'A'],
+    ['Cần điều chỉnh, bổ sung và trình lại', 'R'], ['Cần điều chỉnh lại KPI theo bút phê', 'R'], ['Trình lại BOD', 'R'],
+    ['Chưa trình BOD', 'N'], ['chưa trình', 'N'], ['FALSE', 'N'], ['', '']]) assert.equal(approvalCode(v), code, v);
+  const csv = [
+    'HƯỚNG DẪN,,,KPI đã được sếp duyệt,TRUE,,,,',
+    'Stt,Nhóm,PIC,Người phụ trách,Trạng thái duyệt BOD,Chỉ đạo của BLĐ,22/11,,',
+    ',,,,,,KPI,Kết quả,',
+    '1,Networking,Hoàng Thị Quỳnh Mai,,Đã được BOD duyệt,Liên tục cập nhật,Gặp 5 khách VIP,TRUE,',
+    '2,Networking,Hoàng Thị Quỳnh Mai,An,,,Gọi 20 khách,,',
+    '3,Phụ trách đại lý,Nguyễn Thị Kim Cúc,,Cần điều chỉnh lại KPI theo bút phê của BOD,,Ký 2 HĐ,,',
+    'I,Data,,,Chưa trình BOD,,,,',
+    '4,,Lê Thị Mai Tâm,,,,100 data,,',
+    '5,Pháp lý,Trần Ngọc Vy,,,,Soạn hợp đồng,,',
+  ].join('\n');
+  const s = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', csv), { year: 2026 });
+  assert.equal(s.error, undefined);
+  assert.deepEqual(s.groups.map((g) => [g.name, g.approval.code, g.approval.label, g.approval.directive || '']), [
+    ['Networking', 'A', 'Đã được BOD duyệt', 'Liên tục cập nhật'],
+    ['Phụ trách đại lý', 'R', 'Cần điều chỉnh lại KPI theo bút phê của BOD', ''],
+    ['Data', 'N', 'Chưa trình BOD', ''],
+    ['Pháp lý', 'N', 'Chưa trình BOD', ''], // trống = chưa trình, dù ô E1 đã tick
+  ]);
+  assert.equal(s.bodApproved, false);
+  const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: s.days, streams: attachPeople([s]) });
+  const st = model.streams[0];
+  assert.deepEqual(st.approval, { A: 1, R: 1, N: 2, total: 4, pending: 3 });
+  assert.deepEqual(st.items.map((it) => [it.group, it.kpi]), [['Networking', 'Gặp 5 khách VIP'], ['Networking', 'Gọi 20 khách']]);
+  assert.deepEqual(st.groups.map((g) => g.items.length), [2, 0, 0, 0]);
+  const r = noWaitingPoint(model, Date.UTC(2026, 10, 22, 8, 0));
+  assert.deepEqual(r.unapproved.map((u) => [u.group, u.code]), [['Phụ trách đại lý', 'R'], ['Data', 'N'], ['Pháp lý', 'N']]);
 });
