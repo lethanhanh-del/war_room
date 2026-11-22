@@ -79,8 +79,8 @@ $('tvBtn').addEventListener('click', () => { prefs.tv = !prefs.tv; store.set('wr
 applyTheme();
 
 // ---------- trạng thái + tải dữ liệu ----------
-const parseTab = (v) => (v === 'ho-tro' ? 'support' : v === 'thanh-ly' ? 'liquidation' : 'cashflow');
-const tabParam = (t) => (t === 'support' ? 'ho-tro' : t === 'liquidation' ? 'thanh-ly' : '');
+const parseTab = (v) => (v === 'ho-tro' ? 'support' : v === 'thanh-ly' ? 'liquidation' : v === 'dong-tien' ? 'cashflow' : 'all');
+const tabParam = (t) => (t === 'support' ? 'ho-tro' : t === 'liquidation' ? 'thanh-ly' : t === 'cashflow' ? 'dong-tien' : '');
 
 const S = {
   data: null,
@@ -97,12 +97,14 @@ const S = {
   stale: false,
 };
 
+const allStreams = (m) => m?.streams || [];
 const cashStreams = (m) => (m?.streams || []).filter((s) => s.kind !== 'support' && s.kind !== 'liquidation');
 const supportStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'support');
 const liquidationStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'liquidation');
-const activePool = (m, tab) => (tab === 'support' ? supportStreams(m) : tab === 'liquidation' ? liquidationStreams(m) : cashStreams(m));
+const activePool = (m, tab) => (tab === 'support' ? supportStreams(m) : tab === 'liquidation' ? liquidationStreams(m) : tab === 'cashflow' ? cashStreams(m) : allStreams(m));
 const isSpecialTab = (tab) => tab === 'support' || tab === 'liquidation';
-const TAB_NAME = { cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Nhóm thanh lý' };
+const TAB_NAME = { all: 'Tất cả', cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Nhóm thanh lý' };
+const streamBadgeNo = (s, fallback = '') => (s.no ? String(s.no) : s.kind === 'support' ? '9' : s.kind === 'liquidation' ? '8' : fallback);
 
 async function load() {
   if (S.loading) return;
@@ -277,6 +279,7 @@ function view(override = {}) {
 function filtersHtml() {
   const m = S.model;
   const f = S.filter;
+  const all = allStreams(m);
   const cash = cashStreams(m);
   const sup = supportStreams(m);
   const liq = liquidationStreams(m);
@@ -284,6 +287,9 @@ function filtersHtml() {
   const liqKpiCount = liq.reduce((n, s) => n + s.items.length, 0);
   const badgeOf = (list, cnt) => (cnt ? `${cnt} KPI` : list.length ? 'Sheet' : '0');
   const tabBar = `<div class="k-mode-tabs" role="tablist" aria-label="Phân khu KPI">
+      <button type="button" role="tab" class="k-mtab" data-tab="all" aria-selected="${f.tab === 'all'}">
+        <span>Tất cả</span><b>${all.length}</b>
+      </button>
       <button type="button" role="tab" class="k-mtab" data-tab="cashflow" aria-selected="${f.tab === 'cashflow'}">
         <span>Dòng tiền</span><b>${cash.length}</b>
       </button>
@@ -296,9 +302,13 @@ function filtersHtml() {
     </div>`;
   const opt = (val, label) => `<button type="button" class="kf-opt" data-day="${esc(val)}" aria-pressed="${f.day === val}">${label}</button>`;
   const days = m.days.map((d) => opt(d.date, `${d.weekday} ${esc(d.label)}${d.date === m.today ? ' · Hôm nay' : ''}`)).join('');
-  const streams = [`<option value="all">Tất cả dòng tiền</option>`, ...cash.map((s) => `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${s.no ? `${s.no}. ` : ''}${esc(s.name)}</option>`)].join('');
-  const streamSelect = f.tab === 'cashflow'
-    ? `<span class="kf-sep" aria-hidden="true"></span><label class="kf-group"><span class="kf-label">Dòng tiền</span><select class="kf-select" data-stream-select>${streams}</select></label>`
+  const selectPool = f.tab === 'cashflow' ? cash : all;
+  const streams = [`<option value="all">${f.tab === 'cashflow' ? 'Tất cả dòng tiền' : 'Tất cả dòng tiền & nhóm'}</option>`, ...selectPool.map((s) => {
+    const no = streamBadgeNo(s);
+    return `<option value="${esc(s.key)}"${f.stream === s.key ? ' selected' : ''}>${no ? `${no}. ` : ''}${esc(s.name)}</option>`;
+  })].join('');
+  const streamSelect = !isSpecialTab(f.tab)
+    ? `<span class="kf-sep" aria-hidden="true"></span><label class="kf-group"><span class="kf-label">Dòng tiền / Nhóm</span><select class="kf-select" data-stream-select>${streams}</select></label>`
     : '';
   const res = [['all', 'Tất cả', ''], ['D', 'Hoàn thành', 'D'], ['L', 'Hoàn thành trễ hạn', 'L'], ['T', 'Tồn đọng', 'K']]
     .map(([v, l, st]) => `<button type="button" class="kf-chip" data-result="${v}" aria-pressed="${f.result === v}">${st ? `<i class="kd st-${st}"></i>` : ''}${l}</button>`).join('');
@@ -585,7 +595,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
         `${sum.groups} nhóm`,
         `${sum.people.size} người`,
       ].join(' · ');
-      const badgeNum = s.no ? String(s.no) : isSpecial ? '' : String(si + 1);
+      const badgeNum = streamBadgeNo(s, isSpecial ? '' : String(si + 1));
       const head = `<header class="km-stream">
         <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
           <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
@@ -668,7 +678,8 @@ function tableHtml(x, { tv = false } = {}) {
     const c = count(due);
     const p = pct(doneOf(c), c.total);
     const backlog = c.K;
-    const name = tv ? `<b title="${esc(s.name)}">${s.no ? `${s.no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${s.no ? `<span class="k-code">${esc(String(s.no))}</span>` : ''}<b>${esc(s.name)}</b></button>`;
+    const no = streamBadgeNo(s);
+    const name = tv ? `<b title="${esc(s.name)}">${no ? `${no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}">${no ? `<span class="k-code">${esc(no)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}</div>${cells}
         <div class="kt-c kt-sum" role="cell">${s.items.length ? `<span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total}${backlog ? ` · ${backlog} tồn đọng` : ''}</small>` : '<small>Chưa nhập KPI</small>'}</div></div>`;
   }).join('');
@@ -706,9 +717,9 @@ function guideHtml() {
   return `<p class="k-guide">${icon('info')}<span>Cách đọc: tick ô Kết quả trên sheet khi hoàn thành KPI. Hạn của KPI là ${DUE_LABEL} sáng hôm sau ngày của KPI (KPI ngày 22 hết hạn lúc ${DUE_LABEL} ngày 23). Tick trước hạn là Hoàn thành; tick sau hạn là Hoàn thành trễ hạn (áp dụng từ ngày 22/11; ngày 21/11 hoàn thành muộn vẫn tính Hoàn thành). Chưa tick: chưa quá hạn là Đang làm, quá hạn là Không đạt / Tồn đọng, ngày chưa tới là Sắp tới. Bấm tên dòng tiền ở bảng tổng hợp để cuộn thẳng tới chi tiết Nhóm · Thành viên · Task của dòng tiền đó.</span></p>`;
 }
 
-// ----- Màn hình TV: 1 màn, hôm nay, tất cả dòng tiền -----
+// ----- Màn hình TV: 1 màn, hôm nay, tất cả dòng tiền & nhóm hỗ trợ -----
 function tvHtml() {
-  const x = view({ day: defaultDay(S.model), stream: 'all', result: 'all' });
+  const x = view({ tab: 'all', day: defaultDay(S.model), stream: 'all', result: 'all' });
   if (!x.m.streams.length) return pageHtml();
   const a = actScope(x) || { fails: [], lates: [], notes: new Set(), isAll: true };
   return `${heroHtml(x)}<div class="k-tv-bottom">${tableHtml(x, { tv: true })}
