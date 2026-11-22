@@ -145,7 +145,7 @@ function renderNotices(r) {
     const nR = r.unapproved.filter((u) => u.code === 'R').length;
     const nN = r.unapproved.length - nR;
     const list = r.unapproved.map((u) => `<span class="nw-ap ap-${u.code}" title="${esc(u.label)}"><i class="kd ap-${u.code}"></i>${esc(u.stream)} · ${esc(u.group)}</span>`).join('');
-    out.push(`<details class="notice nw-ap-notice"><summary>${icon('info')}<span><b>Không tính ${r.unapproved.length} nhóm chưa được BOD duyệt</b>: ${nN} chưa trình BOD (đỏ) · ${nR} cần điều chỉnh, bổ sung và trình lại (vàng). Bấm để xem.</span></summary><div class="nw-ap-list">${list}</div></details>`);
+    out.push(`<details class="notice nw-ap-notice"><summary>${icon('info')}<span><b>Không tính ${r.unapproved.length} nhóm chưa được BOD duyệt</b>: ${nN} chưa trình KPI cho BOD (đỏ) · ${nR} cần điều chỉnh, bổ sung và trình lại KPI (vàng). Bấm để xem.</span></summary><div class="nw-ap-list">${list}</div></details>`);
   }
   $('notices').innerHTML = out.join('');
 }
@@ -295,7 +295,7 @@ function guideHtml() {
   return `<section class="k-panel"><div class="k-phead"><h2>Cách tính</h2></div><ul class="km-legend">
       <li><i class="kd st-K"></i><span><b>KPI quá hạn</b>: quá giờ kết thúc ghi ở cột thời gian thực hiện (vd 09:00-10:00 → hạn 10:00) mà ô Kết quả chưa tick; không ghi giờ thì hạn là ${DUE_LABEL} sáng hôm sau ngày của KPI. Tick sau đó, KPI rời khỏi trang này và tính là Hoàn thành trễ hạn ở trang KPI & kết quả.</span></li>
       <li><i class="kd st-L"></i><span><b>Sắp đến hạn</b>: KPI chưa tick, hạn còn ở phía trước; còn dưới 1 giờ tô vàng.</span></li>
-      <li><i class="kd ap-N"></i><span><b>Chưa trình BOD</b> (đỏ) / <b>Cần điều chỉnh, bổ sung và trình lại</b> (vàng): trạng thái duyệt của nhóm ở cột “Trạng thái duyệt” trên sheet. KPI của nhóm chỉ được tính khi <b>BOD đã duyệt</b> (xanh lá).</span></li>
+      <li><i class="kd ap-N"></i><span><b>Chưa trình KPI cho BOD</b> (đỏ) / <b>Cần điều chỉnh, bổ sung và trình lại KPI</b> (vàng): trạng thái duyệt của nhóm ở cột “Trạng thái duyệt” trên sheet. KPI của nhóm chỉ được tính khi <b>BOD đã duyệt KPI</b> (xanh lá).</span></li>
       <li>${icon('users')}<span>Bấm vào 3 thẻ số phía trên để đổi cách xem: theo nhóm của từng dòng tiền, hoặc theo từng người (xếp theo số KPI quá hạn giảm dần).</span></li>
     </ul></section>`;
 }

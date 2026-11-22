@@ -144,7 +144,7 @@ test('Báo cáo phê duyệt KPI: 1 dòng / nhóm theo mẫu, giữ chữ trạn
   assert.deepEqual(rows.map((r) => [r.stream, r.group, r.pic, r.tasks, r.code, r.status, r.directive, r.note]), [
     ['Dòng tiền bán 4 dự án', 'Networking', 'Hoàng Thị Quỳnh Mai', 'Gặp 5 khách\nGọi 20 khách', 'A', 'Đã được BOD tạm duyệt', 'Liên tục cập nhật', ''],
     ['Dòng tiền bán 4 dự án', 'Data', 'Lê Thị Mai Tâm', 'Data', 'R', 'Cần điều chỉnh', '', 'Điều chỉnh lại KPI theo góp ý của BOD'],
-    ['Dòng tiền Banking', 'H300', 'Nguyễn Thị Mai Thu', 'H300', 'N', 'Chưa trình BOD', '', ''],
+    ['Dòng tiền Banking', 'H300', 'Nguyễn Thị Mai Thu', 'H300', 'N', 'Chưa trình KPI cho BOD', '', ''],
   ]);
   const book = approvalWorkbook({ rows, sheetUrl: '', checkedAt: '', by: 'test', now: NOW });
   const head = book[0].rows.find((r) => r[0] === 'Stt');

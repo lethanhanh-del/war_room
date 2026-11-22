@@ -423,7 +423,7 @@
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
     const hm = (iso) => { const s = new Date(Date.parse(iso) + 7 * 3600e3).toISOString(); return `${s.slice(8, 10)}/${s.slice(5, 7)} ${s.slice(11, 16)}`; };
-    const LABEL = { A: "BOD đã duyệt", N: "Chưa trình BOD", R: "Cần điều chỉnh, bổ sung và trình lại" };
+    const LABEL = { A: "BOD đã duyệt KPI", N: "Chưa trình KPI cho BOD", R: "Cần điều chỉnh, bổ sung và trình lại KPI" };
     const TONE = { A: "ok", N: "bad", R: "warn" };
     const SUB = {
       accounts: "Tài khoản mới / vừa reset dùng mật khẩu mặc định CTG@2026 và bắt buộc đổi ở lần đăng nhập đầu",

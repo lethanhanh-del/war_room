@@ -584,8 +584,10 @@ test('Nhóm hỗ trợ, Nhóm thanh lý & 9 tab đánh số (1. Dòng tiền ...
     'Dòng tiền Equity / IPO',
     'Dòng tiền trái phiếu',
     'Dòng tiền Tài chính 57',
-    'Nhóm thanh lý',
+    'Thanh lý', // tên hiển thị (attachPeople › LIQUIDATION_LABEL); tên tab và tên trong dữ liệu vẫn là "Nhóm thanh lý"
   ]);
+  // Khoá dòng tiền không đổi theo tên hiển thị: bản chốt sổ và lựa chọn Hiện / Ẩn đã lưu vẫn khớp.
+  assert.equal(attached.find((x) => x.kind === 'liquidation').key, 'nhomthanhly');
   assert.ok(dash.flows.every((f) => f.key !== sup.key));
 });
 
@@ -670,7 +672,7 @@ test('ô E1 duyệt KPI của BOD: FALSE -> bodApproved=false (đánh đỏ chư
   const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: unapproved.days, streams: attached });
   // Sheet chưa có cột "Trạng thái duyệt": cả dòng tiền theo ô E1. Chưa duyệt -> nhóm "Chưa trình BOD", không hiện KPI.
   assert.equal(model.streams[0].bodApproved, false);
-  assert.deepEqual(model.streams[0].groups.map((g) => [g.name, g.approval.code, g.approval.label]), [['Networking', 'N', 'Chưa trình BOD']]);
+  assert.deepEqual(model.streams[0].groups.map((g) => [g.name, g.approval.code, g.approval.label]), [['Networking', 'N', 'Chưa trình KPI cho BOD']]);
   assert.equal(model.streams[0].items.length, 0);
   assert.equal(model.streams[1].bodApproved, true);
   assert.equal(model.streams[1].items[0].bodApproved, true);
@@ -681,7 +683,9 @@ test('Cột "Trạng thái duyệt" theo nhóm: 3 trạng thái, chỉ tính KPI
   const { attachPeople } = await kpi();
   for (const [v, code] of [['Đã được BOD duyệt', 'A'], ['Đã được BOD tạm duyệt', 'A'], ['BOD đã duyệt', 'A'], ['TRUE', 'A'],
     ['Cần điều chỉnh, bổ sung và trình lại', 'R'], ['Cần điều chỉnh lại KPI theo bút phê', 'R'], ['Trình lại BOD', 'R'],
-    ['Chưa trình BOD', 'N'], ['chưa trình', 'N'], ['FALSE', 'N'], ['', '']]) assert.equal(approvalCode(v), code, v);
+    ['Chưa trình BOD', 'N'], ['chưa trình', 'N'], ['FALSE', 'N'], ['', ''],
+    // 3 nhãn chuẩn mới (có chữ KPI) gõ lên sheet vẫn nhận đúng mã
+    ['BOD đã duyệt KPI', 'A'], ['Cần điều chỉnh, bổ sung và trình lại KPI', 'R'], ['Chưa trình KPI cho BOD', 'N']]) assert.equal(approvalCode(v), code, v);
   const csv = [
     'HƯỚNG DẪN,,,KPI đã được sếp duyệt,TRUE,,,,',
     'Stt,Nhóm,PIC,Người phụ trách,Trạng thái duyệt BOD,Chỉ đạo của BLĐ,22/11,,',
@@ -699,7 +703,7 @@ test('Cột "Trạng thái duyệt" theo nhóm: 3 trạng thái, chỉ tính KPI
     ['Networking', 'A', 'Đã được BOD duyệt', 'Liên tục cập nhật'],
     ['Phụ trách đại lý', 'R', 'Cần điều chỉnh lại KPI theo bút phê của BOD', ''],
     ['Data', 'N', 'Chưa trình BOD', ''],
-    ['Pháp lý', 'N', 'Chưa trình BOD', ''], // trống = chưa trình, dù ô E1 đã tick
+    ['Pháp lý', 'N', 'Chưa trình KPI cho BOD', ''], // trống = chưa trình, dù ô E1 đã tick (nhãn mặc định); dòng Data giữ nguyên chữ ghi trên sheet
   ]);
   assert.equal(s.bodApproved, false);
   const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: s.days, streams: attachPeople([s]) });

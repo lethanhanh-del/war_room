@@ -12,7 +12,7 @@
 import { log } from '../db.js';
 import { XLSX_STYLE, writeXlsx } from './xlsx-write.js';
 
-const LABEL = { A: 'BOD đã duyệt', R: 'Cần điều chỉnh, bổ sung và trình lại', N: 'Chưa trình BOD' };
+const LABEL = { A: 'BOD đã duyệt KPI', R: 'Cần điều chỉnh, bổ sung và trình lại KPI', N: 'Chưa trình KPI cho BOD' };
 const STYLE = { A: XLSX_STYLE.ok, R: XLSX_STYLE.warn, N: XLSX_STYLE.bad };
 const MAX_TASKS = 8;
 
@@ -69,7 +69,7 @@ export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
   const info = [
     ['BÁO CÁO TÌNH TRẠNG PHÊ DUYỆT KPI · WAR ROOM CT HOMES'],
     [`Xuất lúc ${vn(now)} · ${by} · dữ liệu đọc lúc ${vn(checkedAt) || '—'}`],
-    [`${rows.length} nhóm: ${c.A} BOD đã duyệt · ${c.R} cần điều chỉnh, bổ sung và trình lại · ${c.N} chưa trình BOD`],
+    [`${rows.length} nhóm: ${c.A} BOD đã duyệt KPI · ${c.R} cần điều chỉnh, bổ sung và trình lại KPI · ${c.N} chưa trình KPI cho BOD`],
     ...(sheetUrl ? [[`Nguồn: ${sheetUrl}`]] : []),
     [],
   ];
@@ -88,7 +88,7 @@ export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
   const summary = [
     ['TỔNG HỢP PHÊ DUYỆT KPI THEO DÒNG TIỀN'],
     [],
-    ['Dòng tiền', 'Số nhóm', 'BOD đã duyệt', 'Cần điều chỉnh, bổ sung và trình lại', 'Chưa trình BOD', 'Nhóm chưa được duyệt'],
+    ['Dòng tiền', 'Số nhóm', 'BOD đã duyệt KPI', 'Cần điều chỉnh, bổ sung và trình lại KPI', 'Chưa trình KPI cho BOD', 'Nhóm chưa được duyệt'],
     ...[...by_].map(([name, x]) => [name, x.total, x.A, x.R, x.N, x.pending.join('\n')]),
     ['Tổng', rows.length, c.A, c.R, c.N, ''],
   ];

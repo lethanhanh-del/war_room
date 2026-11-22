@@ -30,7 +30,7 @@ const ICON = {
 };
 const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
 const STATUS_ICON = { D: 'check', L: 'clock', K: 'x', N: 'dot', S: 'calendar', U: 'alert' };
-const UNAPPROVED_LABEL = 'Chưa trình BOD';
+const UNAPPROVED_LABEL = 'Chưa trình KPI cho BOD';
 const chip = (st) => `<span class="k-chip st-${st}">${icon(STATUS_ICON[st])}${st === 'U' ? UNAPPROVED_LABEL : STATUS_LABEL[st]}</span>`;
 // Trạng thái duyệt KPI của BOD theo nhóm: A BOD đã duyệt (xanh lá) · R cần điều chỉnh, bổ sung và trình lại (vàng) · N chưa trình BOD (đỏ).
 const APPROVAL_ICON = { A: 'check', R: 'alert', N: 'x' };
@@ -112,7 +112,7 @@ const supportStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'suppo
 const liquidationStreams = (m) => (m?.streams || []).filter((s) => s.kind === 'liquidation');
 const activePool = (m, tab) => (tab === 'support' ? supportStreams(m) : tab === 'liquidation' ? liquidationStreams(m) : tab === 'cashflow' ? cashStreams(m) : allStreams(m));
 const isSpecialTab = (tab) => tab === 'support' || tab === 'liquidation';
-const TAB_NAME = { all: 'Tất cả', cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Nhóm thanh lý' };
+const TAB_NAME = { all: 'Tất cả', cashflow: 'Dòng tiền', support: 'Nhóm hỗ trợ', liquidation: 'Thanh lý' };
 const streamBadgeNo = (s, fallback = '') => (s.no ? String(s.no) : s.kind === 'support' ? '9' : s.kind === 'liquidation' ? '8' : fallback);
 
 let lastDataSig = '';
@@ -323,7 +323,7 @@ function filtersHtml() {
         <span>Dòng tiền</span><b>${cash.length}</b>
       </button>
       <button type="button" role="tab" class="k-mtab" data-tab="liquidation" aria-selected="${f.tab === 'liquidation'}">
-        ${icon('folder')}<span>Nhóm thanh lý</span><b>${badgeOf(liq, liqKpiCount)}</b>
+        ${icon('folder')}<span>Thanh lý</span><b>${badgeOf(liq, liqKpiCount)}</b>
       </button>
       <button type="button" role="tab" class="k-mtab" data-tab="support" aria-selected="${f.tab === 'support'}">
         ${icon('users')}<span>Nhóm hỗ trợ</span><b>${badgeOf(sup, supKpiCount)}</b>
@@ -354,8 +354,9 @@ function pageHtml() {
   const x = view();
   if (isSpecialTab(x.f.tab) && !x.streams.length) {
     const label = TAB_NAME[x.f.tab];
+    const sheetTab = x.f.tab === 'support' ? 'Nhóm hỗ trợ' : 'Nhóm thanh lý'; // tên tab trên sheet (khác tên hiển thị "Thanh lý")
     const sample = x.f.tab === 'support' ? '9. Nhóm hỗ trợ' : '8. Nhóm thanh lý';
-    return `<section class="k-panel k-empty"><h2>Chưa tìm thấy sheet ${esc(label)}</h2><p class="hint">Google Sheet KPI cần có tab “${esc(label)}” (hoặc “${esc(sample)}”) với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
+    return `<section class="k-panel k-empty"><h2>Chưa tìm thấy sheet ${esc(label)}</h2><p class="hint">Google Sheet KPI cần có tab “${esc(sheetTab)}” (hoặc “${esc(sample)}”) với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
   }
   if (!x.streams.length) {
     return `<section class="k-panel k-empty"><h2>Chưa có dữ liệu KPI</h2><p class="hint">Google Sheet KPI cần có tab “Dòng tiền …” với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
@@ -366,10 +367,10 @@ function pageHtml() {
 // ----- Tình trạng phê duyệt KPI của BOD theo nhóm + nút xuất báo cáo -----
 // Bảng gom theo dòng tiền (Figma "Phê duyệt KPI của BOD · bản mới"): ô dòng tiền bên trái kéo dài hết các nhóm của nó, mỗi nhóm
 // 1 dòng (Nhóm | PIC nhóm | Trạng thái duyệt | Ghi chú). 3 ô số bấm được để lọc theo trạng thái (S.apFilter).
-const AP_VIEW = { '': 'Nhóm chưa được duyệt', A: 'Nhóm BOD đã duyệt', R: `Nhóm ${APPROVAL_LABEL.R}`, N: `Nhóm ${APPROVAL_LABEL.N}` };
-const AP_COUNT = { '': 'chưa duyệt', A: 'đã duyệt', R: 'cần trình lại', N: 'chưa trình BOD' };
+const AP_VIEW = { '': 'Nhóm chưa được duyệt', A: `Nhóm ${APPROVAL_LABEL.A}`, R: `Nhóm ${APPROVAL_LABEL.R}`, N: `Nhóm ${APPROVAL_LABEL.N}` };
+const AP_COUNT = { '': 'chưa duyệt', A: 'đã duyệt', R: 'cần trình lại KPI', N: 'chưa trình KPI' };
 const apSeg = (c) => `<span class="kt-seg" aria-hidden="true">${APPROVAL_ORDER.filter((k) => c[k]).map((k) => `<i class="ap-${k}" style="flex-grow:${c[k]}"></i>`).join('')}</span>`;
-// Nhãn ô số: "12 đội BOD đã duyệt" · "8 đội cần điều chỉnh, bổ sung và trình lại" · "3 đội chưa trình BOD" (chữ đầu viết thường, trừ "BOD").
+// Nhãn ô số: "12 đội BOD đã duyệt KPI" · "8 đội cần điều chỉnh, bổ sung và trình lại KPI" · "3 đội chưa trình KPI cho BOD" (chữ đầu viết thường, trừ "BOD").
 const apTileLabel = (code) => { const l = APPROVAL_LABEL[code]; return l.startsWith('BOD') ? l : l.charAt(0).toLocaleLowerCase('vi') + l.slice(1); };
 function approvalHtml(x) {
   const groups = x.streams.flatMap((s) => s.groups.map((g) => ({ s, g })));
@@ -866,7 +867,7 @@ function tableHtml(x, { tv = false } = {}) {
     const no = streamBadgeNo(s);
     const name = tv ? `<b title="${esc(s.name)}">${no ? `${no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}" title="Xem chi tiết từng nhóm của ${esc(s.name)}">${no ? `<span class="k-code">${esc(no)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     // Chỉ một số nhóm chưa được duyệt: ghi ngay dưới tên dòng tiền (KPI của các nhóm đã duyệt vẫn hiện bình thường).
-    const partial = !unapproved && ap.pending && !tv ? `<span class="kt-partial ap-N" title="${esc(APPROVAL_ORDER.filter((c) => c !== 'A' && ap[c]).map((c) => `${ap[c]} nhóm · ${APPROVAL_LABEL[c]}`).join('\n'))}"><i></i>${ap.pending}/${ap.total} nhóm chưa trình BOD</span>` : '';
+    const partial = !unapproved && ap.pending && !tv ? `<span class="kt-partial ap-N" title="${esc(APPROVAL_ORDER.filter((c) => c !== 'A' && ap[c]).map((c) => `${ap[c]} nhóm · ${APPROVAL_LABEL[c]}`).join('\n'))}"><i></i>${ap.pending}/${ap.total} nhóm chưa trình KPI cho BOD</span>` : '';
     const sum = s.items.length
       ? `<span class="kt-pct"><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total} KPI xong</small></span><span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span>${backlog && !tv ? `<span class="kt-note st-K"><i></i>${backlog} tồn đọng</span>` : ''}`
       : `<small>${unapproved ? 'Chưa tính KPI' : 'Chưa nhập KPI'}</small>`;

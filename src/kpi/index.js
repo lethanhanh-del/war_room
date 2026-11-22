@@ -155,6 +155,10 @@ function byName(list, name, get) {
  * PIC nhóm: Đội trưởng của nhóm (file phân chia nhiệm vụ) có thành viên trùng người trong nhóm, hoặc nhóm cùng tên
  * nhiệm vụ chính, hoặc nhóm duy nhất của dòng tiền; không có thì là người ở dòng đầu tiên.
  */
+/** Tên hiển thị của nhóm thanh lý (người dùng chốt 23/11: "Thanh lý", không ghi "Nhóm thanh lý"). Tên trong dữ liệu, khoá
+ * dòng tiền và tên tab trên sheet ("8. Nhóm thanh lý") giữ nguyên để bản chốt sổ và lựa chọn Hiện / Ẩn đã lưu vẫn khớp. */
+export const LIQUIDATION_LABEL = 'Thanh lý';
+
 export function attachPeople(streams, teams = [], imports = []) {
   return streams.map((s, si) => {
     const team = byName(teams, s.name, (t) => t.name) || (s.sourceName ? byName(teams, s.sourceName, (t) => t.name) : null);
@@ -174,13 +178,13 @@ export function attachPeople(streams, teams = [], imports = []) {
         pic,
         members: persons.filter((p) => !pic || loose(p) !== loose(pic.name)),
         // Trạng thái duyệt KPI của BOD theo nhóm (src/kpi/sheet.js); dữ liệu cũ chưa có -> theo ô E1 của cả dòng tiền.
-        approval: g.approval || { code: s.bodApproved === false ? 'N' : 'A', label: s.bodApproved === false ? 'Chưa trình BOD' : 'BOD đã duyệt', source: 'e1' },
+        approval: g.approval || { code: s.bodApproved === false ? 'N' : 'A', label: s.bodApproved === false ? 'Chưa trình KPI cho BOD' : 'BOD đã duyệt KPI', source: 'e1' },
         rows: g.rows,
       };
     });
     return {
       key: loose(s.name) || `dongtien${si}`,
-      name: s.name,
+      name: s.kind === 'liquidation' ? LIQUIDATION_LABEL : s.name,
       sheet: s.sheet,
       ...(s.kpiSheet ? { kpiSheet: s.kpiSheet } : {}),
       ...(s.kind ? { kind: s.kind } : {}),

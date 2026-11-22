@@ -144,7 +144,7 @@ export function buildModel(data) {
 }
 
 /** Trạng thái duyệt BOD của nhóm: 'A' BOD đã duyệt (xanh lá) · 'R' cần điều chỉnh, bổ sung và trình lại (vàng) · 'N' chưa trình BOD (đỏ). */
-export const APPROVAL_LABEL = { A: 'BOD đã duyệt', R: 'Cần điều chỉnh, bổ sung và trình lại', N: 'Chưa trình BOD' };
+export const APPROVAL_LABEL = { A: 'BOD đã duyệt KPI', R: 'Cần điều chỉnh, bổ sung và trình lại KPI', N: 'Chưa trình KPI cho BOD' };
 export const APPROVAL_ORDER = ['A', 'R', 'N'];
 
 /** { code, label, source, directive?, note? } của 1 nhóm; dữ liệu cũ chưa có thì theo ô E1 của cả dòng tiền. */
