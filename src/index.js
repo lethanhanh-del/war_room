@@ -221,6 +221,7 @@ async function changePassword(request, env, user) {
 }
 
 const WP_STATUS_SHEET_ID = "1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0";
+const WP_STATUS_SHEET_NAME = "Điểm nghẽn";
 const WP_STATUS_GID = "2043772221";
 let wpStatusCache = { at: 0, data: null };
 
@@ -230,16 +231,20 @@ async function handleWaitingPointStatus(request) {
   if (wpStatusCache.data && now - wpStatusCache.at < 5000) {
     return json(wpStatusCache.data);
   }
-  try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/export?format=csv&gid=${WP_STATUS_GID}&_t=${now}`;
-    const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = countWaitingPointPeopleFromCsv(await res.text());
-    wpStatusCache = { at: now, data };
-    return json(data);
-  } catch {
-    return json(wpStatusCache.data || { peopleCount: 0, itemCount: 0, sec: 0, error: true });
+  const urls = [
+    `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(WP_STATUS_SHEET_NAME)}&_t=${now}`,
+    `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/export?format=csv&gid=${WP_STATUS_GID}&_t=${now}`,
+  ];
+  for (const csvUrl of urls) {
+    try {
+      const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const data = countWaitingPointPeopleFromCsv(await res.text());
+      wpStatusCache = { at: now, data };
+      return json(data);
+    } catch { /* thử nguồn dự phòng */ }
   }
+  return json(wpStatusCache.data || { peopleCount: 0, itemCount: 0, sec: 0, error: true });
 }
 
 // Đồng bộ trạng thái đếm ngược & thống kê theo ngày của trang Waiting Point lưu trong bảng settings (D1).

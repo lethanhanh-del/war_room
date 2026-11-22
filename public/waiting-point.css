@@ -69,6 +69,13 @@
   flex: none;
 }
 
+.wp-brand-txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .wp-brand h1 {
   margin: 0;
   font-size: var(--fs-page);
@@ -78,6 +85,32 @@
   text-transform: uppercase;
   color: var(--text);
   white-space: nowrap;
+}
+
+.wp-brand-note {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
+
+.wp-brand-note b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.wp-empty-note {
+  margin: 0;
+  max-width: 640px;
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.wp-empty-note b {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .wp-actions {

@@ -84,7 +84,7 @@ export function changePasswordPage(user, { error = "", info = "", forced = false
 export const NAV_PAGES = [
   ["/kpi", "KPI & kết quả"],
   ["/lich-truc", "Lịch trực 24/7"],
-  ["/waiting-point", "Waiting Point"],
+  ["/waiting-point", "Waiting Point · Điểm nghẽn"],
 ];
 
 export const WP_SEC_PER_PERSON = 10;
@@ -100,7 +100,7 @@ export function waitingPointRotateSec(peopleCount) {
 // - Waiting Point: 0 người -> không chuyển qua / rời ngay về KPI; có người -> mỗi người +10s.
 export const AUTO_ROTATE_TABS = [
   { href: "/kpi", label: "KPI & kết quả", sec: 180 },
-  { href: "/waiting-point", label: "Waiting Point", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
+  { href: "/waiting-point", label: "Waiting Point · Điểm nghẽn", sec: 0, secPerPerson: WP_SEC_PER_PERSON },
 ];
 
 /** Tính tab kế tiếp khi bật tự động chuyển tab; trả null nếu bật ít hơn 2 tab hoặc không có tab đích hợp lệ (VD Waiting Point trống). */

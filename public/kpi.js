@@ -303,7 +303,7 @@ function pageHtml() {
   if (!x.streams.length) {
     return `<section class="k-panel k-empty"><h2>Chưa có dữ liệu KPI</h2><p class="hint">Google Sheet KPI cần có tab “Dòng tiền …” với cột Nhóm, PIC và 2 cột KPI | Kết quả cho từng ngày.</p></section>`;
   }
-  return `${heroHtml(x)}${membersHtml(x)}${tableHtml(x)}${groupsHtml(x)}${guideHtml()}`;
+  return `${heroHtml(x)}${tableHtml(x)}${streamsDetailHtml(x)}${guideHtml()}`;
 }
 
 // ----- 4 thẻ chỉ số -----
@@ -367,81 +367,201 @@ function heroHtml(x) {
   return `<section class="k-hero" aria-label="Chỉ số chính">${card1}${card2}${card3}${card4}</section>`;
 }
 
-// ----- Thành viên theo nhóm: số KPI đã hoàn thành / hoàn thành trễ hạn / còn tồn đọng của từng người -----
-function memberRow(p) {
-  const num = (n, st, extra = '') => `<span class="km-num st-${st}${n ? '' : ' is-zero'}" role="cell"><span class="km-val"><b>${n}</b>${extra}</span></span>`;
-  const sub = [p.isPic ? 'PIC nhóm' : '', p.doing ? `${p.doing} KPI đang làm` : ''].filter(Boolean).join(' · ');
-  const who = `<span class="km-who" role="rowheader"><span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span><span class="kp-name"><b>${esc(p.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
-  if (!p.total) return `<div class="km-row is-idle" role="row">${who}<span class="km-idle" role="cell">Chưa có KPI</span></div>`;
-  return `<div class="km-row" role="row">${who}${num(p.done, 'D', `<small>/${p.total} KPI</small>`)}${num(p.late, 'L')}${num(p.backlog, 'K')}</div>`;
+// ----- Hợp nhất: Dòng tiền → Nhóm → Thành viên → Task & Trạng thái -----
+const TASK_ORDER = { K: 0, N: 1, L: 2, D: 3, S: 4 };
+
+function personTasksForView(personItems, f) {
+  const isAll = f.day === 'all';
+  let list;
+  if (isAll) {
+    list = [...personItems].sort((a, b) => byDate(a, b) || TASK_ORDER[a.status] - TASK_ORDER[b.status]);
+  } else {
+    const D = f.day;
+    const back = personItems.filter((it) => it.date < D && isOutstanding(it)).sort(byDate);
+    const day = onDate(personItems, D).sort((a, b) => TASK_ORDER[a.status] - TASK_ORDER[b.status]);
+    list = [...back, ...day];
+  }
+  if (f.result === 'D') list = list.filter((it) => it.status === 'D');
+  else if (f.result === 'L') list = list.filter((it) => it.status === 'L');
+  else if (f.result === 'T') list = list.filter(isOutstanding);
+  return list;
 }
 
-function membersHtml(x) {
-  const { m, f, streams, ref } = x;
-  const cut = f.day === 'all' || f.day > ref ? ref : f.day; // số liệu cộng dồn từ ngày đầu đến ngày đang xem
-  const first = m.days[0];
-  const range = !first || cut <= first.date ? `ngày ${labelOf(cut)}` : `từ ${first.label} đến ${labelOf(cut)}`;
-  const keep = (p) => f.result === 'all' || (f.result === 'D' ? p.done - p.late > 0 : f.result === 'L' ? p.late > 0 : p.backlog > 0);
-  let groupCount = 0;
-  const people = new Set();
-  const blocks = streams.map((s, si) => {
-    const sum = { done: 0, late: 0, backlog: 0, total: 0, groups: 0, people: new Set() };
-    const cards = s.groups.map((g) => {
-      const all = memberStats(g, cut);
-      for (const p of all) {
-        sum.done += p.done; sum.late += p.late; sum.backlog += p.backlog; sum.total += p.total;
-        sum.people.add(p.name.toLocaleLowerCase('vi'));
+function taskRowHtml(it, notes, showDate, isCarryOver) {
+  const dateTag = showDate || isCarryOver
+    ? `<span class="kl-date${isCarryOver ? ' is-back' : ''}" title="${isCarryOver ? `Tồn đọng từ ngày ${esc(it.label)}` : `Ngày ${esc(it.label)}`}">${esc(it.label)}</span>`
+    : '';
+  const extra = [
+    notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : '',
+    lateNote(it),
+  ].filter(Boolean).join('');
+  return `<li class="kmt-item st-${it.status}">
+      <span class="kmt-ic">${icon(STATUS_ICON[it.status])}</span>
+      <span class="kmt-body"><span class="kmt-title">${dateTag}<b class="kl-kpi">${esc(it.kpi)}</b></span>${extra}</span>
+      ${chip(it.status)}
+    </li>`;
+}
+
+  function personFolderLinks(g, personName) {
+    const key = personName.trim().toLocaleLowerCase('vi');
+    const links = [];
+    const seen = new Set();
+    for (const r of g.rows || []) {
+      if (r.person && r.person.trim().toLocaleLowerCase('vi') !== key) continue;
+      const u = safeUrl(r.folder);
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      links.push(`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${icon('folder')}Thư mục</a>`);
+    }
+    return links.length ? `<p class="kg-links kpc-links">${links.join('')}</p>` : '';
+  }
+
+  function personCardHtml(card, f) {
+    const { p, groupName, tasks, notes, folderHtml } = card;
+    const isAll = f.day === 'all';
+    const badges = [];
+    if (p.total) {
+      badges.push(`<span class="kmp-stat st-D" title="Đã hoàn thành / tổng KPI đến ngày đang xem"><b>${p.done}/${p.total}</b> xong</span>`);
+      if (p.doing) badges.push(`<span class="kmp-stat st-N"><b>${p.doing}</b> đang làm</span>`);
+      if (p.late) badges.push(`<span class="kmp-stat st-L"><b>${p.late}</b> trễ hạn</span>`);
+      if (p.backlog) badges.push(`<span class="kmp-stat st-K"><b>${p.backlog}</b> tồn đọng</span>`);
+    } else {
+      badges.push(`<span class="kmp-stat is-idle">Chưa có KPI</span>`);
+    }
+    const emptyText = isAll ? 'Chưa có task nào' : `Không có task ngày ${esc(labelOf(f.day))}`;
+    const taskHtml = tasks.length
+      ? `<ul class="kmt-list">${tasks.map((it) => taskRowHtml(it, notes, isAll, !isAll && it.date < f.day)).join('')}</ul>`
+      : `<p class="kmp-empty">${emptyText}</p>`;
+  const hasBacklog = tasks.some((it) => it.status === 'K');
+  const isIdleCard = !tasks.length;
+  return `< article class="km-person-card${hasBacklog ? ' has-backlog' : ''}${isIdleCard ? ' is-idle-card' : ''}" >
+      <header class="kpc-head">
+        <span class="km-who">
+          <span class="av${p.isPic ? ' pic' : ''}">${esc(initials(p.name))}</span>
+          <span class="kp-name">
+            <span class="kpc-title"><b>${esc(p.name)}</b><span class="kpc-sep"> - </span><span class="kpc-group">${esc(groupName)}</span></span>
+            ${p.isPic ? '<small>PIC nhóm</small>' : ''}
+          </span>
+        </span>
+        <span class="kmp-stats">${badges.join('')}</span>
+      </header >
+      ${ taskHtml }
+      ${folderHtml}
+    </article>`;
+  }
+
+  function masonryColCount() {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1440;
+    return w >= 1440 ? 3 : w >= 860 ? 2 : 1;
+  }
+
+  function packMasonry(cards, maxCols, f) {
+    const colCount = Math.max(1, Math.min(maxCols, cards.length));
+    const cols = Array.from({ length: colCount }, () => ({ weight: 0, html: [] }));
+    for (const card of cards) {
+      let best = 0;
+      for (let i = 1; i < colCount; i++) {
+        if (cols[i].weight < cols[best].weight) best = i;
       }
-      const list = all.filter(keep);
-      if (!list.length) return '';
-      groupCount++;
-      sum.groups++;
-      list.forEach((p) => people.add(p.name.toLocaleLowerCase('vi')));
-      const t = all.reduce((a, p) => ({ done: a.done + p.done, total: a.total + p.total }), { done: 0, total: 0 });
-      return `<article class="km-group"><header class="km-top"><h4>${esc(g.name)}</h4><span class="km-sum">${t.total ? `Đã hoàn thành <b>${t.done}/${t.total}</b> KPI` : 'Chưa có KPI'}</span></header>
-        <div class="km-table" role="table" aria-label="Thành viên nhóm ${esc(g.name)}">
-          <div class="km-row km-head" role="row"><span role="columnheader">Thành viên</span><span role="columnheader"><i class="kd st-D"></i>Đã hoàn thành</span><span role="columnheader"><i class="kd st-L"></i>Hoàn thành trễ hạn</span><span role="columnheader"><i class="kd st-K"></i>Còn tồn đọng</span></div>
-          ${list.map(memberRow).join('')}
-        </div></article>`;
-    }).join('');
-    if (!cards && f.result !== 'all') return '';
-    // Mỗi dòng tiền 1 khối riêng: tiêu đề lớn (mã, tên, PIC) + tổng số KPI của dòng tiền, rồi các nhóm bên dưới.
-    const stat = (n, st, label, extra = '') => `<span class="kms-stat st-${st}${n ? '' : ' is-zero'}"><b>${n}${extra}</b><small>${label}</small></span>`;
-    const p = pct(sum.done, sum.total);
-    const sheetNote = s.kpiSheet || s.sheet;
-    const isSpecial = s.kind === 'support' || s.kind === 'liquidation';
-    const meta = [
-      s.pic ? `${isSpecial ? 'PIC' : 'PIC dòng tiền'} <b>${esc(s.pic)}</b>` : isSpecial && sheetNote ? `Đọc trực tiếp từ sheet <b>${esc(sheetNote)}</b>` : 'Chưa ghi PIC dòng tiền',
-      `${sum.groups} nhóm`,
-      `${sum.people.size} người`,
-    ].join(' · ');
-    const badgeNum = s.no ? String(s.no) : isSpecial ? '' : String(si + 1);
-    const head = `<header class="km-stream">
+      cols[best].html.push(personCardHtml(card, f));
+      cols[best].weight += card.weight;
+    }
+    return `<div class="km-masonry" style="--cols:${colCount}">${cols.map((c) => `<div class="km-col">${c.html.join('')}</div>`).join('')}</div>`;
+  }
+
+  function streamsDetailHtml(x) {
+    const { m, f, streams, ref } = x;
+    const isAll = f.day === 'all';
+    const cut = isAll || f.day > ref ? ref : f.day;
+    const first = m.days[0];
+    const range = !first || cut <= first.date ? `ngày ${labelOf(cut)}` : `từ ${first.label} đến ${labelOf(cut)}`;
+    const viewScope = isAll ? `Cả ${m.days.length} ngày` : dayText(f.day);
+    const maxCols = masonryColCount();
+    let groupCount = 0;
+    const people = new Set();
+
+    const blocks = streams.map((s, si) => {
+      const sum = { done: 0, late: 0, backlog: 0, doing: 0, total: 0, groups: 0, people: new Set() };
+        const personCards = [];
+        for (const g of s.groups) {
+          const allMembers = memberStats(g, cut);
+          for (const p of allMembers) {
+            sum.done += p.done; sum.late += p.late; sum.backlog += p.backlog; sum.doing += p.doing; sum.total += p.total;
+            sum.people.add(p.name.toLocaleLowerCase('vi'));
+          }
+          const notes = noteTargets(g.items, isAll ? ref : f.day);
+          const byPerson = new Map();
+          for (const it of g.items) {
+            const key = (it.person || 'Chưa ghi người thực hiện').trim().toLocaleLowerCase('vi');
+            if (!byPerson.has(key)) byPerson.set(key, []);
+            byPerson.get(key).push(it);
+          }
+          let groupHasMatch = false;
+          for (const p of allMembers) {
+            const key = p.name.toLocaleLowerCase('vi');
+            const tasks = personTasksForView(byPerson.get(key) || [], f);
+            if (f.result !== 'all' && !tasks.length) continue;
+            groupHasMatch = true;
+            people.add(key);
+            personCards.push({
+              p,
+              groupName: g.name,
+              tasks,
+              notes,
+              folderHtml: personFolderLinks(g, p.name),
+              weight: tasks.length ? 3 + tasks.length * 1.4 : 2,
+              order: personCards.length,
+            });
+          }
+          if (groupHasMatch) {
+            groupCount++;
+            sum.groups++;
+          }
+        }
+        if (!personCards.length && f.result !== 'all') return '';
+
+      // Người có task hiển thị trước (giữ nguyên thứ tự dòng trên sheet), người chưa có task xếp gọn phía dưới.
+      personCards.sort((a, b) => (b.tasks.length > 0) - (a.tasks.length > 0) || a.order - b.order);
+
+      const stat = (n, st, label, extra = '') => `<span class="kms-stat st-${st}${n ? '' : ' is-zero'}"><b>${n}${extra}</b><small>${label}</small></span>`;
+      const p = pct(sum.done, sum.total);
+      const sheetNote = s.kpiSheet || s.sheet;
+      const isSpecial = s.kind === 'support' || s.kind === 'liquidation';
+      const meta = [
+        s.pic ? `${isSpecial ? 'PIC' : 'PIC dòng tiền'} <b>${esc(s.pic)}</b>` : isSpecial && sheetNote ? `Đọc trực tiếp từ sheet <b>${esc(sheetNote)}</b>` : 'Chưa ghi PIC dòng tiền',
+        `${sum.groups} nhóm`,
+        `${sum.people.size} người`,
+      ].join(' · ');
+      const badgeNum = s.no ? String(s.no) : isSpecial ? '' : String(si + 1);
+      const head = `<header class="km-stream">
         <div class="kms-id">${badgeNum ? `<span class="kms-code">${esc(badgeNum)}</span>` : ''}
           <div class="kms-name"><h3>${esc(s.name)}</h3>${s.desc ? `<p class="kms-desc">${esc(s.desc)}</p>` : ''}<p>${meta}</p></div></div>
-        <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
+        <div class="kms-stats">${stat(sum.done, 'D', 'Đã hoàn thành', `<i>/${sum.total}</i>`)}${stat(sum.doing, 'N', 'Đang làm')}${stat(sum.late, 'L', 'Trễ hạn')}${stat(sum.backlog, 'K', 'Tồn đọng')}${sum.total ? `<span class="kms-pct ${tone(p)}"><b>${p}%</b><small>hoàn thành</small></span>` : ''}</div>
       </header>`;
-    const body = cards
-      ? `<div class="km-grid">${cards}</div>`
-      : isSpecial
-        ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
-        : `<p class="k-none">Chưa có nhóm nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
-    return `<section class="km-block${cards ? '' : ' is-empty'}" aria-label="${esc(s.name)}">${head}${body}</section>`;
+    const body = personCards.length
+        ? packMasonry(personCards, maxCols, f)
+        : isSpecial
+          ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” trên Google Sheet nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật sau 20–60 giây.</p>`
+        : `<p class="k-none">Chưa có thành viên nào có KPI cho dòng tiền này trong Google Sheet.</p>`;
+    return `<section class="km-block${personCards.length ? '' : ' is-empty'}" id="stream-${esc(s.key)}" aria-label="${esc(s.name)}">${head}${body}</section>`;
   }).join('');
+
   const scope = streams.length === 1 ? streams[0].name : 'Tất cả dòng tiền';
-  const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện người có KPI ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
-  return `<section class="k-panel k-members" aria-labelledby="k-mem-t"><header class="k-phead"><div><h2 id="k-mem-t">Thành viên theo nhóm · ${esc(scope)}</h2>
-      <p class="hint">${groupCount} nhóm · ${people.size} người. Số KPI của từng người tính ${esc(range)}.${filterNote}</p></div></header>
+  const filterNote = f.result === 'all' ? '' : ` Đang lọc: chỉ hiện task ${f.result === 'D' ? 'hoàn thành đúng hạn' : f.result === 'L' ? 'hoàn thành trễ hạn' : 'tồn đọng'}.`;
+  return `< section class="k-panel k-members" id = "k-groups" aria - labelledby="k-mem-t" ><header class="k-phead"><div><h2 id="k-mem-t">Theo dõi Dòng tiền · Thành viên &amp; Task · ${esc(viewScope)}</h2>
+      <p class="hint">${esc(scope)} · ${people.size} người (${groupCount} nhóm). Tổng chỉ số tính ${esc(range)}.${filterNote}</p></div></header>
       <ul class="km-legend">
-        <li class="st-D"><i class="kd st-D"></i><span><b>Đã hoàn thành</b>: đã tick ô Kết quả, tính cả tick trễ. Số sau dấu / là tổng KPI đến ngày đang xem.</span></li>
-        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick, nhưng sau hạn (${DUE_LABEL} sáng hôm sau ngày của KPI — chỉ ghi nhận từ ngày 22/11).</span></li>
-        <li class="st-K"><i class="kd st-K"></i><span><b>Còn tồn đọng</b>: quá hạn mà chưa tick.</span></li>
+        <li class="st-D"><i class="kd st-D"></i><span><b>Hoàn thành</b>: đã tick ô Kết quả đúng hạn.</span></li>
+        <li class="st-N"><i class="kd st-N"></i><span><b>Đang làm</b>: KPI hôm nay chưa tick (hạn ${DUE_LABEL} sáng hôm sau).</span></li>
+        <li class="st-L"><i class="kd st-L"></i><span><b>Hoàn thành trễ hạn</b>: đã tick sau ${DUE_LABEL} sáng hôm sau (áp dụng từ 22/11).</span></li>
+        <li class="st-K"><i class="kd st-K"></i><span><b>Không đạt / Tồn đọng</b>: quá hạn mà chưa tick.</span></li>
       </ul>
-      ${blocks || '<p class="k-none">Không có thành viên nào khớp bộ lọc.</p>'}</section>`;
+      ${ blocks || '<p class="k-none">Không có task hoặc thành viên nào khớp bộ lọc.</p>' }</section > `;
 }
 
 // ----- Màn hình TV: danh sách Không đạt và Hoàn thành trễ hạn -----
-function picOf(x, it) { return x.groupOf.get(`${it.streamKey}/${it.groupKey}`)?.pic?.name || ''; }
+function picOf(x, it) { return x.groupOf.get(`${ it.streamKey }/${it.groupKey}`)?.pic?.name || '';
+}
 
 function failItems(x, list, notes, withDate) {
   if (!list.length) return `<p class="k-none ok">${icon('check')}Không có KPI không đạt</p>`;
@@ -508,32 +628,12 @@ function tableHtml(x, { tv = false } = {}) {
       <div class="k-table" role="table" style="--days:${m.days.length}"><div class="kt-row kt-head" role="row"><div class="kt-c kt-stream" role="columnheader">${tblCol}</div>${head}<div class="kt-c kt-sum" role="columnheader">${tv ? 'Lũy kế' : 'Lũy kế đến hôm nay'}</div></div>${rows}</div></section>`;
 }
 
-// ----- Kế hoạch & kết quả theo nhóm -----
-function peopleHtml(g) {
-  const pic = g.pic;
-  const mem = g.members || [];
-  const p = pic ? `<span class="kp-pic"><span class="av pic">${esc(initials(pic.name))}</span><span class="kp-name"><b>${esc(pic.name)}</b><small>PIC · chịu trách nhiệm chính${pic.title ? ` · ${esc(pic.title)}` : ''}</small></span></span>` : '<span class="kp-pic none">Chưa có PIC nhóm</span>';
-  const m = mem.length ? `<span class="kp-sep" aria-hidden="true"></span><span class="kp-mem"><span class="av-stack">${mem.map((n) => `<span class="av" title="${esc(n)}">${esc(initials(n))}</span>`).join('')}</span><span class="kp-name"><small>${mem.length} người thực hiện</small><span>${esc(mem.map(short).join(', '))}</span></span></span>` : '';
-  return `<div class="kg-people">${p}${m}</div>`;
-}
-
+// ----- Hỗ trợ hiển thị task & liên kết thư mục -----
 /** Ghi chú giờ tick của KPI hoàn thành trễ hạn. */
 function lateNote(it) {
   if (it.status !== 'L') return '';
   const at = tickTime(it.doneAt);
   return `<span class="kl-note">Hoàn thành trễ hạn${at ? `: tick lúc ${esc(at)}` : ''}, hạn là ${DUE_LABEL} sáng hôm sau ngày ${esc(it.label)}</span>`;
-}
-
-function lineFull(it, notes) {
-  return `<li class="kl kl-full st-${it.status}"><span class="kl-ic">${icon(STATUS_ICON[it.status])}</span>
-      <span class="kl-body"><b class="kl-kpi">${esc(it.kpi)}</b><span class="kl-who">${icon('user')}${esc(it.person || '—')}</span>
-      ${notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : ''}${lateNote(it)}</span>${chip(it.status)}</li>`;
-}
-
-function lineCompact(it, notes) {
-  return `<li class="kl kl-compact st-${it.status}"><span class="kl-date">${esc(it.label)}</span>
-      <span class="kl-body"><b class="kl-kpi">${esc(it.kpi)}</b><span class="kl-who">${icon('user')}${esc(it.person || '—')}</span>${notes.has(it.id) ? `<span class="kl-note">Vướng mắc: ${esc(it.note)}</span>` : ''}${lateNote(it)}</span>
-      <span class="kl-st" title="${STATUS_LABEL[it.status]}">${icon(STATUS_ICON[it.status])}</span></li>`;
 }
 
 function folderLinks(g) {
@@ -550,101 +650,8 @@ function folderLinks(g) {
 
 function pill(text, cls) { return `<span class="k-pill ${cls}">${esc(text)}</span>`; }
 
-function dayCard(g, x) {
-  const { f, today } = x;
-  const D = f.day;
-  let list = onDate(g.items, D);
-  let back = g.items.filter((it) => it.date < D && isOutstanding(it)).sort(byDate);
-  if (f.result === 'D') { list = list.filter((it) => it.status === 'D'); back = []; }
-  if (f.result === 'T') list = list.filter(isOutstanding);
-  if (f.result === 'L') { list = list.filter((it) => it.status === 'L'); back = []; }
-  if (f.result !== 'all' && !list.length && !back.length) return '';
-  const notes = noteTargets(g.items, D);
-  const all = onDate(g.items, D);
-  const dc = count(all);
-  const future = D > today;
-  const top = future
-    ? pill(`${dc.total} KPI sắp tới`, 'muted')
-    : dc.total ? pill(`Hoàn thành ${doneOf(dc)}/${dc.total} ngày ${labelOf(D)}`, doneOf(dc) === dc.total ? 'ok' : 'muted') : '';
-  const backPill = back.length ? pill(`${back.length} tồn đọng`, 'bad') : future ? '' : pill('Không tồn đọng', 'ok-line');
-  return `<article class="k-group"><header class="kg-top"><h3>${esc(g.name)}</h3><span class="kg-pills">${top}${backPill}</span></header>
-      ${peopleHtml(g)}<hr />
-      <p class="kg-label">KPI ngày ${esc(labelOf(D))} · ${list.length}</p>
-      ${list.length ? `<ul class="kl-list">${list.map((it) => lineFull(it, notes)).join('')}</ul>` : `<p class="k-none">Không có KPI ngày ${esc(labelOf(D))}</p>`}
-      ${back.length ? `<p class="kg-label bad">Tồn đọng từ ngày trước · ${back.length}</p><ul class="kl-list compact">${back.map((it) => lineCompact(it, notes)).join('')}</ul>` : future ? '' : `<p class="k-none ok">${icon('check')}Không có KPI tồn đọng từ ngày trước</p>`}
-      ${folderLinks(g)}</article>`;
-}
-
-function planCard(g, x) {
-  const { f, ref } = x;
-  const notes = noteTargets(g.items, ref);
-  const allDone = g.items.filter(isDone).sort(byDate);
-  const late = allDone.filter((it) => it.status === 'L');
-  const done = f.result === 'D' ? allDone.filter((it) => it.status === 'D') : f.result === 'L' ? late : allDone;
-  const back = g.items.filter((it) => it.date <= ref && isOutstanding(it)).sort(byDate);
-  const next = g.items.filter((it) => it.status === 'N' || it.status === 'S').sort(byDate);
-  const cols = [
-    ['done', f.result === 'L' ? 'Hoàn thành trễ hạn' : f.result === 'D' ? 'Hoàn thành đúng hạn' : 'Đã hoàn thành', f.result === 'L' ? 'clock' : 'check', f.result === 'L' ? 'L' : 'D', done, 'Chưa có KPI nào'],
-    ['back', 'Tồn đọng', 'alert', 'K', back, 'Không có KPI tồn đọng'],
-    ['next', 'Đang làm · sắp tới', 'calendar', 'S', next, 'Không còn KPI sắp tới'],
-  ].filter(([k]) => f.result === 'all' || (f.result === 'T' ? k === 'back' : k === 'done'));
-  if (f.result !== 'all' && !cols.some((c) => c[4].length)) return '';
-  const total = g.items.length;
-  const seg = (n, st) => (n ? `<i class="st-${st}" style="flex:${n}"></i>` : '');
-  return `<article class="k-plan"><header class="kpl-top"><div class="kpl-who"><h3>${esc(g.name)}</h3>${peopleHtml(g)}</div>
-      <div class="kpl-sum"><b>Kế hoạch ${total} KPI</b><span class="k-stack is-mini">${seg(allDone.length - late.length, 'D')}${seg(late.length, 'L')}${seg(back.length, 'K')}${seg(next.length, 'S')}</span><small>Hoàn thành ${allDone.length}${late.length ? ` (trễ hạn ${late.length})` : ''} · Tồn đọng ${back.length} · Còn lại ${next.length}</small></div></header>
-      <div class="kpl-cols" style="--cols:${cols.length}">${cols.map(([k, title, ic, st, list, empty]) => `<div class="kpl-col kpl-${k}"><p class="kpl-head st-${st}">${icon(ic)}${title}<span class="k-badge st-${st}">${list.length}</span></p>
-        ${list.length ? `<ul class="kl-list compact">${list.map((it) => lineCompact(it, notes)).join('')}</ul>` : `<p class="k-none${k === 'back' ? ' ok' : ''}">${k === 'back' ? icon('check') : ''}${empty}</p>`}</div>`).join('')}</div>
-      ${folderLinks(g)}</article>`;
-}
-
-function groupsHtml(x) {
-  const { m, f, today, ref, pool } = x;
-  const listPool = isSpecialTab(f.tab) || f.stream === 'all' ? pool : pool.filter((s) => s.key === f.stream);
-  const s = listPool.find((v) => v.key === S.groupStream) || listPool.find((v) => v.items.length) || listPool[0];
-  if (!s) return '';
-  const isAll = f.day === 'all';
-  const people = new Set(s.groups.flatMap((g) => [g.pic?.name, ...(g.members || [])].filter(Boolean)));
-  const active = s.groups.filter((g) => g.items.length);
-  const idle = s.groups.filter((g) => !g.items.length);
-  const tabs = f.tab === 'cashflow' && f.stream === 'all' && pool.length > 1
-    ? `<div class="k-tabs" role="tablist" aria-label="Chọn dòng tiền">${pool.map((v) => {
-      const c = count(upTo(v.items, ref));
-      const p = pct(doneOf(c), c.total);
-      return `<button type="button" role="tab" data-gstream="${esc(v.key)}" aria-selected="${v.key === s.key}">${esc(v.name)}<b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b></button>`;
-    }).join('')}</div>`
-    : '';
-  const title = isAll ? `Kế hoạch ${m.days.length} ngày · ${s.name}` : `Kế hoạch & kết quả theo nhóm · ${dayText(f.day)}`;
-  const desc = [isAll ? '' : s.name, s.pic ? `PIC ${s.pic}` : '', `${s.groups.length} nhóm`, `${people.size} người`].filter(Boolean).join(' · ');
-  let body;
-  if (isAll) {
-    const c = count(s.items);
-    const due = count(upTo(s.items, ref));
-    const backlog = due.K;
-    const seg = (n, st) => (n ? `<i class="st-${st}" style="flex:${n}"></i>` : '');
-    const summary = `<div class="k-plan-sum"><div class="k-card"><p class="k-over">Kế hoạch ${m.days.length} ngày của dòng tiền</p><p class="k-num-l">${c.total} KPI <span>${active.length} nhóm có KPI</span></p>
-        <span class="k-stack">${STATUSES.map((st) => seg(c[st], st)).join('')}</span>
-        <ul class="k-legend inline">${STATUSES.filter((st) => st !== 'N' || c.N).map((st) => `<li><i class="kd st-${st}"></i>${STATUS_LABEL[st]} <b>${c[st]}</b></li>`).join('')}</ul></div>
-        <div class="k-card k-big st-K${backlog ? '' : ' is-zero'}"><p class="k-over">Tồn đọng cần gỡ</p><p class="k-num-xl">${backlog} <span>KPI</span></p><p class="hint">KPI đã qua ngày mà chưa hoàn thành, tính đến hôm nay</p></div>
-        <div class="k-card"><p class="k-over">Tỷ lệ hoàn thành đến hôm nay</p><p class="k-num-xl">${pct(doneOf(due), due.total) ?? '–'}${due.total ? '%' : ''} <span>${doneOf(due)}/${due.total} KPI</span></p><p class="hint">${due.L ? `${due.L} KPI hoàn thành trễ hạn · ` : ''}Còn ${c.S} KPI kế hoạch cho các ngày tới</p></div></div>`;
-    const cards = active.map((g) => planCard(g, x)).join('');
-    body = `${summary}<div class="k-plans">${cards || '<p class="k-none">Không có nhóm nào khớp bộ lọc.</p>'}</div>`;
-  } else {
-    const D = f.day;
-    const dc = count(onDate(s.items, D));
-    const back = s.items.filter((it) => it.date < D && isOutstanding(it)).length;
-    const strip = D > today
-      ? `<p class="k-strip"><b>Ngày ${esc(labelOf(D))}: ${dc.total} KPI kế hoạch</b>${pill('Ngày chưa tới', 'muted')}</p>`
-      : `<p class="k-strip"><b>Ngày ${esc(labelOf(D))}: ${dc.total} KPI</b>${pill(`Hoàn thành ${dc.D}`, 'ok')}${dc.L ? pill(`Hoàn thành trễ hạn ${dc.L}`, 'warn') : ''}${dc.K ? pill(`Không đạt ${dc.K}`, 'bad') : ''}${dc.N ? pill(`Đang làm ${dc.N}`, 'info') : ''}<span class="kf-sep" aria-hidden="true"></span>${pill(`Tồn đọng từ ngày trước ${back}`, back ? 'bad-line' : 'ok-line')}</p>`;
-    const cards = active.map((g) => dayCard(g, x)).join('');
-    body = `${strip}<div class="k-cards">${cards || '<p class="k-none">Không có nhóm nào khớp bộ lọc.</p>'}</div>`;
-  }
-  const idleNote = idle.length ? `<p class="hint">Chưa nhập KPI: ${esc(idle.map((g) => g.name).join(', '))}.</p>` : '';
-  return `<section class="k-panel k-groups" id="k-groups" aria-labelledby="k-grp-t"><header class="k-phead"><div><h2 id="k-grp-t">${esc(title)}</h2><p class="hint">${esc(desc)}</p></div>${tabs}</header>${body}${idleNote}</section>`;
-}
-
 function guideHtml() {
-  return `<p class="k-guide">${icon('info')}<span>Cách đọc: tick ô Kết quả trên sheet khi hoàn thành KPI. Hạn của KPI là ${DUE_LABEL} sáng hôm sau ngày của KPI (KPI ngày 21 hết hạn lúc ${DUE_LABEL} ngày 22). Tick trước hạn là Hoàn thành; tick sau hạn là Hoàn thành trễ hạn (trang ghi nhận giờ tick trong khoảng 1 phút sau khi tick; ô đã tick từ trước khi trang bắt đầu theo dõi được tính đúng hạn). Chưa tick: chưa quá hạn là Đang làm, quá hạn là Không đạt, ngày chưa tới là Sắp tới. Tồn đọng = KPI Không đạt tính đến ngày đang xem. Nhóm nhiều người: mỗi người 1 dòng cùng tên Nhóm trên sheet, cột PIC của dòng là người thực hiện; PIC nhóm lấy theo Đội trưởng trong DS nhân sự War-Room. Bộ lọc Ngày áp dụng cho cả trang.</span></p>`;
+  return `<p class="k-guide">${icon('info')}<span>Cách đọc: tick ô Kết quả trên sheet khi hoàn thành KPI. Hạn của KPI là ${DUE_LABEL} sáng hôm sau ngày của KPI (KPI ngày 22 hết hạn lúc ${DUE_LABEL} ngày 23). Tick trước hạn là Hoàn thành; tick sau hạn là Hoàn thành trễ hạn (áp dụng từ ngày 22/11; ngày 21/11 hoàn thành muộn vẫn tính Hoàn thành). Chưa tick: chưa quá hạn là Đang làm, quá hạn là Không đạt / Tồn đọng, ngày chưa tới là Sắp tới. Bấm tên dòng tiền ở bảng tổng hợp để cuộn thẳng tới chi tiết Nhóm · Thành viên · Task của dòng tiền đó.</span></p>`;
 }
 
 // ----- Màn hình TV: 1 màn, hôm nay, tất cả dòng tiền -----
@@ -677,13 +684,19 @@ $('filters').addEventListener('change', (e) => {
   render();
 });
 $('main').addEventListener('click', (e) => {
-  const tab = e.target.closest('[data-gstream]');
-  if (tab) { S.groupStream = tab.dataset.gstream; render(); return; }
   const row = e.target.closest('[data-pick-stream]');
   if (row) {
-    S.groupStream = row.dataset.pickStream;
-    render();
-    document.getElementById('k-groups')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const target = document.getElementById(`stream-${row.dataset.pickStream}`) || document.getElementById('k-groups');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
+
+let lastMasonryCols = masonryColCount();
+window.addEventListener('resize', () => {
+  const next = masonryColCount();
+  if (next !== lastMasonryCols) {
+    lastMasonryCols = next;
+    if (S.model && !prefs.tv) render();
   }
 });
 

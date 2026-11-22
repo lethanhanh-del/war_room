@@ -6,6 +6,7 @@
 
 export const WP_CONFIG = {
   SHEET_ID: '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0',
+  SHEET_NAME: 'Điểm nghẽn',
   SHEET_GID: '2043772221',
   POLL_INTERVAL_MS: 3000,
   WARNING_THRESHOLD_SEC: 300,
@@ -457,17 +458,25 @@ export function parseCsvText(csv) {
 
 export async function fetchWaitingPoints() {
   const ts = Date.now();
-  // Ưu tiên CSV export: giữ nguyên từng dòng văn bản gốc, tuyệt đối không bị Google gviz gộp nhầm dòng dữ liệu thành tiêu đề khi xóa hàng hoặc để trống STT/Dòng tiền.
-  const csvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/export?format=csv&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
+  const sheetParam = encodeURIComponent(WP_CONFIG.SHEET_NAME);
+  // Ưu tiên đọc CSV trực tiếp theo đúng tên sheet "Điểm nghẽn", dự phòng theo gid và gviz JSON.
+  const namedCsvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${sheetParam}&_t=${ts}`;
+  const gidCsvUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/export?format=csv&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
   try {
-    const res = await fetch(csvUrl, { cache: 'no-store' });
+    const res = await fetch(namedCsvUrl, { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return parseCsvText(await res.text());
-  } catch (csvErr) {
-    const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&headers=2&gid=${WP_CONFIG.SHEET_GID}&_t=${ts}`;
-    const res = await fetch(gvizUrl, { cache: 'no-store' });
-    if (!res.ok) throw csvErr;
-    return parseGvizPayload(await res.text());
+  } catch (namedErr) {
+    try {
+      const res = await fetch(gidCsvUrl, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return parseCsvText(await res.text());
+    } catch {
+      const gvizUrl = `https://docs.google.com/spreadsheets/d/${WP_CONFIG.SHEET_ID}/gviz/tq?tqx=out:json&headers=1&sheet=${sheetParam}&_t=${ts}`;
+      const res = await fetch(gvizUrl, { cache: 'no-store' });
+      if (!res.ok) throw namedErr;
+      return parseGvizPayload(await res.text());
+    }
   }
 }
 
@@ -1421,8 +1430,8 @@ if (typeof document !== 'undefined') {
       const curSnap = buildBoardSnapshot(now);
       window.dispatchEvent(new CustomEvent('wr:wp-count', {
         detail: {
-          peopleCount: curSnap.groups.length,
-          itemCount: curSnap.visibleItems.length,
+          peopleCount: curSnap.people.length,
+          itemCount: curSnap.activeCount,
           showStats: Boolean(state.showStats),
         },
       }));
@@ -1722,7 +1731,10 @@ if (typeof document !== 'undefined') {
       <header class="wp-head">
         <div class="wp-brand">
           <span class="wp-brand-badge" aria-hidden="true">WP</span>
-          <h1>Waiting Point</h1>
+          <div class="wp-brand-txt">
+            <h1>Waiting Point · Điểm nghẽn</h1>
+            <p class="wp-brand-note">Nơi hiển thị trực tiếp các <b>điểm nghẽn / vướng mắc công việc</b> từ sheet <b>“Điểm nghẽn”</b> — Waiting Point và Điểm nghẽn task là cùng một bảng theo dõi.</p>
+          </div>
         </div>
         <div class="wp-actions">
           <span class="wp-pill is-danger" id="wp-pill-offline" hidden>${SVG.wifiOff}<span>Mất kết nối Sheet</span></span>
@@ -2051,11 +2063,12 @@ if (typeof document !== 'undefined') {
       stageHtml = `
         <section class="wp-empty">
           <div class="wp-empty-ring">${SVG.checkBig}</div>
-          <h2>Hiện không có điểm chờ cần hỗ trợ</h2>
+          <h2>Hiện không có điểm nghẽn / điểm chờ cần hỗ trợ</h2>
+          <p class="wp-empty-note">Waiting Point cũng chính là bảng hiển thị các <b>điểm nghẽn trong công việc</b>. Khi phát sinh vướng mắc cần hỗ trợ, nhập trực tiếp vào sheet <b>“Điểm nghẽn”</b> để hiển thị ngay tại đây.</p>
           <div class="wp-empty-bar">
             <span class="wp-empty-status">
               <span class="wp-live-dot ${state.isOnline ? '' : 'offline'}"></span>
-              <span>${state.isOnline ? 'Đang đồng bộ trực tiếp với bảng điều phối' : 'Đang kết nối lại nguồn dữ liệu…'}</span>
+              <span>${state.isOnline ? 'Đang đồng bộ trực tiếp với sheet “Điểm nghẽn”' : 'Đang kết nối lại nguồn dữ liệu…'}</span>
             </span>
             ${todayCleared.length > 0 ? `<button type="button" class="wp-empty-stat-btn" id="wp-open-stats-empty">${SVG.history}<span>Thống kê hôm nay: <b class="wp-mono">${todayCleared.length}</b> đã xử lý</span></button>` : ''}
           </div>
