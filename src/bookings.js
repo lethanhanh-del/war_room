@@ -17,6 +17,39 @@ const SLOT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const KINDS = ["meeting", "block"];
 const MAX_SLOTS = 48; // đủ cả hai ca của một ngày (38 khung)
 
+export const BOOKING_ROTATE_SEC = 30;
+
+/** Cửa sổ "hôm nay" của lịch họp BOD: 04:00 -> 04:00 hôm sau giờ VN (Ca Tối kéo dài tới 03:30). */
+export function bookingDayWindow(nowMs = Date.now()) {
+  const shifted = new Date(nowMs + (7 - 4) * 3600e3);
+  const next = new Date(shifted.getTime() + 86400e3);
+  return {
+    from: `${shifted.toISOString().slice(0, 10)}T04:00`,
+    to: `${next.toISOString().slice(0, 10)}T04:00`,
+  };
+}
+
+/** Đếm số lịch họp (kind = 'meeting') còn hiệu lực hôm nay -> { upcomingCount, nextSlot, sec }. */
+export function summarizeUpcomingMeetings(rows = [], nowSlot = nowVN()) {
+  const upcoming = rows.filter((r) => r.kind === "meeting" && addMinutes(r.slot, 30) > nowSlot);
+  return {
+    upcomingCount: upcoming.length,
+    nextSlot: upcoming[0]?.slot || "",
+    sec: upcoming.length > 0 ? BOOKING_ROTATE_SEC : 0,
+  };
+}
+
+export async function handleBookingStatus(request, env) {
+  if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+  const w = bookingDayWindow();
+  const { results } = await env.DB.prepare(
+    "SELECT slot, kind, name, note FROM chairman_bookings WHERE slot >= ? AND slot < ? AND kind = 'meeting' ORDER BY slot"
+  )
+    .bind(w.from, w.to)
+    .all();
+  return json(summarizeUpcomingMeetings(results, nowVN()));
+}
+
 export async function handleBookings(request, env, url, user, ctx) {
   if (request.method === "GET") {
     const { results } = await env.DB.prepare(
@@ -52,7 +85,7 @@ export async function handleBookings(request, env, url, user, ctx) {
       return json({ error: "Có khung giờ vừa có người đặt. Vui lòng bỏ các khung đó và thử lại.", taken: taken.map((b) => b.slot) }, 409);
     }
     await log(env, request, user.username, kind === "block" ? "booking_blocked" : "booking_created", `${slots.join(", ")}${note ? " · " + note : ""}`);
-    ctx.waitUntil(notifyLive(env, { scope: "bookings" }));
+    ctx.waitUntil(notifyLive(env, { scope: "bookings", event: "created", kind, name: user.fullName, slots, note }));
     return json({ ok: true, slots }, 201);
   }
 
@@ -71,7 +104,7 @@ export async function handleBookings(request, env, url, user, ctx) {
       .run();
     const detail = rows.map((r) => `${r.slot} · ${r.kind === "block" ? "chặn lịch" : "lịch của " + r.name}`).join("; ");
     await log(env, request, user.username, "booking_cancelled", detail);
-    ctx.waitUntil(notifyLive(env, { scope: "bookings" }));
+    ctx.waitUntil(notifyLive(env, { scope: "bookings", event: "cancelled" }));
     return json({ ok: true, slots: rows.map((r) => r.slot) });
   }
 

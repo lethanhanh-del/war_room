@@ -81,7 +81,7 @@ export function tasksOfDay(streams, day) {
       for (const r of g.rows || []) {
         const c = r.cells?.[day];
         if (!c || (!c.kpi && !c.res)) continue;
-        const t = { s: sk, g: normKey(g.name), p: normKey(r.person), k: normKey(c.kpi) };
+        const t = { s: sk, g: normKey(g.name), p: normKey(r.person), pic: r.taskPic ? normKey(r.taskPic) : '', k: normKey(c.kpi) };
         const n = (seen.get(cellKey(t)) || 0) + 1;
         seen.set(cellKey(t), n);
         if (n > 1) t.k += `#${n}`; // dòng trùng
@@ -95,10 +95,14 @@ export function tasksOfDay(streams, day) {
 /** Khoá 1 ô trong bản chốt / lịch sử: dòng tiền|nhóm|người|nội dung KPI (đã chuẩn hoá). */
 export const cellKey = (t) => `${t.s}|${t.g}|${t.p}|${t.k}`;
 
-/** Tìm task trong danh sách: cùng dòng tiền + nhóm + người + nội dung KPI; không có thì cùng dòng tiền + nhóm + người (duy nhất). */
+/** Tìm task trong danh sách: cùng dòng tiền + nhóm + người + nội dung KPI; không có thì thử theo PIC gốc (khi vừa điền thêm cột Người phụ trách), rồi cùng dòng tiền + nhóm + người (duy nhất). */
 export function findTask(list, t) {
   const exact = list.find((x) => x.s === t.s && x.g === t.g && x.p === t.p && x.k === t.k);
   if (exact) return exact;
+  if (t.pic) {
+    const byPic = list.find((x) => x.s === t.s && x.g === t.g && x.p === t.pic && x.k === t.k);
+    if (byPic) return byPic;
+  }
   const same = list.filter((x) => x.s === t.s && x.g === t.g && x.p === t.p);
   return same.length === 1 ? same[0] : null;
 }
@@ -297,9 +301,9 @@ export function reviewList(closes, cellLog, obs, confirms) {
 
 /** GET / POST / DELETE /api/admin/kpi-review (src/index.js đã chặn người không phải admin). */
 export async function handleKpiReview(request, env, url, user) {
-  const { kpiSheetId } = await import('./index.js');
-  const id = kpiSheetId(env);
-  if (!id) return json({ error: 'Đồng bộ Google Sheet KPI đang tắt.' }, 400);
+  const { kpiSourceKey } = await import('./index.js');
+  const id = kpiSourceKey(env);
+  if (!id) return json({ error: 'Đồng bộ KPI đang tắt.' }, 400);
   await ensureTables(env);
   if (request.method === 'GET') {
     const [closes, cellLog, obs] = await Promise.all([

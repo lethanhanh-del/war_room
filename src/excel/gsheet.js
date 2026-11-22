@@ -10,6 +10,7 @@
 
 import { normKey } from '../worksuite/model.js';
 import { extractRoster, isRoster } from './roster.js';
+import { fetchSharePointTabs, isSharePointConfigured, isSharePointSource, sharePointMasterUrl } from './sharepoint.js';
 import { extractWorkbook, parseStreamTitle, unreadableWarning } from './tasks.js';
 import { readXlsx } from './xlsx.js';
 
@@ -28,10 +29,16 @@ export const NOT_PUBLIC = 'Không đọc được Google Sheet: hãy chia sẻ �
  */
 export function sheetIds(env = {}) {
   const raw = String(env.EXCEL_SHEET_URL ?? '').trim();
-  if (!raw) return [...DEFAULT_SHEETS];
+  if (!raw) {
+    return isSharePointConfigured(env) ? [sharePointMasterUrl(env), SECOND_SHEET] : [...DEFAULT_SHEETS];
+  }
   if (/^(off|false|0|none)$/i.test(raw)) return [];
   const ids = [];
   for (const part of raw.split(/[\s,;]+/)) {
+    if (isSharePointSource(part)) {
+      if (!ids.includes(part)) ids.push(part);
+      continue;
+    }
     const m = /\/spreadsheets\/d\/([\w-]{20,})/.exec(part) || /^([\w-]{20,})$/.exec(part);
     if (m && !ids.includes(m[1])) ids.push(m[1]);
   }
@@ -169,15 +176,21 @@ export async function fetchSheetTabs(id) {
   return sheets;
 }
 
+/** Đọc 1 nguồn (Excel SharePoint hoặc Google Sheet) về cùng cấu trúc [{ name, hidden, rows }]. */
+export async function fetchAnySourceTabs(id, env = {}, opts = {}) {
+  if (isSharePointSource(id)) return fetchSharePointTabs(env, id, Date.now(), opts);
+  return fetchSheetTabs(id);
+}
+
 /**
  * Hàm đọc sheet dùng chung trong 1 lượt (vd 1 lượt cron): đồng bộ task (sheet-sync.js) và KPI (src/kpi/) cùng đọc
- * file WR - MASTER TASK -> chỉ tải và tách CSV 1 lần (gói Free: 10 ms CPU / lượt). Kết quả chỉ đọc, đừng sửa.
+ * file WR - MASTER TASK -> chỉ tải và tách 1 lần (gói Free: 10 ms CPU / lượt). Kết quả chỉ đọc, đừng sửa.
  */
-export function sharedLoader() {
+export function sharedLoader(env = {}) {
   const seen = new Map();
   return (id) => {
     if (!seen.has(id)) {
-      const p = fetchSheetTabs(id);
+      const p = fetchAnySourceTabs(id, env);
       seen.set(id, p);
       p.catch(() => seen.delete(id));
     }

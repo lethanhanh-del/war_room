@@ -308,9 +308,9 @@ test('toDashboard: dữ liệu /api/kpi -> định dạng app React (FE/): nhóm
   assert.deepEqual([data2.group, data2.placeholder, data2.days.map((x) => x.task)], ['Data', true, [null, null]]);
 });
 
-test('navBar: 3 trang (ẩn Dòng tiền & Hẹn lịch) + tài khoản, đánh dấu trang đang mở', async () => {
+test('navBar: 4 trang (ẩn Dòng tiền) + tài khoản, đánh dấu trang đang mở', async () => {
   const { navBar, NAV_PAGES } = await import('../src/pages.js');
-  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/kpi', '/lich-truc', '/waiting-point']);
+  assert.deepEqual(NAV_PAGES.map(([href]) => href), ['/kpi', '/lich-truc', '/lich', '/waiting-point']);
   const html = navBar({ role: 'user', fullName: 'Võ <Đào>' }, '/kpi');
   assert.match(html, /<a class="wr-link" href="\/kpi" aria-current="page">KPI & kết quả<\/a>/);
   assert.equal((html.match(/aria-current="page"/g) || []).length, 1);
@@ -477,4 +477,89 @@ test('Nhóm hỗ trợ, Nhóm thanh lý & 9 tab đánh số (1. Dòng tiền ...
     'Nhóm thanh lý',
   ]);
   assert.ok(dash.flows.every((f) => f.key !== sup.key));
+});
+
+test('cột D "Người phụ trách": ưu tiên phân task theo Người phụ trách kèm PIC, bỏ trống thì dùng PIC không gắn kèm PIC', async () => {
+  const { attachPeople } = await kpi();
+  const { toDashboard } = await import('../src/kpi/dashboard.js');
+  const { findTask, tasksOfDay } = await import('../src/kpi/close.js');
+
+  const csv4 = [
+    'Stt,Nhóm,PIC,Người phụ trách,22/11,,23/11,,Ghi chú / Vướng mắc',
+    ',,,,KPI,Kết quả,KPI,Kết quả,',
+    '1,Networking,Hoàng Thị Quỳnh Mai,Mạc Thị Thúy Hiền,Gặp 5 khách VIP,TRUE,Gọi 10 khách,FALSE,',
+    '2,Networking,Hoàng Thị Quỳnh Mai,,Chốt kế hoạch tuần,FALSE,,,',
+    '3,Networking,Hoàng Thị Quỳnh Mai,HOÀNG THỊ QUỲNH MAI,Họp nội bộ,TRUE,,,',
+    '4,Networking,,Trương Huỳnh Thúy An,Lọc data khách hàng,FALSE,,,',
+  ].join('\n');
+
+  const parsed = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', csv4), { year: 2026 });
+  assert.equal(parsed.error, undefined);
+  assert.deepEqual(parsed.warnings, []);
+  const rows = parsed.groups[0].rows;
+  assert.deepEqual(rows.map((r) => [r.person, r.taskPic ?? null]), [
+    ['Mạc Thị Thúy Hiền', 'Hoàng Thị Quỳnh Mai'],
+    ['Hoàng Thị Quỳnh Mai', null],
+    ['Hoàng Thị Quỳnh Mai', null],
+    ['Trương Huỳnh Thúy An', null],
+  ]);
+
+  const attached = attachPeople([parsed]);
+  const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: parsed.days, streams: attached });
+  const grp = model.streams[0].groups[0];
+  assert.deepEqual(grp.items.filter((it) => it.date === '2026-11-22').map((it) => [it.person, it.taskPic, it.kpi]), [
+    ['Mạc Thị Thúy Hiền', 'Hoàng Thị Quỳnh Mai', 'Gặp 5 khách VIP'],
+    ['Hoàng Thị Quỳnh Mai', '', 'Chốt kế hoạch tuần'],
+    ['Hoàng Thị Quỳnh Mai', '', 'Họp nội bộ'],
+    ['Trương Huỳnh Thúy An', '', 'Lọc data khách hàng'],
+  ]);
+  const stats = memberStats(grp, '2026-11-22');
+  assert.deepEqual(stats.map((m) => [m.name, m.total, m.done]), [
+    ['Mạc Thị Thúy Hiền', 1, 1],
+    ['Hoàng Thị Quỳnh Mai', 2, 1],
+    ['Trương Huỳnh Thúy An', 1, 0],
+  ]);
+
+  // Dashboard "/" cũng phân theo Người phụ trách và chỉ gắn taskPic khi khác PIC
+  const dash = toDashboard({ today: '2026-11-22', now: Date.UTC(2026, 10, 22), source: {}, streams: attached });
+  assert.deepEqual(dash.flows[0].items.map((it) => [it.pic, it.taskPic ?? null]), [
+    ['Mạc Thị Thúy Hiền', 'Hoàng Thị Quỳnh Mai'],
+    ['Hoàng Thị Quỳnh Mai', null],
+    ['Hoàng Thị Quỳnh Mai', null],
+    ['Trương Huỳnh Thúy An', null],
+  ]);
+
+  // Chốt sổ: bản chốt cũ lưu dưới tên PIC vẫn khớp khi sau này mới điền thêm cột Người phụ trách
+  const tList = tasksOfDay([parsed], '2026-11-22');
+  const oldClosed = [{ s: tList[0].s, g: tList[0].g, p: 'hoang thi quynh mai', k: tList[0].k, v: 'D' }];
+  assert.equal(findTask(oldClosed, tList[0])?.v, 'D');
+});
+
+test('ô E1 duyệt KPI của BOD: FALSE -> bodApproved=false (đánh đỏ chưa được BOD duyệt); TRUE / sheet cũ -> bodApproved=true', async () => {
+  const { attachPeople } = await kpi();
+  const mkCsv = (r1) => [
+    r1,
+    'Stt,Nhóm,PIC,Người phụ trách,22/11,,',
+    ',,,,KPI,Kết quả,',
+    '1,Networking,Hoàng Thị Quỳnh Mai,,Gặp 5 khách VIP,TRUE,',
+  ].join('\n');
+
+  const unapproved = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,FALSE,,')), { year: 2026 });
+  assert.equal(unapproved.bodApproved, false);
+
+  const blankAfterLabel = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,,,')), { year: 2026 });
+  assert.equal(blankAfterLabel.bodApproved, false);
+
+  const approved = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('HƯỚNG DẪN,,,KPI đã được sếp duyệt,TRUE,,')), { year: 2026 });
+  assert.equal(approved.bodApproved, true);
+
+  const legacy = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', mkCsv('BẢNG KPI,,,,,,')), { year: 2026 });
+  assert.equal(legacy.bodApproved, true);
+
+  const attached = attachPeople([unapproved, approved]);
+  const model = buildModel({ today: '2026-11-22', now: Date.UTC(2026, 10, 22, 8, 0), days: unapproved.days, streams: attached });
+  assert.equal(model.streams[0].bodApproved, false);
+  assert.equal(model.streams[0].items[0].bodApproved, false);
+  assert.equal(model.streams[1].bodApproved, true);
+  assert.equal(model.streams[1].items[0].bodApproved, true);
 });

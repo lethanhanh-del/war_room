@@ -53,6 +53,7 @@ export function toDashboard(data) {
           row: r.row,
           kpi: first ? first.task : '',
           pic: r.person || lead,
+          ...(r.taskPic ? { taskPic: r.taskPic } : {}),
           note: r.note || '',
           folder: r.folder || r.folderText || '',
           // Người chưa có KPI ngày nào: app hiện "Chưa có dòng KPI" để thấy ai chưa được giao.
@@ -64,10 +65,11 @@ export function toDashboard(data) {
     // Luôn hiện đúng tên đầy đủ của dòng tiền / nhóm (không bỏ chữ "Dòng tiền").
     return { key: s.key, ...(s.no ? { no: s.no } : {}), label: flowLabel(s), sheet: s.kpiSheet || s.sheet || '', sheetTitle: s.sheet || '', days, groups, items };
   });
+  const isSp = data.source?.provider === 'sharepoint';
   return {
-    spreadsheetTitle: 'Google Sheet KPI',
+    spreadsheetTitle: isSp ? 'Excel SharePoint · WR - MASTER TASK.xlsx' : 'Google Sheet KPI',
     generatedAt: data.source?.changedAt || data.source?.checkedAt || new Date(data.now || Date.now()).toISOString(),
-    mode: 'google-sheets',
+    mode: isSp ? 'sharepoint-excel' : 'google-sheets',
     today: data.today,
     flows,
   };

@@ -61,6 +61,7 @@ export function buildModel(data) {
   const days = (data.days || []).map((d) => ({ ...d, weekday: weekday(d.date) }));
   const items = [];
   const streams = (data.streams || []).map((s) => {
+    const bodApproved = s.bodApproved !== false;
     const sItems = [];
     const groups = (s.groups || []).map((g) => {
       const gItems = [];
@@ -76,6 +77,8 @@ export function buildModel(data) {
             label: d.label,
             kpi: cell.kpi || 'Chưa ghi nội dung KPI',
             person: r.person || g.pic?.name || '',
+            taskPic: r.taskPic || '',
+            bodApproved,
             status,
             doneAt: cell.res === 'D' ? cell.at || '' : '',
             unknown: cell.res === '?',
@@ -93,7 +96,7 @@ export function buildModel(data) {
       return { ...g, items: gItems };
     });
     items.push(...sItems);
-    return { ...s, groups, items: sItems };
+    return { ...s, bodApproved, groups, items: sItems };
   });
   return { today, days, streams, items };
 }

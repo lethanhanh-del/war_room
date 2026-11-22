@@ -130,9 +130,11 @@ export function closeWorkbook({ close, rows, logs, sheetUrl, checkedAt, by, now 
 /** GET /api/admin/kpi-close[?day=YYYY-MM-DD] */
 export async function handleKpiCloseExport(request, env, url, user) {
   if (request.method !== 'GET') return json({ error: 'Chỉ hỗ trợ GET.' }, 405);
-  const { kpiSheetId } = await import('./index.js');
-  const id = kpiSheetId(env);
-  if (!id) return json({ error: 'Đồng bộ Google Sheet KPI đang tắt.' }, 400);
+  const { kpiSheetId, kpiSourceKey } = await import('./index.js');
+  const { sourceUrlOf } = await import('../excel/sharepoint.js');
+  const rawId = kpiSheetId(env);
+  const id = kpiSourceKey(env);
+  if (!id) return json({ error: 'Đồng bộ KPI đang tắt.' }, 400);
   await ensureTables(env);
   const day = url.searchParams.get('day') || '';
   if (!day) {
@@ -158,7 +160,7 @@ export async function handleKpiCloseExport(request, env, url, user) {
   const parse = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
   const rows = reconcileRows({ day, data: parse(close.data, []) }, parse(sheet?.data, []), cellLog.results, obsMaps(parse(obs?.data, {})).labels, confirms);
   const book = closeWorkbook({
-    close, rows, logs: logs.results, sheetUrl: `https://docs.google.com/spreadsheets/d/${id}/edit`,
+    close, rows, logs: logs.results, sheetUrl: sourceUrlOf(rawId),
     checkedAt: sheet?.checked_at || '', by: user.username, now: Date.now(),
   });
   await log(env, request, user.username, 'kpi_close_export', `Tải Excel chốt sổ ${day}`);

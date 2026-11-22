@@ -32,7 +32,7 @@ import {
   sha256Hex,
   verifyPassword,
 } from "./auth.js";
-import { handleBookings } from "./bookings.js";
+import { handleBookings, handleBookingStatus } from "./bookings.js";
 import { handleAdmin } from "./admin.js";
 import { handleLive, LiveRoom, notifyLive } from "./live.js";
 import { changePasswordPage, loginPage, navBar } from "./pages.js";
@@ -43,6 +43,7 @@ import { handleDashboard, handleKpi, syncKpi } from "./kpi/index.js";
 import { handleKpiReview } from "./kpi/close.js"; // KPI-CLOSE: admin xác nhận đúng hạn
 import { handleKpiCloseExport } from "./kpi/close-export.js"; // KPI-CLOSE: tải Excel chốt sổ
 import { sharedLoader } from "./excel/gsheet.js";
+import { fetchSharePointSheetCsv, isSharePointConfigured, sharePointMasterUrl } from "./excel/sharepoint.js";
 import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
@@ -88,8 +89,10 @@ export default {
 
     if (path === "/api/live" || path.startsWith("/api/live/")) return handleLive(request, env, url, user, ctx);
     if (path === "/api/bookings") return handleBookings(request, env, url, user, ctx);
+    if (path === "/api/bookings/status") return handleBookingStatus(request, env);
     if (path === "/api/waiting-point") return handleWaitingPoint(request, env, ctx);
-    if (path === "/api/waiting-point/status") return handleWaitingPointStatus(request);
+    if (path === "/api/waiting-point/status") return handleWaitingPointStatus(request, env);
+    if (path === "/api/waiting-point/sheet") return handleWaitingPointSheet(request, env);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
       if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
@@ -150,8 +153,8 @@ export default {
   // Cron mỗi phút (wrangler.jsonc › triggers): đọc lại Google Sheet task + phân chia nhóm (src/excel/sheet-sync.js)
   // và Google Sheet KPI (src/kpi/).
   async scheduled(event, env, ctx) {
-    // Task và KPI cùng đọc file WR - MASTER TASK: tải + tách CSV 1 lần cho cả lượt (gói Free: 10 ms CPU / lượt).
-    const load = sharedLoader();
+    // Task và KPI cùng đọc file WR - MASTER TASK (SharePoint Excel hoặc Google Sheet): tải 1 lần cho cả lượt.
+    const load = sharedLoader(env);
     ctx.waitUntil(syncSheet(env, { load }));
     ctx.waitUntil(syncKpi(env, { load }));
   },
@@ -224,12 +227,16 @@ const WP_STATUS_SHEET_ID = "1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0";
 const WP_STATUS_SHEET_NAME = "Điểm nghẽn";
 const WP_STATUS_GID = "2043772221";
 let wpStatusCache = { at: 0, data: null };
+let wpCsvCache = { at: 0, csv: "", source: "" };
 
-async function handleWaitingPointStatus(request) {
-  if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+async function fetchWaitingPointCsv(env) {
   const now = Date.now();
-  if (wpStatusCache.data && now - wpStatusCache.at < 5000) {
-    return json(wpStatusCache.data);
+  if (isSharePointConfigured(env)) {
+    const csv = await fetchSharePointSheetCsv(env, sharePointMasterUrl(env), WP_STATUS_SHEET_NAME, now);
+    return { csv, source: "sharepoint" };
+  }
+  if (wpCsvCache.csv && now - wpCsvCache.at < 2000) {
+    return { csv: wpCsvCache.csv, source: wpCsvCache.source };
   }
   const urls = [
     `https://docs.google.com/spreadsheets/d/${WP_STATUS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(WP_STATUS_SHEET_NAME)}&_t=${now}`,
@@ -239,12 +246,45 @@ async function handleWaitingPointStatus(request) {
     try {
       const res = await fetch(csvUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
-      const data = countWaitingPointPeopleFromCsv(await res.text());
-      wpStatusCache = { at: now, data };
-      return json(data);
+      const csv = await res.text();
+      wpCsvCache = { at: now, csv, source: "google" };
+      return { csv, source: "google" };
     } catch { /* thử nguồn dự phòng */ }
   }
-  return json(wpStatusCache.data || { peopleCount: 0, itemCount: 0, sec: 0, error: true });
+  throw new Error("Không đọc được sheet Điểm nghẽn.");
+}
+
+async function handleWaitingPointSheet(request, env) {
+  if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+  try {
+    const { csv, source } = await fetchWaitingPointCsv(env);
+    return new Response(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Cache-Control": "private, no-store",
+        "X-WP-Source": source,
+      },
+    });
+  } catch (e) {
+    return json({ error: String(e?.message || e) }, 502);
+  }
+}
+
+async function handleWaitingPointStatus(request, env) {
+  if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+  const now = Date.now();
+  if (wpStatusCache.data && now - wpStatusCache.at < 5000) {
+    return json(wpStatusCache.data);
+  }
+  try {
+    const { csv } = await fetchWaitingPointCsv(env);
+    const data = countWaitingPointPeopleFromCsv(csv);
+    wpStatusCache = { at: now, data };
+    return json(data);
+  } catch {
+    return json(wpStatusCache.data || { peopleCount: 0, itemCount: 0, sec: 0, error: true });
+  }
 }
 
 // Đồng bộ trạng thái đếm ngược & thống kê theo ngày của trang Waiting Point lưu trong bảng settings (D1).
@@ -265,13 +305,17 @@ async function handleWaitingPoint(request, env, ctx) {
   }
   if (request.method === "POST") {
     const body = await request.json().catch(() => ({}));
-    const next = mergeWaitingPointState(await readCurrent(), body && typeof body === "object" ? body : {});
-    await env.DB.prepare(
-      "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    )
-      .bind(KEY, JSON.stringify(next))
-      .run();
-    if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+    const current = await readCurrent();
+    const next = mergeWaitingPointState(current, body && typeof body === "object" ? body : {});
+    const stripTs = (s) => JSON.stringify({ ...s, updatedAt: 0 });
+    if (stripTs(current) !== stripTs(next)) {
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+      )
+        .bind(KEY, JSON.stringify(next))
+        .run();
+      if (ctx) ctx.waitUntil(notifyLive(env, { scope: "waiting-point" }));
+    }
     return json(next);
   }
   return json({ error: "Chỉ hỗ trợ GET và POST." }, 405);

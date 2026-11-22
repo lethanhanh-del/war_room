@@ -27,6 +27,12 @@ const text = (row, i) => raw(row, i).replace(/\s+/g, ' ').trim();
 /** Bỏ số thứ tự đứng đầu tên tab: "1. Dòng tiền ..." -> "Dòng tiền ..."; "8. Nhóm hỗ trợ" -> "Nhóm hỗ trợ". */
 const stripPrefixNo = (s) => String(s || '').normalize('NFC').replace(/\s+/g, ' ').trim().replace(/^\d+\s*[.)\-–]\s*/, '');
 
+/** Số thứ tự đứng đầu tên tab: "4. Dòng tiền ..." -> 4; không có -> null. */
+export const tabNoOf = (s) => {
+  const m = /^(\d+)\s*[.)\-–]\s*/.exec(String(s || '').normalize('NFC').trim());
+  return m ? Number(m[1]) : null;
+};
+
 /** Tab "Dòng tiền …" (có thể có số thứ tự "1. " ở đầu). */
 export const isKpiTab = (name) => /^dong tien(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
 
@@ -37,9 +43,11 @@ export const isSupportTab = (name) => /^nhom ho tro(\s|:|-|$)/.test(normKey(stri
 export const isLiquidationTab = (name) => /^nhom thanh ly(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
 
 /**
- * Chuẩn hóa tên dòng tiền / nhóm từ tên tab Google Sheet, giữ ĐẦY ĐỦ tên (không lược bỏ chữ "Dòng tiền"):
- * "1. Dòng tiền bán 4 dự án" -> "Dòng tiền bán 4 dự án"; "DÒNG TIỀN BÁN 4 DỰ ÁN" -> "Dòng tiền bán 4 dự án";
- * "DÒNG TIỀN: BANKING" -> "Dòng tiền Banking"; "8. Nhóm thanh lý" -> "Nhóm thanh lý"; "9. Nhóm hỗ trợ" -> "Nhóm hỗ trợ".
+ * Chuẩn hóa tên dòng tiền / nhóm từ tên tab (Google Sheet hoặc Excel SharePoint giới hạn 31 ký tự, không có "/"),
+ * giữ ĐẦY ĐỦ tên chính thức:
+ * "1. Dòng tiền bán 4 dự án" -> "Dòng tiền bán 4 dự án"; "4. Dòng tiền thu trước hạn quá " -> "Dòng tiền thu trước hạn quá hạn";
+ * "5. Dòng tiền Equity  IPO" -> "Dòng tiền Equity / IPO"; "DÒNG TIỀN: BANKING" -> "Dòng tiền Banking";
+ * "8. Nhóm thanh lý" -> "Nhóm thanh lý"; "9. Nhóm hỗ trợ" -> "Nhóm hỗ trợ".
  */
 export function streamNameOf(tab) {
   const clean = stripPrefixNo(tab);
@@ -48,6 +56,9 @@ export function streamNameOf(tab) {
   if (normKey(words[0]) === 'dong' && normKey(words[1]).replace(/[:\-–]$/, '') === 'tien') {
     const rest = words.slice(2).join(' ').replace(/^[:\-–]\s*/, '').trim();
     if (!rest) return 'Dòng tiền';
+    const restKey = normKey(rest).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (restKey === 'thu truoc han qua' || restKey === 'thu truoc han qua han') return 'Dòng tiền thu trước hạn quá hạn';
+    if (restKey === 'equity ipo') return 'Dòng tiền Equity / IPO';
     const isAllUpper = clean === clean.toLocaleUpperCase('vi');
     if (!isAllUpper) return `Dòng tiền ${rest}`;
     const lower = rest.toLocaleLowerCase('vi');
@@ -99,13 +110,14 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
   for (let i = 0; i < Math.min(rows.length, 15); i++) {
     const keys = (rows[i].cells || []).map((c) => normKey(c?.v));
     const group = keys.indexOf('nhom');
-    const person = keys.indexOf('pic');
-    if (group >= 0 && person >= 0) {
+    const pic = keys.indexOf('pic');
+    if (group >= 0 && pic >= 0) {
       h = i;
       map = {
         stt: keys.indexOf('stt'),
         group,
-        person,
+        pic,
+        assignee: keys.findIndex((k) => k && (k.startsWith('nguoi phu trach') || k.startsWith('nguoi thuc hien'))),
         note: keys.findIndex((k) => k && (k.includes('ghi chu') || k.includes('vuong mac'))),
         folder: keys.findIndex((k) => k && k.includes('thu muc')),
       };
@@ -137,6 +149,8 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
 
   // PIC dòng tiền ghi phía trên bảng, vd "DÒNG TIỀN: BÁN 4 DỰ ÁN\nPIC: HOÀNG THỊ QUỲNH MAI".
   const pic = picAbove(rows, h);
+  // Ô checkbox duyệt KPI của BOD ở E1 (cột E = chỉ số 4, dòng 1 đứng trên tiêu đề bảng).
+  const bodApproved = parseBodApproved(rows, h);
 
   const groups = new Map();
   const unknown = new Set();
@@ -145,7 +159,11 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
     const row = rows[i];
     const stt = text(row, map.stt);
     const gname = text(row, map.group);
-    const person = personName(text(row, map.person));
+    const taskPic = personName(text(row, map.pic));
+    const assignee = map.assignee >= 0 ? personName(text(row, map.assignee)) : '';
+    const person = assignee || taskPic;
+    // Chỉ gắn kèm PIC khi cột "Người phụ trách" có điền và khác cột PIC; nếu cột Người phụ trách trống thì không gắn thêm PIC.
+    const rowPic = assignee && taskPic && normKey(assignee) !== normKey(taskPic) ? taskPic : '';
     const cells = {};
     let hasKpi = false;
     for (const d of days) {
@@ -176,7 +194,16 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
       groups.set(key, g);
     }
     const folderText = text(row, map.folder);
-    g.rows.push({ row: row.r, stt, person, note: text(row, map.note).slice(0, 300), folder: link(folderText), folderText: link(folderText) ? '' : folderText.slice(0, 120), cells });
+    g.rows.push({
+      row: row.r,
+      stt,
+      person,
+      ...(rowPic ? { taskPic: rowPic } : {}),
+      note: text(row, map.note).slice(0, 300),
+      folder: link(folderText),
+      folderText: link(folderText) ? '' : folderText.slice(0, 120),
+      cells,
+    });
   }
   if (unknown.size) {
     warnings.push(`${label}: kết quả chưa hiểu (chỉ ghi Đạt hoặc Không đạt): ${[...unknown].slice(0, 5).map((s) => `“${s}”`).join(', ')}.`);
@@ -185,10 +212,28 @@ export function parseKpiTab(sheet, { year = new Date().getUTCFullYear(), label =
     sheet: String(sheet.name).trim(),
     name: streamNameOf(sheet.name),
     pic,
+    bodApproved,
     days: days.map(({ date, label: l }) => ({ date, label: l })),
     groups: [...groups.values()],
     warnings,
   };
+}
+
+/**
+ * Đọc checkbox duyệt KPI của BOD tại ô E1 (dòng 1, cột E = chỉ số 4, phải nằm phía trên dòng tiêu đề bảng).
+ * - Sheet có ô E1 (hoặc nhãn "duyệt" ở D1) và đã tick (TRUE / Đã duyệt) -> true.
+ * - Sheet có ô E1 / nhãn "duyệt" ở D1 nhưng FALSE hoặc để trống -> false (chưa được BOD duyệt).
+ * - Sheet cũ chưa có ô E1 -> true (không đánh cảnh báo nhầm).
+ */
+export function parseBodApproved(rows, headerIdx) {
+  const r1 = rows.find((r) => r.r === 1);
+  if (!r1 || !rows[headerIdx] || r1.r >= rows[headerIdx].r) return true;
+  const e1 = text(r1, 4);
+  const d1 = normKey(text(r1, 3));
+  if (!e1 && !d1.includes('duyet')) return true;
+  const k = normKey(e1);
+  if (k === 'true' || k === '1' || /^(da duyet|duyet|ok|yes|co|x)$/.test(k) || /^[✓✔☑]$/.test(e1)) return true;
+  return false;
 }
 
 /** "PIC: …" / "PIC phụ trách: …" trong các dòng phía trên dòng tiêu đề (hoặc vài dòng đầu tab task). */
@@ -256,7 +301,10 @@ export function parseKpiBook(tabs, opts = {}) {
       s.kpiSheet = kpiName;
       s.name = streamNameOf(taskName);
       if (!s.pic) s.pic = picAbove(owner.rows || [], 5);
-      const no = streamNoOf(owner);
+      const no = streamNoOf(owner) || tabNoOf(taskName);
+      if (no) s.no = no;
+    } else if (!support && !ownerSupport && !liquidation && !ownerLiquidation) {
+      const no = tabNoOf(kpiName);
       if (no) s.no = no;
     }
     if (support || ownerSupport) {

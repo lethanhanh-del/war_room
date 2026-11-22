@@ -14,7 +14,8 @@
 
 import { json } from '../http.js';
 import { notifyLive } from '../live.js';
-import { fetchSheetTabs } from '../excel/gsheet.js';
+import { fetchAnySourceTabs } from '../excel/gsheet.js';
+import { isSharePointConfigured, isSharePointSource, sharePointMasterUrl, sourceKeyOf, sourceUrlOf } from '../excel/sharepoint.js';
 import { listImports, listTeams } from '../excel/index.js';
 import { normKey } from '../worksuite/model.js';
 import { parseKpiBook } from './sheet.js';
@@ -26,8 +27,10 @@ import { applyCloses, auditReport, closeKpi } from './close.js'; // KPI-CLOSE: c
 const DEFAULT_KPI_SHEET = '1S7lTXwXUCHR8LziWox1B3GNe5mpcTezhdaV2socaVF0'; // WR - MASTER TASK (trước 22/11: thamkhao_kpi)
 // WarRoom_CTHomes_Final_20.11.2026 (bản Google Sheet của file SharePoint): 8 dòng tiền đánh số.
 const DEFAULT_PLAN_SHEET = '1APLf2zn0gk62bRfmD85ZpxtALv2wGjsFQ--RQDhaGNY';
-export const KPI_SYNC_EVERY_MS = 20000;
-const FORCE_EVERY_MS = 5000;
+export const KPI_SYNC_EVERY_MS = 5000;
+const FORCE_EVERY_MS = 1500;
+const PLAN_CACHE_MS = 5 * 60 * 1000;
+const planCache = new Map();
 
 /** ID Google Sheet KPI; '' = tắt. */
 /** ID file phân chia nhiệm vụ có danh sách dòng tiền đánh số (plan.js); '' = không xếp theo danh sách. */
@@ -41,11 +44,15 @@ export function planSheetId(env = {}) {
 
 export function kpiSheetId(env = {}) {
   const value = String(env.KPI_SHEET_URL ?? '').trim();
-  if (!value) return DEFAULT_KPI_SHEET;
+  if (!value) return isSharePointConfigured(env) ? sharePointMasterUrl(env) : DEFAULT_KPI_SHEET;
   if (/^(off|false|0|none)$/i.test(value)) return '';
+  if (isSharePointSource(value)) return value;
   const m = /\/spreadsheets\/d\/([\w-]{20,})/.exec(value) || /^([\w-]{20,})$/.exec(value);
   return m ? m[1] : '';
 }
+
+/** Khoá ổn định của nguồn KPI dùng lưu bản chốt sổ D1 (Google Sheet ID hoặc sp:<guid>). */
+export const kpiSourceKey = (env = {}) => sourceKeyOf(kpiSheetId(env));
 
 let ready = false;
 async function ensureTable(env) {
@@ -75,19 +82,28 @@ async function claim(env, minGapMs, now) {
 const errText = (e) => String(e?.name === 'TimeoutError' ? 'Google Sheet KPI không phản hồi (quá 15 giây).' : e?.message || e).slice(0, 300);
 const yearOf = (env) => Number(String(env.WARROOM_START || '').slice(0, 4)) || new Date().getUTCFullYear();
 
-/** Đọc sheet KPI, lưu nếu khác lần trước. */
-export async function syncKpi(env, { force = false, now = Date.now(), load = fetchSheetTabs } = {}) {
+/** Đọc sheet KPI (SharePoint Excel hoặc Google Sheet), lưu nếu khác lần trước. */
+export async function syncKpi(env, { force = false, now = Date.now(), load } = {}) {
   const id = kpiSheetId(env);
   if (!id) return { off: true };
+  const closeId = sourceKeyOf(id);
+  const loader = load || ((ref) => fetchAnySourceTabs(ref, env, { force }));
   await ensureTable(env);
   if (!(await claim(env, force ? FORCE_EVERY_MS : KPI_SYNC_EVERY_MS, now))) return { skipped: true };
   try {
-    const book = parseKpiBook(await load(id), { year: yearOf(env) });
+    const book = parseKpiBook(await loader(id), { year: yearOf(env) });
     // Xếp + đánh số theo 8 dòng tiền của file phân chia nhiệm vụ; file đó đọc lỗi thì giữ thứ tự tab, kèm cảnh báo.
     const planId = planSheetId(env);
     if (planId) {
       try {
-        const plan = parsePlan(await load(planId));
+        const cachedPlan = !force ? planCache.get(planId) : null;
+        let plan;
+        if (cachedPlan && now - cachedPlan.at < PLAN_CACHE_MS) {
+          plan = cachedPlan.plan;
+        } else {
+          plan = parsePlan(await loader(planId));
+          if (plan.length) planCache.set(planId, { at: now, plan });
+        }
         if (!plan.length) book.warnings.push('File phân chia nhiệm vụ chưa có cột “STT dòng tiền”: dòng tiền xếp theo thứ tự tab.');
         const r = applyPlan(book.streams, plan);
         book.streams = r.streams;
@@ -110,7 +126,7 @@ export async function syncKpi(env, { force = false, now = Date.now(), load = fet
     } else {
       await env.DB.prepare("UPDATE kpi_sheet SET error = '', warnings = ? WHERE id = 1").bind(warnings).run();
     }
-    await closeKpi(env, id, book.streams, now, yearOf(env)); // KPI-CLOSE: ghi quan sát + chốt ngày đã qua 05:00
+    await closeKpi(env, closeId, book.streams, now, yearOf(env)); // KPI-CLOSE: ghi quan sát + chốt ngày đã qua 05:00
     return { changed, streams: book.streams.length };
   } catch (e) {
     const error = errText(e);
@@ -145,7 +161,8 @@ export function attachPeople(streams, teams = [], imports = []) {
     const tgroups = team?.groups || [];
     const groups = s.groups.map((g, gi) => {
       const persons = [...new Set(g.rows.map((r) => r.person).filter(Boolean))];
-      let tg = tgroups.find((t) => (t.members || []).some((m) => !m.placeholder && persons.some((p) => loose(p) === loose(m.name))));
+      const matchNames = [...new Set(g.rows.flatMap((r) => [r.person, r.taskPic]).filter(Boolean))];
+      let tg = tgroups.find((t) => (t.members || []).some((m) => !m.placeholder && matchNames.some((p) => loose(p) === loose(m.name))));
       if (!tg) tg = tgroups.find((t) => t.mainTask && loose(t.mainTask) === loose(g.name));
       if (!tg && tgroups.length === 1) tg = tgroups[0];
       const lead = tg?.lead && !tg.lead.placeholder ? { name: tg.lead.name, title: tg.lead.title || '' } : null;
@@ -168,6 +185,7 @@ export function attachPeople(streams, teams = [], imports = []) {
       ...(s.desc ? { desc: s.desc } : {}),
       code: s.kind === 'support' ? 'HT' : s.kind === 'liquidation' ? 'TL' : s.no ? `DT${String(s.no).padStart(2, '0')}` : imp?.code || '',
       pic: s.pic || imp?.pic || tgroups[0]?.lead?.name || '',
+      bodApproved: s.bodApproved !== false,
       days: s.days,
       groups,
     };
@@ -180,12 +198,13 @@ export const vnDate = (now) => new Date(now + 7 * 3600 * 1000).toISOString().sli
 /** Dữ liệu cho trang /kpi. */
 export async function kpiData(env, now = Date.now()) {
   const id = kpiSheetId(env);
+  const closeId = sourceKeyOf(id);
   await ensureTable(env);
   const r = await env.DB.prepare('SELECT checked_at, changed_at, error, warnings, data FROM kpi_sheet WHERE id = 1').first();
   let streams = [];
   let warnings = [];
   try { streams = r?.data ? JSON.parse(r.data) : []; } catch { /* dữ liệu hỏng: coi như chưa có */ }
-  await applyCloses(env, id, streams); // KPI-CLOSE: gắn kết quả chốt sổ (cell.closed) cho trình duyệt
+  await applyCloses(env, closeId, streams); // KPI-CLOSE: gắn kết quả chốt sổ (cell.closed) cho trình duyệt
   try { warnings = JSON.parse(r?.warnings || '[]'); } catch { /* bỏ qua */ }
   const [teams, imports] = await Promise.all([listTeams(env).catch(() => []), listImports(env, { withTasks: false }).catch(() => [])]);
   const out = attachPeople(streams, teams, imports);
@@ -194,7 +213,8 @@ export async function kpiData(env, now = Date.now()) {
   return {
     source: {
       off: !id,
-      sheetUrl: id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : '',
+      provider: isSharePointSource(id) ? 'sharepoint' : 'google',
+      sheetUrl: sourceUrlOf(id),
       checkedAt: r?.checked_at || '',
       changedAt: r?.changed_at || '',
       error: r?.error || '',
@@ -208,7 +228,7 @@ export async function kpiData(env, now = Date.now()) {
 }
 
 export async function handleKpi(request, env, url, ctx) {
-  if (url.pathname === '/api/kpi/audit') return json(await auditReport(env, kpiSheetId(env))); // KPI-CLOSE: xem bản chốt + nhật ký
+  if (url.pathname === '/api/kpi/audit') return json(await auditReport(env, kpiSourceKey(env))); // KPI-CLOSE: xem bản chốt + nhật ký
   if (url.pathname === '/api/kpi/sync') {
     if (request.method !== 'POST') return json({ error: 'Chỉ hỗ trợ POST.' }, 405);
     const r = await syncKpi(env, { force: true });
@@ -216,7 +236,7 @@ export async function handleKpi(request, env, url, ctx) {
     return json(r, r.error ? 502 : 200);
   }
   if (request.method !== 'GET') return json({ error: 'Chỉ hỗ trợ GET.' }, 405);
-  await freshen(env, ctx);
+  await freshen(env, ctx, url.searchParams.get('force') === '1');
   return json(await kpiData(env));
 }
 

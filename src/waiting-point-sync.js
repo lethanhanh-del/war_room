@@ -53,25 +53,19 @@ export function countWaitingPointPeopleFromCsv(csv) {
   const iOwner = findCol(/người\s*phụ\s*trách|nguoi\s*phu\s*trach/i, 5);
   const iSupporter = findCol(/người\s*hỗ\s*trợ|nguoi\s*ho\s*tro/i, 6);
 
-  const hasValidTime = (raw) => {
-    const s = String(raw || '').trim();
-    return Boolean(s && /[\p{L}\d]/u.test(s));
-  };
-
   const people = new Set();
   let itemCount = 0;
   for (const r of rows.slice(headerIdx + 1)) {
     const stt = String(r[iStt] || '').trim();
     const stream = String(r[iStream] || '').trim();
-    const group = String(r[iGroup] || '').trim();
     const issue = String(r[iIssue] || '').trim();
-    const timeRaw = String(r[iTime] || '').trim();
     const owner = String(r[iOwner] || '').trim();
     const supporter = String(r[iSupporter] || '').trim();
     if (/^vấn\s*đề\s*gặp\s*phải$/i.test(issue) || (/^stt$/i.test(stt) && /^dòng\s*tiền$/i.test(stream))) continue;
-    if (!stream || !group || !issue || !owner || !supporter || !hasValidTime(timeRaw)) continue;
+    // Chỉ cần có Dòng tiền + Vấn đề gặp phải + (Người phụ trách hoặc Người hỗ trợ) là hiển thị Điểm nghẽn.
+    if (!stream || !issue || (!owner && !supporter)) continue;
     itemCount += 1;
-    people.add(norm(supporter));
+    people.add(supporter ? norm(supporter) : '__unassigned__');
   }
   const peopleCount = people.size;
   return { peopleCount, itemCount, sec: waitingPointDurationSec(peopleCount) };
@@ -182,6 +176,8 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
     }
   }
 
+  const numOrNull = (v) => (v === null || v === undefined || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
+
   if (incoming.timers && typeof incoming.timers === 'object') {
     for (const [id, inc] of Object.entries(incoming.timers)) {
       if (!id || !inc || typeof inc !== 'object') continue;
@@ -194,16 +190,23 @@ export function mergeWaitingPointState(currentInput, incoming = {}, nowMs = Date
 
       const normalized = {
         startedAt,
-        totalSec: Number.isFinite(Number(inc.totalSec)) ? Number(inc.totalSec) : null,
-        endAt: Number.isFinite(Number(inc.endAt)) ? Number(inc.endAt) : null,
+        totalSec: numOrNull(inc.totalSec),
+        endAt: numOrNull(inc.endAt),
         rawTime: String(inc.rawTime || ''),
         updatedAt: Number.isFinite(Number(inc.updatedAt)) ? Number(inc.updatedAt) : nowMs,
         lastSupporter: incSupporter || prev?.lastSupporter || '',
         lastOwner: incOwner || prev?.lastOwner || '',
       };
 
+      const prevNeedsNullHeal = prev && (prev.totalSec === 0 || prev.endAt === 0) && normalized.totalSec === null && normalized.endAt === null;
+
       if (!prev) {
         timers[id] = normalized;
+      } else if (prevNeedsNullHeal) {
+        timers[id] = {
+          ...normalized,
+          startedAt: Math.min(prev.startedAt, normalized.startedAt),
+        };
       } else if (prev.rawTime !== normalized.rawTime) {
         if (normalized.updatedAt >= (prev.updatedAt || 0)) {
           timers[id] = {

@@ -127,7 +127,11 @@ export default function DetailPanel({ data, filter, setFilter, detail, setDetail
                   <td className="c-grp">{item.group || '–'}</td>
                   <td className="c-who">
                     <div className="nm">{item.pic || '–'}</div>
-                    {item.lead && item.lead !== item.pic && <div className="pic">TN: {item.lead}</div>}
+                    {item.taskPic ? (
+                      <div className="pic">PIC: {item.taskPic}</div>
+                    ) : (
+                      item.lead && item.lead !== item.pic && <div className="pic">TN: {item.lead}</div>
+                    )}
                   </td>
                   <td className="c-kpi">{item.kpi || item.group || '–'}</td>
                   <td className="c-task">
