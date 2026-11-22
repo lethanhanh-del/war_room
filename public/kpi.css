@@ -1626,11 +1626,16 @@ button.ka-stat:disabled {
   color: inherit;
 }
 
+/* Mỗi nhóm 1 khung riêng (Figma "Theo dõi dòng tiền · tiêu đề nhóm"): tiêu đề nền xanh đậm + thanh tiến độ + thẻ thành viên bên trong. */
 .km-group {
   display: flex;
   flex-direction: column;
-  gap: var(--s12);
+  gap: 0;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: var(--r-lg);
+  background: var(--bg-canvas);
 }
 
 .km-group+.km-group {
@@ -1643,25 +1648,57 @@ button.ka-stat:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
-  padding: 10px 14px;
-  border-left: 3px solid var(--accent);
-  border-radius: var(--r-md);
-  background: var(--bg-subtle);
+  padding: 12px 20px 12px 16px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg-surface));
 }
 
 .kmg-id {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 6px 12px;
   min-width: 0;
+}
+
+.kmg-ix {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .kmg-id h4 {
   margin: 0;
-  font-size: 17px;
-  line-height: 24px;
+  font-size: 18px;
+  line-height: 26px;
   font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.kmg-pic {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+}
+
+.kmg-pic .av {
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+}
+
+.kmg-pic b {
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -1669,6 +1706,11 @@ button.ka-stat:disabled {
   color: var(--muted);
   font-size: var(--fs-small);
   line-height: var(--lh-small);
+  white-space: nowrap;
+}
+
+.kmg-n::before {
+  content: "· ";
 }
 
 .kmg-stats {
@@ -1676,6 +1718,130 @@ button.ka-stat:disabled {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
+}
+
+.kmg-stats .kmp-stat {
+  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.kmg-stats .kmp-stat.st-D {
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+
+.kmg-pct {
+  margin-left: 4px;
+  font-family: var(--mono);
+  font-size: 26px;
+  line-height: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.kmg-pct.ok {
+  color: var(--pct-ok);
+}
+
+.kmg-pct.mid {
+  color: var(--pct-mid);
+}
+
+.kmg-pct.bad {
+  color: var(--pct-bad);
+}
+
+.kmg-bar {
+  display: flex;
+  flex: none;
+  height: 4px;
+  background: var(--neutral-bg);
+}
+
+.kmg-bar i {
+  flex: 1 1 0;
+  background: var(--st);
+}
+
+.kmg-bar i.is-rest {
+  background: transparent;
+}
+
+.kmg-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s12);
+  padding: var(--s16);
+}
+
+/* Thẻ thành viên trong khung nhóm: bỏ dải xanh mặc định ở đỉnh thẻ (màu nhấn chỉ còn ở tiêu đề nhóm); dải đỏ / vàng / xanh lá
+   báo tồn đọng / trễ hạn / xong hết vẫn giữ. */
+.km-group .km-person-card::before {
+  display: none;
+}
+
+.km-group .km-person-card.has-backlog::before,
+.km-group .km-person-card.has-late::before,
+.km-group .km-person-card.is-all-done::before,
+.km-group .km-person-card.is-unapproved::before {
+  display: block;
+}
+
+@media (max-width: 720px) {
+  .kmg-pic {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+/* Ô số bấm được để lọc task: ô của dòng tiền (.kms-stat) và ô của nhóm (.kmp-stat trong tiêu đề nhóm). */
+button.kms-stat,
+button.kmp-stat {
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+
+button.kms-stat:hover:not(:disabled),
+button.kmp-stat:hover {
+  border-color: var(--st, var(--border-strong));
+}
+
+button.kms-stat[aria-pressed="true"],
+button.kmp-stat[aria-pressed="true"] {
+  border-color: var(--st, var(--accent));
+  box-shadow: 0 0 0 1px var(--st, var(--accent));
+}
+
+button.kms-stat:disabled {
+  cursor: default;
+}
+
+button.kms-stat:focus-visible,
+button.kmp-stat:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.km-tfilter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.km-tfilter b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.km-tfilter .ka-clear {
+  margin-left: 6px;
 }
 
 /* ---------- Lưới các khối nhân sự đồng cao (trải đều, cuộn mượt bên trong từng khối) ---------- */
