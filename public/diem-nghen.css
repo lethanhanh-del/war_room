@@ -902,3 +902,163 @@ button.dn-kpi:focus-visible {
 .dn-embed-top .dn-sync p {
   margin: 0;
 }
+
+/* ---------- Tăng cỡ chữ trang Điểm nghẽn cho dễ đọc trên màn lớn & làm nổi chữ "ĐIỂM NGHẼN" màu đỏ ---------- */
+.dn-shell:not(.dn-embed) .dn-brand h1 {
+  font-size: 30px;
+  line-height: 36px;
+}
+
+.dn-shell:not(.dn-embed) .dn-brand p {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.dn-shell:not(.dn-embed) .dn-kpi-l {
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.dn-shell:not(.dn-embed) .dn-kpi small {
+  font-size: 13.5px;
+  line-height: 19px;
+}
+
+.dn-shell:not(.dn-embed) .dn-list-title h2 {
+  font-size: 21px;
+  line-height: 28px;
+  font-weight: 700;
+}
+
+.dn-shell:not(.dn-embed) .dn-sort,
+.dn-shell:not(.dn-embed) .dn-active {
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-chip {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-chip-n {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-tr {
+  grid-template-columns: 52px minmax(0, 1fr) 256px 214px 182px;
+  padding: 18px 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-th {
+  padding-top: 14px;
+  padding-bottom: 14px;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-th > [role="columnheader"]:nth-child(2) {
+  color: var(--danger);
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.dn-shell:not(.dn-embed) .dn-stt {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-meta {
+  margin-bottom: 7px;
+  font-size: 14.5px;
+  line-height: 21px;
+}
+
+.dn-shell:not(.dn-embed) .dn-meta b {
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-content {
+  color: var(--danger);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-tr.is-done .dn-content {
+  color: var(--text-2);
+}
+
+.dn-shell:not(.dn-embed) .dn-support,
+.dn-shell:not(.dn-embed) .dn-tasks li {
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-pl {
+  font-size: 13.5px;
+  line-height: 22px;
+}
+
+.dn-shell:not(.dn-embed) .dn-pn {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.dn-shell:not(.dn-embed) .dn-pn small {
+  font-size: 13.5px;
+  line-height: 19px;
+}
+
+.dn-shell:not(.dn-embed) .dn-status {
+  padding: 4px 11px;
+  font-size: 13.5px;
+  line-height: 20px;
+}
+
+.dn-shell:not(.dn-embed) .dn-due-d {
+  font-size: 15.5px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-due-h {
+  font-size: 13.5px;
+  line-height: 19px;
+}
+
+.dn-shell:not(.dn-embed) .dn-over {
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.dn-shell:not(.dn-embed) .dn-side-head h3 {
+  font-size: 16.5px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.dn-shell:not(.dn-embed) .dn-side-head small,
+.dn-shell:not(.dn-embed) .dn-side-empty,
+.dn-shell:not(.dn-embed) .dn-done small {
+  font-size: 13px;
+  line-height: 19px;
+}
+
+.dn-shell:not(.dn-embed) .dn-side-row,
+.dn-shell:not(.dn-embed) .dn-done p {
+  font-size: 14.5px;
+  line-height: 21px;
+}
+
+@media (max-width: 900px) {
+  .dn-shell:not(.dn-embed) .dn-tr {
+    grid-template-columns: 36px minmax(0, 1fr);
+    padding: 14px 16px;
+  }
+}
