@@ -984,8 +984,8 @@ button.dn-kpi:focus-visible {
 
 .dn-shell:not(.dn-embed) .dn-content {
   color: var(--danger);
-  font-size: 18px;
-  line-height: 26px;
+  font-size: 20px;
+  line-height: 28px;
   font-weight: 600;
 }
 
