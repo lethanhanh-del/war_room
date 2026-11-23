@@ -8,6 +8,7 @@
 //   SHAREPOINT_MASTER_URL (tuỳ chọn) Link SharePoint file WR - MASTER TASK.xlsx ("off" để tắt và dùng lại Google Sheet)
 
 import { csvSheet } from './gsheet.js';
+import { readXlsx } from './xlsx.js';
 
 export const DEFAULT_SHAREPOINT_MASTER_URL =
   'https://ctgroupvietnam.sharepoint.com/:x:/r/sites/TAPDOANCTGROUP/_layouts/15/Doc.aspx?sourcedoc=%7B13E2C89E-7C5A-4204-B3D4-530FF46E86FC%7D&file=WR%20-%20MASTER%20TASK.xlsx&action=default&mobileredirect=true&share=cQqeyOITWnwEQrPUUw_0bob8EgUCS0I3jE6af_c9Pgl_xLC4SA&wdslf=spodoclib-c';
@@ -249,4 +250,127 @@ export async function fetchSharePointSheetCsv(env, shareUrl, sheetName, now = Da
   const csv = rowsToCsv(range?.text || []);
   singleSheetCache.set(key, { at: now, csv });
   return csv;
+}
+
+/**
+ * Lấy tên người vừa chỉnh sửa file gần nhất trên SharePoint (từ /activities + dự phòng lastModifiedBy).
+ * Rất nhẹ (1–2 request JSON nhỏ, < 1ms CPU). Nếu nhiều người cùng sửa trong cửa sổ 15 giây sẽ ghép cả 2 tên.
+ */
+export async function fetchSharePointRecentEditors(env, shareUrl, now = Date.now()) {
+  const token = await getGraphToken(env, now);
+  const { driveId, itemId } = await resolveSharePointItem(env, shareUrl, now);
+  const base = `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}`;
+
+  try {
+    const act = await graphJson(token, `${base}/activities?$top=10`);
+    const edits = (act?.value || [])
+      .filter((a) => a?.action?.edit && (a?.actor?.user?.displayName || a?.actor?.user?.email))
+      .map((a) => ({
+        name: String(a.actor.user.displayName || a.actor.user.email || '').trim(),
+        email: String(a.actor.user.email || '').trim(),
+        at: String(a.times?.recordedDateTime || ''),
+        ms: Date.parse(a.times?.recordedDateTime || '') || 0,
+      }))
+      .filter((e) => e.name)
+      .sort((a, b) => b.ms - a.ms);
+
+    if (edits.length) {
+      const topMs = edits[0].ms;
+      const names = [];
+      for (const e of edits) {
+        if (topMs && e.ms && topMs - e.ms > 15000) break;
+        if (!names.includes(e.name)) names.push(e.name);
+        if (names.length >= 2) break;
+      }
+      return { name: names.join(', '), email: edits[0].email, at: edits[0].at || new Date(now).toISOString() };
+    }
+  } catch { /* thử fallback lastModifiedBy */ }
+
+  const meta = await graphJson(token, `${base}?$select=lastModifiedDateTime,lastModifiedBy`);
+  const name = String(meta?.lastModifiedBy?.user?.displayName || meta?.lastModifiedBy?.user?.email || '').trim();
+  return {
+    name,
+    email: String(meta?.lastModifiedBy?.user?.email || '').trim(),
+    at: String(meta?.lastModifiedDateTime || new Date(now).toISOString()),
+  };
+}
+
+function formatExcelCell(c) {
+  if (!c || c.v == null) return '';
+  if (c.kind === 'date' && typeof c.v === 'number' && Number.isFinite(c.v)) {
+    const ms = Date.UTC(1899, 11, 30) + Math.round(c.v * 86400000);
+    const d = new Date(ms);
+    if (Number.isFinite(d.getTime())) {
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const yyyy = d.getUTCFullYear();
+      const hh = d.getUTCHours();
+      const mi = d.getUTCMinutes();
+      return hh || mi
+        ? `${dd}/${mm}/${yyyy} ${String(hh).padStart(2, '0')}:${String(mi).padStart(2, '0')}`
+        : `${dd}/${mm}/${yyyy}`;
+    }
+  }
+  return String(c.v);
+}
+
+function sheetToCsvFromBook(book, sheetName) {
+  const sh = (book?.sheets || []).find((s) => s.name === sheetName);
+  if (!sh || !sh.rows?.length) return '';
+  const maxRow = sh.rows.reduce((m, r) => Math.max(m, r.r || 0), 0);
+  const byRow = new Map(sh.rows.map((r) => [r.r, r.cells]));
+  const grid = [];
+  for (let r = 1; r <= maxRow; r++) {
+    const cells = byRow.get(r);
+    if (!cells) { grid.push([]); continue; }
+    grid.push(cells.map(formatExcelCell));
+  }
+  return rowsToCsv(grid);
+}
+
+/**
+ * Khôi phục lịch sử tác giả cho các dòng ĐÃ CÓ SẴN từ vài phiên bản gần nhất trên SharePoint (chỉ chạy 1 lần lúc khởi tạo).
+ * Trả về danh sách phiên bản theo thứ tự CŨ -> MỚI: [{ id, at, by, csv }].
+ * Lưu ý: phiên bản mới nhất trên SharePoint không tải được bằng /versions/{id}/content (trả 400) -> dùng `currentCsv` truyền vào.
+ */
+export async function fetchSharePointRecentVersionCsvs(env, shareUrl, sheetName, currentCsv, { limit = 5, now = Date.now() } = {}) {
+  const token = await getGraphToken(env, now);
+  const { driveId, itemId } = await resolveSharePointItem(env, shareUrl, now);
+  const base = `/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}`;
+
+  const vData = await graphJson(token, `${base}/versions?$top=${Math.max(2, limit)}`);
+  const versions = (vData?.value || []).slice(0, limit);
+  if (!versions.length) return [];
+
+  // Bản mới nhất (versions[0]) dùng currentCsv; các bản cũ hơn tải /versions/{id}/content song song.
+  const older = await Promise.all(
+    versions.slice(1).map(async (v) => {
+      try {
+        const res = await fetch(`https://graph.microsoft.com/v1.0${base}/versions/${encodeURIComponent(v.id)}/content`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        });
+        if (!res.ok) return null;
+        const buf = new Uint8Array(await res.arrayBuffer());
+        const book = await readXlsx(buf);
+        return {
+          id: v.id,
+          at: String(v.lastModifiedDateTime || ''),
+          by: String(v.lastModifiedBy?.user?.displayName || v.lastModifiedBy?.user?.email || '').trim(),
+          csv: sheetToCsvFromBook(book, sheetName),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  const latest = {
+    id: versions[0].id,
+    at: String(versions[0].lastModifiedDateTime || new Date(now).toISOString()),
+    by: String(versions[0].lastModifiedBy?.user?.displayName || versions[0].lastModifiedBy?.user?.email || '').trim(),
+    csv: String(currentCsv || ''),
+  };
+
+  return [...older.filter(Boolean).reverse(), latest];
 }

@@ -50,6 +50,8 @@ import { handleKpiVisibility } from "./kpi/visibility.js";
 import { sharedLoader } from "./excel/gsheet.js";
 import { fetchSharePointSheetCsv, isSharePointConfigured, sharePointMasterUrl } from "./excel/sharepoint.js";
 import { countWaitingPointPeopleFromCsv, emptyWaitingPointState, mergeWaitingPointState } from "./waiting-point-sync.js";
+import { handleDedupAI } from "./dedup-ai.js";
+import { handleWaitingPointAuthors, syncSheetAuthors } from "./diem-nghen-authors.js";
 
 // Durable Object đẩy thông báo thời gian thực (WebSocket) — xem src/live.js.
 export { LiveRoom };
@@ -97,9 +99,12 @@ export default {
     if (path === "/api/bookings/status") return handleBookingStatus(request, env);
     if (path === "/api/waiting-point") return handleWaitingPoint(request, env, ctx);
     if (path === "/api/waiting-point/status") return handleWaitingPointStatus(request, env);
-    if (path === "/api/waiting-point/sheet") return handleWaitingPointSheet(request, env);
+    if (path === "/api/waiting-point/sheet") return handleWaitingPointSheet(request, env, url, ctx);
+    if (path === "/api/waiting-point/authors") return handleWaitingPointAuthors(request, env, url);
+    if (path === "/api/waiting-point/dedup-ai" || path === "/api/zero-waiting-point/dedup-ai") return handleDedupAI(request, env);
     // Trang Zero Waiting Point › tab "Zero Waiting Point": sheet "Zero Waiting Point" + trạng thái đã tháo gỡ riêng.
-    if (path === "/api/zero-waiting-point/sheet") return handleWaitingPointSheet(request, env, ZWP_SHEET_NAME);
+    if (path === "/api/zero-waiting-point/sheet") return handleWaitingPointSheet(request, env, url, ctx, ZWP_SHEET_NAME);
+    if (path === "/api/zero-waiting-point/authors") return handleWaitingPointAuthors(request, env, url, ZWP_SHEET_NAME);
     if (path === "/api/zero-waiting-point") return handleWaitingPoint(request, env, ctx, ZWP_STATE);
     // Tiến độ dòng tiền từ CT Worksuite (src/worksuite/) + task Excel (src/excel/), kèm trạng thái đồng bộ Google Sheet.
     if (path === "/api/streams") {
@@ -271,16 +276,25 @@ async function fetchWaitingPointCsv(env, sheetName = WP_STATUS_SHEET_NAME) {
   throw new Error(`Không đọc được sheet ${sheetName}.`);
 }
 
-async function handleWaitingPointSheet(request, env, sheetName = WP_STATUS_SHEET_NAME) {
+async function handleWaitingPointSheet(request, env, url, ctx, defaultSheetName = WP_STATUS_SHEET_NAME) {
   if (request.method !== "GET") return json({ error: "Chỉ hỗ trợ GET." }, 405);
+  const rawQuery = String(url?.searchParams?.get("sheet") || "").replace(/[\r\n\t]/g, " ").trim().slice(0, 80);
+  const envSheet = defaultSheetName === WP_STATUS_SHEET_NAME ? String(env?.WP_SHEET_NAME || "").trim().slice(0, 80) : "";
+  const sheetName = rawQuery || envSheet || defaultSheetName;
   try {
     const { csv, source } = await fetchWaitingPointCsv(env, sheetName);
+    if (source === "sharepoint") {
+      // Đồng bộ tác giả (Người thêm / Người sửa) vào D1 theo snapshot CSV — chạy nền để không làm chậm trả CSV.
+      const task = syncSheetAuthors(env, sheetName, csv).catch(() => {});
+      if (ctx) ctx.waitUntil(task); else await task;
+    }
     return new Response(csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Cache-Control": "private, no-store",
         "X-WP-Source": source,
+        "X-WP-Sheet": encodeURIComponent(sheetName),
       },
     });
   } catch (e) {

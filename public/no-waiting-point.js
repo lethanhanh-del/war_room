@@ -326,6 +326,7 @@ function showTab(tab) {
     root: 'zwpBoard',
     embedded: true,
     sheetUrl: '/api/zero-waiting-point/sheet',
+    authorsUrl: '/api/zero-waiting-point/authors',
     stateUrl: '/api/zero-waiting-point',
     liveScope: 'zero-waiting-point',
     sheetName: 'Zero Waiting Point',

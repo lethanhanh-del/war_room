@@ -8,6 +8,7 @@
 //   "Đã tháo gỡ hôm nay", lưu chung trên máy chủ (POST /api/waiting-point › clearedItems, src/waiting-point-sync.js).
 // Bản cũ dạng thẻ theo Người hỗ trợ: public/waiting-point.js (giữ cho test và các hàm dùng chung).
 import { OPEN_STATUSES, STATUS, SUPPORT_GAP_LABEL, dueHint, dueText, isSoon, mergeUnits, nk, parseBlockers, summarize, supportGap, vnDay } from './diem-nghen-model.js';
+import { DEDUP_LEVEL, detectDuplicates, mergeAiDuplicates } from './diem-nghen-dedup.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -22,6 +23,7 @@ const ICON = {
   sort: '<path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/>',
   x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   sub: '<path d="M6 3v12a3 3 0 0 0 3 3h9"/><path d="m15 15 3 3-3 3"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
   moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
 };
@@ -54,7 +56,9 @@ const CFG = {
   root: 'dn-app',
   embedded: false,
   sheetUrl: '/api/waiting-point/sheet',
+  authorsUrl: '/api/waiting-point/authors',
   stateUrl: '/api/waiting-point',
+  dedupAiUrl: '/api/waiting-point/dedup-ai',
   liveScope: 'waiting-point',
   sheetName: 'Điểm nghẽn',
   noun: 'điểm nghẽn',
@@ -67,6 +71,8 @@ if (globalThis.DN_CONFIG) globalThis.DN_CONFIG.reload = () => { load(); loadHist
 
 // ---------- trạng thái ----------
 const params = CFG.embedded ? new URLSearchParams() : new URLSearchParams(location.search);
+const sheetOverride = CFG.embedded ? '' : String(params.get('sheet') || '').trim();
+if (sheetOverride) CFG.sheetName = sheetOverride;
 const S = {
   items: [],
   columns: null,
@@ -75,8 +81,14 @@ const S = {
   stale: false,
   kpiStreams: [], // [{ no, name }] 8 dòng tiền đánh số, từ /api/kpi
   history: [], // đã tháo gỡ hôm nay (máy chủ)
-  // quick: ô số đang bấm ở hàng chỉ số ('' = tất cả đang mở · 'overdue' · 'soon' · 'nosup' · 'done')
+  // quick: ô số đang bấm ở hàng chỉ số ('' = tất cả đang mở · 'overdue' · 'soon' · 'nosup' · 'done' · 'dup')
   filter: { status: params.get('tt') || 'all', stream: params.get('dong') || '', owner: params.get('pt') || '', quick: params.get('xem') || '' },
+  dupSig: '', // chữ ký tập điểm nghẽn đang mở để cache BM25+Cosine và chỉ gọi Groq AI khi nội dung đổi
+  baseDup: null,
+  aiResult: null,
+  aiPending: false,
+  authors: { enabled: false, byRow: {}, byStt: {} }, // Người thêm / Sửa gần nhất theo dòng từ SharePoint (D1)
+  lastCsvSig: '',
   prevOpen: new Map(), // id -> item của lượt đọc trước (để nhận ra dòng bị xoá)
   missing: new Map(), // id -> số lượt đọc liên tiếp không thấy
   reported: new Set(), // id đã gửi "đã tháo gỡ"
@@ -114,6 +126,7 @@ function shell() {
           </div>
         </section>
         <aside class="dn-side">
+          <section class="dn-panel dn-dup-side" id="dnDupSide" aria-labelledby="dnDupT" hidden><header class="dn-side-head"><h3 id="dnDupT">Cảnh báo trùng</h3><span class="dn-count warn" id="dnDupN">0</span></header><ul class="dn-dup-list" id="dnDupList"></ul></section>
           <section class="dn-panel" aria-labelledby="dnStreamT"><header class="dn-side-head"><h3 id="dnStreamT">Dòng tiền</h3><small>Đang mở</small></header><ul class="dn-side-list" id="dnStreams"></ul></section>
           <section class="dn-panel" aria-labelledby="dnOwnerT"><header class="dn-side-head"><h3 id="dnOwnerT">Người phụ trách</h3><small>Đang mở</small></header><ul class="dn-side-list" id="dnOwners"></ul></section>
           <section class="dn-panel" aria-labelledby="dnDoneT"><header class="dn-side-head"><h3 id="dnDoneT">Đã tháo gỡ hôm nay</h3><span class="dn-count ok" id="dnDoneN">0</span></header><ul class="dn-done" id="dnDone"></ul></section>
@@ -157,11 +170,13 @@ async function load() {
   if (!CFG.isActive()) { timer = setTimeout(load, POLL_MS); return; } // tab đang ẩn: chưa cần đọc sheet
   loading = true;
   try {
-    const res = await fetch(`${CFG.sheetUrl}?_t=${Date.now()}`, { cache: 'no-store' });
+    const q = sheetOverride ? `?sheet=${encodeURIComponent(sheetOverride)}&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const res = await fetch(`${CFG.sheetUrl}${q}`, { cache: 'no-store' });
     const ct = res.headers.get('Content-Type') || '';
     if (ct.includes('text/html')) { location.reload(); return; } // hết phiên đăng nhập
     if (!res.ok) throw new Error((await res.text()).slice(0, 200) || `HTTP ${res.status}`);
-    const parsed = parseBlockers(await res.text(), Date.now());
+    const csvText = await res.text();
+    const parsed = parseBlockers(csvText, Date.now());
     if (parsed.error) throw new Error(parsed.error);
     trackCleared(parsed.items);
     S.items = parsed.items;
@@ -169,6 +184,9 @@ async function load() {
     S.error = '';
     S.stale = false;
     S.loadedAt = Date.now();
+    const csvChanged = csvText !== S.lastCsvSig;
+    S.lastCsvSig = csvText;
+    if (csvChanged || !Object.keys(S.authors.byRow || {}).length) loadAuthors(csvChanged);
   } catch (e) {
     S.error = e.message || String(e);
     S.stale = true;
@@ -200,6 +218,32 @@ async function loadHistory() {
   } catch { /* bỏ qua */ }
 }
 
+let authorsRetryTimer = null;
+async function loadAuthors(retryIfEmpty = false) {
+  if (!CFG.authorsUrl) return;
+  try {
+    const q = sheetOverride ? `?sheet=${encodeURIComponent(sheetOverride)}&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const res = await fetch(`${CFG.authorsUrl}${q}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data || typeof data !== 'object') return;
+    S.authors = { enabled: !!data.enabled, byRow: data.byRow || {}, byStt: data.byStt || {} };
+    render();
+    // Nếu server vừa chạy đồng bộ tác giả nền (waitUntil), tự tải lại 1 nhịp sau 1.8s để hiện ngay không cần F5.
+    if (retryIfEmpty && data.enabled && S.items.length) {
+      clearTimeout(authorsRetryTimer);
+      authorsRetryTimer = setTimeout(() => loadAuthors(false), 1800);
+    }
+  } catch { /* bỏ qua */ }
+}
+
+function fmtVnAt(iso) {
+  const ms = Date.parse(iso || '');
+  if (!Number.isFinite(ms)) return '';
+  const s = new Date(ms + 7 * 3600e3).toISOString();
+  return `${s.slice(11, 16)} · ${s.slice(8, 10)}/${s.slice(5, 7)}`;
+}
+
 /** Ghi nhận điểm nghẽn đã tháo gỡ: bị xoá khỏi sheet (2 lượt đọc liên tiếp) hoặc chuyển sang "Đã xử lý". */
 function trackCleared(items) {
   const now = Date.now();
@@ -225,18 +269,88 @@ function trackCleared(items) {
   S.prevOpen = openNow;
 }
 
+// ---------- thẩm định trùng bằng Groq AI (Tầng 2, chỉ gọi khi nội dung sheet đổi) ----------
+let aiSeq = 0;
+function openSignature(openItems) {
+  return openItems
+    .map((it) => `${it.id}|${it.stt}|${it.stream}|${it.group}|${it.content}|${it.owner}|${it.ownerUnit}|${it.supporter}|${it.supportUnit}|${it.supportContent}`)
+    .join('\n');
+}
+
+async function runDedupAI(openItems, baseDup, { force = false } = {}) {
+  if (!CFG.dedupAiUrl || openItems.length < 2) return;
+  const sig = openSignature(openItems);
+  if (!force && sig === S.dupSig && (S.aiPending || S.aiResult)) return;
+  S.dupSig = sig;
+  S.aiPending = true;
+  if (force) render();
+  const mySeq = ++aiSeq;
+  try {
+    const payload = {
+      force,
+      items: openItems.map((it) => ({
+        id: it.id,
+        stt: it.stt,
+        row: it.row,
+        stream: it.stream,
+        streamShort: it.streamShort,
+        group: it.group,
+        content: it.content,
+        owner: it.owner,
+        ownerUnit: it.ownerUnit,
+        supporter: it.supporter,
+        supportUnit: mergeUnits(it.supporterUnit, it.supportUnit),
+        supportContent: it.supportContent,
+      })),
+      candidates: (baseDup?.pairs || []).map((p) => ({
+        aId: p.aId,
+        bId: p.bId,
+        score: p.score,
+        level: p.level,
+      })),
+    };
+    const res = await fetch(CFG.dedupAiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (mySeq !== aiSeq) return;
+    S.aiResult = data;
+  } catch (e) {
+    if (mySeq !== aiSeq) return;
+    S.aiResult = { enabled: true, ok: false, error: e.message || String(e), pairs: [] };
+  } finally {
+    if (mySeq === aiSeq) {
+      S.aiPending = false;
+      render();
+    }
+  }
+}
+
 // ---------- vẽ ----------
 function render() {
   const now = Date.now();
   const sum = summarize(S.items, now);
-  renderTop(sum, now);
+  const sig = openSignature(sum.open);
+  if (sig !== S.dupSig || !S.baseDup) {
+    S.baseDup = detectDuplicates(sum.open, { onlyOpen: false });
+    if (sig !== S.dupSig) {
+      S.aiResult = null;
+      if (sum.open.length >= 2) runDedupAI(sum.open, S.baseDup);
+      else S.dupSig = sig;
+    }
+  }
+  const dup = mergeAiDuplicates(S.baseDup, sum.open, S.aiResult);
+  renderTop(sum, dup, now);
   renderKpis(sum, now);
-  renderChips(sum);
-  renderRows(sum, now);
-  renderSide(sum, now);
+  renderChips(sum, dup);
+  renderRows(sum, dup, now);
+  renderSide(sum, dup);
 }
 
-function renderTop(sum, now) {
+function renderTop(sum, dup, now) {
   const d = new Date(now + 7 * 3600e3).toISOString();
   const nStreams = S.kpiStreams.length || sum.counts.streams;
   if ($('dnClock')) $('dnClock').textContent = `${d.slice(11, 13)}:${d.slice(14, 16)}`;
@@ -271,17 +385,21 @@ function renderKpis(sum, now) {
   ].join('');
 }
 
-const QUICK_LABEL = { overdue: 'Quá hạn', soon: 'Sắp đến hạn', nosup: 'Chưa có người hỗ trợ', done: 'Đã xử lý' };
+const QUICK_LABEL = { overdue: 'Quá hạn', soon: 'Sắp đến hạn', nosup: 'Chưa có người hỗ trợ', done: 'Đã xử lý', dup: 'Nghi trùng' };
 const QUICK_TEST = {
   overdue: (it) => it.dueState === 'overdue',
   soon: (it, now) => isSoon(it, now), // thời gian hoàn thành còn dưới 2 giờ
   nosup: (it) => !it.supporter && !it.supportUnit,
+  dup: (it, _now, dup) => dup.byId.has(it.id),
 };
 
-function renderChips(sum) {
+function renderChips(sum, dup) {
   const f = S.filter;
   const chip = (v, label, n, cls = '') => `<button type="button" class="dn-chip ${cls}" data-f="status" data-v="${v}" aria-pressed="${f.quick !== 'done' && f.status === v}"${f.quick === 'done' ? ` disabled title="Đang xem ${CFG.noun} đã xử lý"` : ''}>${v !== 'all' ? '<i class="dot"></i>' : ''}${label}<span class="dn-chip-n">${n}</span></button>`;
-  $('dnChips').innerHTML = chip('all', 'Tất cả', sum.counts.open) + OPEN_STATUSES.map((s) => chip(s, STATUS[s].label, sum.byStatus[s], `s-${s}`)).join('');
+  const dupChip = dup.counts.items || f.quick === 'dup'
+    ? `<button type="button" class="dn-chip s-dup${dup.counts.high ? ' is-high' : ''}" data-f="quick" data-v="dup" aria-pressed="${f.quick === 'dup'}" title="Lọc các ${CFG.noun} nghi trùng (BM25 + Cosine Similarity)"><i class="dot"></i>Nghi trùng<span class="dn-chip-n">${dup.counts.items}</span></button>`
+    : '';
+  $('dnChips').innerHTML = chip('all', 'Tất cả', sum.counts.open) + OPEN_STATUSES.map((s) => chip(s, STATUS[s].label, sum.byStatus[s], `s-${s}`)).join('') + dupChip;
   const act = [];
   if (QUICK_LABEL[f.quick]) act.push(`Chỉ số: <b>${QUICK_LABEL[f.quick]}</b>`);
   if (f.stream) { const s = sum.streams.find((x) => x.key === f.stream) || S.kpiStreams.map((k) => ({ key: `no:${k.no}`, name: k.name })).find((x) => x.key === f.stream); act.push(`Dòng tiền: <b>${esc(s?.name || f.stream)}</b>`); }
@@ -291,13 +409,36 @@ function renderChips(sum) {
 
 function streamKeyOf(it) { return it.no != null ? `no:${it.no}` : nk(it.streamShort || it.stream) || 'none'; }
 
-function renderRows(sum, now) {
+/** Dấu hiệu nhận biết điểm nghẽn bị trùng (chỉ hiển thị tĩnh cho màn hình TV/War Room, không cần bấm tương tác). */
+function renderDupMark(dupInfo) {
+  if (!dupInfo || !dupInfo.matches.length) return '';
+  const top = dupInfo.matches[0];
+  const lv = DEDUP_LEVEL[dupInfo.level];
+  const refs = dupInfo.matches.map((m) => `#${m.otherStt}`).join(', ');
+  const o = top.other;
+  const who = [o.owner, o.ownerUnit].filter(Boolean).join(' · ');
+  const crossTag = dupInfo.crossTeam ? `<span class="dn-dup-cross">Khác phòng${who ? ` · ${esc(who)}` : ''}</span>` : '';
+  const note = top.aiReason ? `<p class="dn-dup-note-line">${esc(top.aiReason)}</p>` : '';
+  return `<div class="dn-dup-mark lv-${dupInfo.level}">
+      <div class="dn-dup-head">${icon('copy')}<b>${lv.label} với ${esc(refs)}</b><span class="dn-dup-pct">${top.pct}%</span>${crossTag}</div>
+      ${note}
+    </div>`;
+}
+
+function renderRows(sum, dup, now) {
   const f = S.filter;
   const byStream = (it) => !f.stream || streamKeyOf(it) === f.stream;
   const byOwner = (it) => !f.owner || nk(it.owner || 'Chưa ghi người phụ trách') === f.owner;
   if (f.quick === 'done') { renderDoneRows(sum, byStream, byOwner); return; }
   const quick = QUICK_TEST[f.quick] || (() => true);
-  const list = sum.open.filter((it) => (f.status === 'all' || it.status === f.status) && byStream(it) && byOwner(it) && quick(it, now));
+  const list = sum.open.filter((it) => (f.status === 'all' || it.status === f.status) && byStream(it) && byOwner(it) && quick(it, now, dup));
+  if (f.quick === 'dup') {
+    list.sort((a, b) => {
+      const da = dup.byId.get(a.id);
+      const db = dup.byId.get(b.id);
+      return (DEDUP_LEVEL[da?.level]?.order ?? 9) - (DEDUP_LEVEL[db?.level]?.order ?? 9) || (db?.topScore || 0) - (da?.topScore || 0);
+    });
+  }
   if (!list.length) {
     $('dnRows').innerHTML = `<div class="dn-empty">${icon('check')}<p>${sum.counts.open ? `Không có ${CFG.noun} nào khớp bộ lọc.` : S.loadedAt ? `Hiện không có ${CFG.noun} nào đang mở. Khi phát sinh vướng mắc, nhập vào sheet “${CFG.sheetName}” để hiện ngay tại đây.` : 'Đang tải…'}</p></div>`;
     return;
@@ -305,6 +446,7 @@ function renderRows(sum, now) {
   $('dnRows').innerHTML = list.map((it) => {
     const st = STATUS[it.status];
     const over = it.dueState === 'overdue';
+    const dupInfo = dup.byId.get(it.id);
     const meta = [
       it.no != null ? `<b>DT ${it.no} · ${esc(it.streamShort)}</b>` : it.stream ? `<b>${esc(it.streamShort || it.stream)}</b>` : '<b class="t-warn-t">Chưa ghi dòng tiền</b>',
       it.group ? `<span>${esc(it.group)}</span>` : '',
@@ -312,6 +454,7 @@ function renderRows(sum, now) {
     ].filter(Boolean).join('<span class="dn-sep">·</span>');
     const tasks = it.tasks.length ? `<ul class="dn-tasks" aria-label="Task con">${it.tasks.map((t) => `<li>${icon('sub')}<span>${esc(t)}</span></li>`).join('')}</ul>` : '';
     const support = it.supportContent ? `<p class="dn-support">${icon('sub')}<span><b>Cần hỗ trợ:</b> ${esc(it.supportContent)}</span></p>` : '';
+    const dupBlock = renderDupMark(dupInfo);
     // Người + đơn vị (cột "Đơn vị …" trên sheet). Chưa ghi người hỗ trợ nhưng có "Đơn vị hỗ trợ": hiện đơn vị.
     const person = (label, name, unit) => `<span class="dn-pl">${label}</span>${name
       ? `<span class="dn-pn"><span>${esc(name)}</span>${unit ? `<small>${esc(unit)}</small>` : ''}</span>`
@@ -323,15 +466,30 @@ function renderRows(sum, now) {
     const supportCell = `<span class="dn-pl">Hỗ trợ</span>${gap === 'both'
       ? `<span class="dn-pn is-gap">${need}</span>`
       : `<span class="dn-pn${gap ? ' is-gap' : ''}"><span>${esc(it.supporter || sUnit)}</span>${it.supporter && sUnit ? `<small>${esc(sUnit)}</small>` : ''}${need}</span>`}`;
+    const au = S.authors?.byRow?.[String(it.row)] || (it.stt ? S.authors?.byStt?.[String(it.stt)] : null);
+    let authorCell = '';
+    if (au && (au.updatedBy || au.addedBy)) {
+      const editor = au.updatedBy || au.addedBy;
+      const atText = fmtVnAt(au.updatedAt || au.addedAt);
+      const subParts = [atText, au.lastChange && au.lastChange !== 'Mới thêm' ? au.lastChange : au.lastChange === 'Mới thêm' ? 'Vừa thêm' : ''].filter(Boolean);
+      const diffAdder = au.addedBy && au.updatedBy && nk(au.addedBy) !== nk(au.updatedBy);
+      const label = diffAdder || (au.lastChange && au.lastChange !== 'Mới thêm') ? 'Sửa gần nhất' : 'Người thêm';
+      authorCell = `<span class="dn-pl dn-au-l">${label}</span><span class="dn-pn dn-au"><span>${esc(editor)}</span>${subParts.length ? `<small>${esc(subParts.join(' · '))}</small>` : ''}${diffAdder ? `<small class="dn-au-add">Thêm bởi: ${esc(au.addedBy)}</small>` : ''}</span>`;
+    }
     const due = it.due == null
       ? it.duration
         ? `<span class="dn-due-d">${esc(it.duration)}</span><span class="dn-due-h muted">${icon('clock')}Thời lượng xử lý</span>`
         : `<span class="dn-due-d muted">Chưa có hạn</span><span class="dn-due-h t-warn-t">${icon('alert')}Cần nhập hạn</span>`
       : `<span class="dn-due-d${over ? ' t-bad-t' : ''}">${esc(dueText(it))}${over ? '<span class="dn-over">QUÁ HẠN</span>' : ''}</span><span class="dn-due-h ${over ? 't-bad-t' : it.dueState === 'today' ? 't-warn-t' : 'muted'}">${it.dueState === 'today' ? icon('clock') : ''}${esc(dueHint(it, now))}</span>`;
-    return `<div class="dn-tr${over ? ' is-over' : ''}" role="row" title="${esc(it.deadlineRaw ? `Thời gian xử lý trên sheet: ${it.deadlineRaw}` : '')}">
+    const rowCls = [
+      'dn-tr',
+      over ? 'is-over' : '',
+      dupInfo ? `is-dup-${dupInfo.level}` : '',
+    ].filter(Boolean).join(' ');
+    return `<div class="${rowCls}" role="row" title="${esc(it.deadlineRaw ? `Thời gian xử lý trên sheet: ${it.deadlineRaw}` : '')}">
         <span class="dn-stt" role="cell">${esc(it.stt || '')}</span>
-        <div class="dn-what" role="cell"><p class="dn-meta">${meta}</p><p class="dn-content">${esc(it.content)}</p>${support}${tasks}</div>
-        <div class="dn-people" role="cell">${person('Phụ trách', it.owner, it.ownerUnit)}${supportCell}</div>
+        <div class="dn-what" role="cell"><p class="dn-meta">${meta}</p><p class="dn-content">${esc(it.content)}</p>${support}${tasks}${dupBlock}</div>
+        <div class="dn-people" role="cell">${person('Phụ trách', it.owner, it.ownerUnit)}${supportCell}${authorCell}</div>
         <span role="cell"><span class="dn-status s-${it.status}" title="${esc(it.statusRaw || st.label)}"><i class="dot"></i>${st.label}</span></span>
         <div class="dn-due" role="cell">${due}</div>
       </div>`;
@@ -356,8 +514,25 @@ function renderDoneRows(sum, byStream, byOwner) {
     </div>`).join('');
 }
 
-function renderSide(sum) {
+function renderSide(sum, dup) {
   const f = S.filter;
+  const dupSide = $('dnDupSide');
+  if (dupSide) {
+    dupSide.hidden = !dup.counts.pairs;
+    if (dup.counts.pairs) {
+      $('dnDupN').textContent = dup.counts.pairs;
+      $('dnDupList').innerHTML = dup.pairs.slice(0, 12).map((p) => {
+        const lv = DEDUP_LEVEL[p.level];
+        const units = p.crossTeam ? [p.a.ownerUnit || p.a.owner, p.b.ownerUnit || p.b.owner].filter(Boolean).join(' ↔ ') : '';
+        return `<li class="dn-dup-pair lv-${p.level}">
+            <span class="dn-dup-ph"><b class="dn-dup-stts">#${esc(p.aStt)} ↔ #${esc(p.bStt)}</b><span class="dn-dup-tag lv-${p.level}">${lv.label} · ${p.pct}%</span></span>
+            <span class="dn-dup-pt"><b>#${esc(p.aStt)}</b> ${esc(p.a.content)}</span>
+            <span class="dn-dup-pt is-b"><b>#${esc(p.bStt)}</b> ${esc(p.b.content)}</span>
+            ${units ? `<small class="dn-dup-pc">Khác phòng: ${esc(units)}</small>` : ''}
+          </li>`;
+      }).join('');
+    }
+  }
   // Dòng tiền: đủ 8 dòng tiền đánh số (từ /api/kpi) + dòng tiền khác đang có điểm nghẽn.
   const rows = S.kpiStreams.map((k) => ({ key: `no:${k.no}`, no: k.no, name: k.name, open: 0, overdue: 0 }));
   for (const s of sum.streams) {

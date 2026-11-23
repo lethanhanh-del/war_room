@@ -1062,3 +1062,194 @@ button.dn-kpi:focus-visible {
     padding: 14px 16px;
   }
 }
+
+/* ---------- Dấu hiệu điểm nghẽn nghi trùng (hiển thị tĩnh cho màn hình TV / War Room) ---------- */
+.s-dup { --st: var(--warning); }
+.s-dup.is-high { --st: var(--danger); }
+
+.dn-count.warn {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.dn-tr.is-dup-high:not(.is-over),
+.dn-tr.is-dup-medium:not(.is-over),
+.dn-tr.is-dup-support:not(.is-over) {
+  position: relative;
+}
+
+.dn-tr.is-dup-high:not(.is-over) {
+  background: color-mix(in srgb, var(--danger) 5%, var(--bg-surface));
+}
+
+.dn-tr.is-dup-high:not(.is-over)::before,
+.dn-tr.is-dup-medium:not(.is-over)::before,
+.dn-tr.is-dup-support:not(.is-over)::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+}
+
+.dn-tr.is-dup-high:not(.is-over)::before { background: var(--danger); }
+.dn-tr.is-dup-medium:not(.is-over)::before { background: var(--warning); }
+.dn-tr.is-dup-support:not(.is-over)::before { background: var(--info); }
+
+.dn-tr.is-dup-high .dn-stt { color: var(--danger); }
+.dn-tr.is-dup-medium .dn-stt { color: var(--warning); }
+.dn-tr.is-dup-support .dn-stt { color: var(--info); }
+
+.dn-dup-mark {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--warning);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--warning-bg);
+}
+
+.dn-dup-mark.lv-high {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.dn-dup-mark.lv-support {
+  border-left-color: var(--info);
+  background: var(--info-bg);
+}
+
+.dn-dup-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  color: var(--warning);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.dn-dup-mark.lv-high .dn-dup-head { color: var(--danger); }
+.dn-dup-mark.lv-support .dn-dup-head { color: var(--info); }
+
+.dn-dup-head .ic {
+  width: 14px;
+  height: 14px;
+}
+
+.dn-dup-pct {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dn-dup-cross {
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+}
+
+.dn-dup-note-line {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.dn-dup-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: var(--fs-label);
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.dn-dup-tag.lv-high {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.dn-dup-tag.lv-medium {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.dn-dup-tag.lv-support {
+  background: var(--info-bg);
+  color: var(--info);
+}
+
+.dn-dup-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dn-dup-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+
+.dn-dup-ph {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dn-dup-stts {
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.dn-dup-pt {
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+.dn-dup-pt b {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.dn-dup-pt.is-b {
+  color: var(--text-2);
+}
+
+.dn-dup-pc {
+  color: var(--warning);
+  font-size: 11.5px;
+}
+
+/* ---------- Người thêm / Người sửa gần nhất (SharePoint) ---------- */
+.dn-au-l {
+  color: var(--info);
+}
+
+.dn-au > span {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.dn-au .dn-au-add {
+  color: var(--dim);
+}
