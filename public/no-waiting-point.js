@@ -147,6 +147,11 @@ function renderNotices(r) {
     const list = r.unapproved.map((u) => `<span class="nw-ap ap-${u.code}" title="${esc(u.label)}"><i class="kd ap-${u.code}"></i>${esc(u.stream)} · ${esc(u.group)}</span>`).join('');
     out.push(`<details class="notice nw-ap-notice"><summary>${icon('info')}<span><b>Không tính ${r.unapproved.length} nhóm chưa được BOD duyệt</b>: ${nN} chưa trình KPI cho BOD (đỏ) · ${nR} cần điều chỉnh, bổ sung và trình lại KPI (vàng). Bấm để xem.</span></summary><div class="nw-ap-list">${list}</div></details>`);
   }
+  // Dòng tiền chưa có dữ liệu trên sheet (tab trống hoặc chưa tìm thấy tab): vẫn nêu tên, ghi chú chưa có dữ liệu.
+  const empty = (S.model?.streams || []).filter((s) => s.noData);
+  if (empty.length) {
+    out.push(`<div class="notice warn">${icon('info')}<div class="grow"><b>Chưa có dữ liệu</b> trên file Excel SharePoint: ${esc(empty.map((s) => `${streamBadgeNo(s) ? `${streamBadgeNo(s)}. ` : ''}${s.name}${s.sheetMissing ? ' (chưa tìm thấy tab)' : ''}`).join(' · '))}. Các dòng tiền này chưa có nhóm / KPI nào để theo dõi.</div></div>`);
+  }
   $('notices').innerHTML = out.join('');
 }
 

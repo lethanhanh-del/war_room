@@ -151,9 +151,19 @@ function byName(list, name, get) {
 }
 
 /**
+ * PIC nhóm đổi riêng theo yêu cầu, thay cho Đội trưởng trong file phân chia nhiệm vụ (chỉ đúng nhóm ghi ở đây;
+ * nhóm khác vẫn theo file). So khớp tên dòng tiền / nhóm không phân biệt hoa thường, dấu, khoảng trắng.
+ * - 24/11/2026: "Tìm app gửi viral marketing" (Dòng tiền bán 4 dự án): Võ Đào Huy Hoàng -> Nguyễn Thanh Phong.
+ */
+export const GROUP_PIC_OVERRIDES = [
+  { stream: 'Dòng tiền bán 4 dự án', group: 'Tìm app gửi viral marketing', pic: 'Nguyễn Thanh Phong' },
+];
+
+/**
  * Gắn mã dòng tiền (DT01… từ sheet task), PIC dòng tiền và PIC / người thực hiện của từng nhóm.
- * PIC nhóm: Đội trưởng của nhóm (file phân chia nhiệm vụ) có thành viên trùng người trong nhóm, hoặc nhóm cùng tên
- * nhiệm vụ chính, hoặc nhóm duy nhất của dòng tiền; không có thì là người ở dòng đầu tiên.
+ * PIC nhóm: PIC đổi riêng theo yêu cầu (GROUP_PIC_OVERRIDES); không có thì Đội trưởng của nhóm (file phân chia nhiệm vụ)
+ * có thành viên trùng người trong nhóm, hoặc nhóm cùng tên nhiệm vụ chính, hoặc nhóm duy nhất của dòng tiền; không có
+ * nữa thì là người ở dòng đầu tiên.
  */
 /** Tên hiển thị của nhóm thanh lý (người dùng chốt 23/11: "Thanh lý", không ghi "Nhóm thanh lý"). Tên trong dữ liệu, khoá
  * dòng tiền và tên tab trên sheet ("8. Nhóm thanh lý") giữ nguyên để bản chốt sổ và lựa chọn Hiện / Ẩn đã lưu vẫn khớp. */
@@ -171,7 +181,8 @@ export function attachPeople(streams, teams = [], imports = []) {
       if (!tg) tg = tgroups.find((t) => t.mainTask && loose(t.mainTask) === loose(g.name));
       if (!tg && tgroups.length === 1) tg = tgroups[0];
       const lead = tg?.lead && !tg.lead.placeholder ? { name: tg.lead.name, title: tg.lead.title || '' } : null;
-      const pic = lead || (persons[0] ? { name: persons[0], title: '' } : null);
+      const override = GROUP_PIC_OVERRIDES.find((o) => streamKey(o.stream) === streamKey(s.name) && loose(o.group) === loose(g.name));
+      const pic = override ? { name: override.pic, title: '' } : lead || (persons[0] ? { name: persons[0], title: '' } : null);
       return {
         key: loose(g.name) || `nhom${gi}`,
         name: g.name,
@@ -195,6 +206,8 @@ export function attachPeople(streams, teams = [], imports = []) {
       bodApproved: s.bodApproved !== false,
       days: s.days,
       groups,
+      // Tab trên sheet chưa có nhóm / KPI nào (hoặc chưa tìm thấy tab): vẫn hiện dòng tiền, ghi chú "Chưa có dữ liệu".
+      ...(groups.length ? {} : { noData: true, ...(s.sheet ? {} : { sheetMissing: true }) }),
     };
   });
 }

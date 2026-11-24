@@ -74,6 +74,9 @@ export function visibilityList(streams) {
     no: s.no || 0,
     code: s.code || '',
     pic: s.pic || '',
+    sheet: s.kpiSheet || s.sheet || '',
+    // Tab trên sheet chưa có nhóm / KPI nào (hoặc chưa tìm thấy tab): vẫn liệt kê, ghi chú "Chưa có dữ liệu".
+    ...(s.noData ? { noData: true, ...(s.sheetMissing ? { sheetMissing: true } : {}) } : {}),
     groups: s.groups.map((g) => {
       const a = g.approval || { code: 'N' };
       const admin = a.source === 'admin';

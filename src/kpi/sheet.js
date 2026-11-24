@@ -39,8 +39,8 @@ export const isKpiTab = (name) => /^dong tien(\s|:|-|$)/.test(normKey(stripPrefi
 /** Tab "Nhóm hỗ trợ" (có thể có số thứ tự "8. " ở đầu). */
 export const isSupportTab = (name) => /^nhom ho tro(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
 
-/** Tab "Nhóm thanh lý" (có thể có số thứ tự "9. " ở đầu). */
-export const isLiquidationTab = (name) => /^nhom thanh ly(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
+/** Tab "Nhóm thanh lý" hoặc "Thanh lý" (có thể có số thứ tự "8. " ở đầu; 24/11/2026 tab đổi tên thành "8. Thanh lý"). */
+export const isLiquidationTab = (name) => /^(nhom |dong tien )?thanh ly(\s|:|-|$)/.test(normKey(stripPrefixNo(name)));
 
 /**
  * Chuẩn hóa tên dòng tiền / nhóm từ tên tab (Google Sheet hoặc Excel SharePoint giới hạn 31 ký tự, không có "/"),

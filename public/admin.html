@@ -80,6 +80,7 @@
     .vis-sum { display: flex; gap: 14px; font-size: 13px; font-weight: 600; white-space: nowrap; }
     .vis-sum .on { color: var(--success); } .vis-sum .off { color: var(--text-secondary); }
     .vis-stream { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--surface-subtle); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .vis-nodata { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 13px; }
     .vis-no { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 7px; background: var(--navy-100); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); color: var(--accent); font-weight: 700; font-size: 12.5px; }
     .vis-stream b { font-size: 15px; }
     .vis-table th { position: static; background: none; }
@@ -492,8 +493,14 @@
       const all = streams.flatMap((s) => s.groups);
       const on = all.filter((g) => g.show).length;
       $("visSum").innerHTML = all.length ? `<span class="on">${on} nhóm đang hiện</span><span class="off">${all.length - on} nhóm đang ẩn</span>` : "";
-      if (!all.length) { $("visBody").innerHTML = '<p class="muted" style="padding:14px 16px;margin:0">Chưa có nhóm nào trong dữ liệu KPI.</p>'; return; }
-      $("visBody").innerHTML = streams.filter((s) => s.groups.length).map((s) => {
+      if (!streams.length) { $("visBody").innerHTML = '<p class="muted" style="padding:14px 16px;margin:0">Chưa có dòng tiền nào trong dữ liệu KPI.</p>'; return; }
+      $("visBody").innerHTML = streams.map((s) => {
+        // Dòng tiền chưa có dữ liệu trên sheet (tab trống hoặc chưa tìm thấy tab): vẫn hiện, kèm ghi chú.
+        if (!s.groups.length) {
+          const why = s.sheetMissing ? "chưa tìm thấy tab của dòng tiền này trên file Excel SharePoint" : `tab “${esc(s.sheet || s.name)}” trên file Excel SharePoint chưa nhập Nhóm, PIC và KPI`;
+          return `<div class="vis-stream">${s.no ? `<span class="vis-no">${s.no}</span>` : s.code ? `<span class="vis-no">${esc(s.code)}</span>` : ""}<b>${esc(s.name)}</b><span class="pill warn">Chưa có dữ liệu</span><span class="muted">${s.pic ? `PIC ${esc(s.pic)} · ` : ""}0 nhóm</span></div>
+          <p class="vis-nodata">Chưa có dữ liệu: ${why}. Nhập xong, dòng tiền tự hiện các nhóm ở đây.</p>`;
+        }
         const rows = s.groups.map((g) => {
           const ed = editing && editing.stream === s.key && editing.group === g.key;
           const id = `data-s="${esc(s.key)}" data-g="${esc(g.key)}"`;
