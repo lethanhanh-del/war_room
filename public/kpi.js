@@ -884,7 +884,11 @@ function tableHtml(x, { tv = false } = {}) {
     const no = streamBadgeNo(s);
     const name = tv ? `<b title="${esc(s.name)}">${no ? `${no}. ` : ''}${esc(s.name)}</b>` : `<button type="button" class="kt-name" data-pick-stream="${esc(s.key)}" title="Xem chi tiết từng nhóm của ${esc(s.name)}">${no ? `<span class="k-code">${esc(no)}</span>` : ''}<b>${esc(s.name)}</b></button>`;
     // Chỉ một số nhóm chưa được duyệt: ghi ngay dưới tên dòng tiền (KPI của các nhóm đã duyệt vẫn hiện bình thường).
-    const partial = !unapproved && ap.pending && !tv ? `<span class="kt-partial ap-N" title="${esc(APPROVAL_ORDER.filter((c) => c !== 'A' && ap[c]).map((c) => `${ap[c]} nhóm · ${APPROVAL_LABEL[c]}`).join('\n'))}"><i></i>${ap.pending}/${ap.total} nhóm chưa trình KPI cho BOD</span>` : '';
+    // Mỗi trạng thái chưa duyệt 1 nhãn riêng, đúng tên và màu của trạng thái đó: "1/5 nhóm cần điều chỉnh, bổ sung và trình lại KPI"
+    // (vàng) · "2/5 nhóm chưa trình KPI cho BOD" (đỏ). Trước đây gộp chung thành "chưa trình KPI cho BOD" nên sai với nhóm cần trình lại.
+    const partial = !unapproved && ap.pending && !tv
+      ? ['R', 'N'].filter((c) => ap[c]).map((c) => `<span class="kt-partial ap-${c}"><i></i>${ap[c]}/${ap.total} nhóm ${esc(apTileLabel(c))}</span>`).join('')
+      : '';
     const sum = s.items.length
       ? `<span class="kt-pct"><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total} KPI xong</small></span><span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span>${backlog && !tv ? `<span class="kt-note st-K"><i></i>${backlog} tồn đọng</span>` : ''}`
       : s.noData ? `<small class="kt-nodata">Chưa có dữ liệu</small>` : `<small>${unapproved ? 'Chưa tính KPI' : 'Chưa nhập KPI'}</small>`;
