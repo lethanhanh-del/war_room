@@ -372,6 +372,20 @@ const AP_COUNT = { '': 'chưa duyệt', A: 'đã duyệt', R: 'cần trình lạ
 const apSeg = (c) => `<span class="kt-seg" aria-hidden="true">${APPROVAL_ORDER.filter((k) => c[k]).map((k) => `<i class="ap-${k}" style="flex-grow:${c[k]}"></i>`).join('')}</span>`;
 // Nhãn ô số: "12 đội BOD đã duyệt KPI" · "8 đội cần điều chỉnh, bổ sung và trình lại KPI" · "3 đội chưa trình KPI cho BOD" (chữ đầu viết thường, trừ "BOD").
 const apTileLabel = (code) => { const l = APPROVAL_LABEL[code]; return l.startsWith('BOD') ? l : l.charAt(0).toLocaleLowerCase('vi') + l.slice(1); };
+/** Ghi chú cho dòng tiền chưa có dữ liệu trên sheet (tab trống hoặc chưa tìm thấy tab). */
+function noDataList(x) {
+  const list = x.streams.filter((s) => s.noData);
+  if (!list.length) return '';
+  return `<p class="ka-full ka-nodata">${icon('info')}<span>Chưa có dữ liệu trên sheet:</span><b>${esc(list.map((s) => `${streamBadgeNo(s) ? `${streamBadgeNo(s)} · ` : ''}${s.name}`).join(' · '))}</b></p>`;
+}
+
+function noDataNote(s) {
+  const why = s.sheetMissing
+    ? 'chưa tìm thấy tab của dòng tiền này trên file Excel SharePoint'
+    : `tab “${esc(s.kpiSheet || s.sheet || s.name)}” trên file Excel SharePoint chưa nhập Nhóm, PIC và KPI`;
+  return `<p class="k-none k-nodata">${icon('info')}<span><b>Chưa có dữ liệu</b>: ${why}. Nhập xong, trang tự cập nhật.</span></p>`;
+}
+
 function approvalHtml(x) {
   const groups = x.streams.flatMap((s) => s.groups.map((g) => ({ s, g })));
   if (!groups.length) return '';
@@ -405,8 +419,9 @@ function approvalHtml(x) {
   const table = rows
     ? `<p class="ka-view"><span class="ka-sub">Đang xem</span><b>${esc(AP_VIEW[af])}</b><span>· ${shown} nhóm ở ${shownStreams} dòng tiền · ${af === 'A' ? 'KPI được hiện và tính trên trang' : 'chỉ ghi chú trạng thái, không tính KPI'}</span>${af ? `<button type="button" class="ka-clear" data-ap-filter="">Bỏ lọc</button>` : ''}</p>
       <div class="ka-table" role="table" aria-label="${esc(AP_VIEW[af])} theo dòng tiền"><div class="ka-row ka-thead" role="row"><div class="ka-scell" role="columnheader">Dòng tiền</div><div class="ka-grow"><span role="columnheader">Nhóm</span><span role="columnheader">PIC nhóm</span><span role="columnheader">Trạng thái duyệt</span><span role="columnheader">Ghi chú</span></div></div>${rows}</div>
-      ${full.length ? `<p class="ka-full">${icon('check')}<span>Đã duyệt đủ, không có trong danh sách này:</span><b>${esc(full.join(' · '))}</b></p>` : ''}`
-    : `<p class="k-none ok">${icon('check')}Tất cả nhóm đều đã được BOD duyệt KPI.</p>`;
+      ${full.length ? `<p class="ka-full">${icon('check')}<span>Đã duyệt đủ, không có trong danh sách này:</span><b>${esc(full.join(' · '))}</b></p>` : ''}
+      ${noDataList(x)}`
+    : `<p class="k-none ok">${icon('check')}Tất cả nhóm đều đã được BOD duyệt KPI.</p>${noDataList(x)}`;
   const byAdmin = groups.filter(({ g }) => g.approval.source === 'admin').length; // Quản trị › Quản lý hiển thị nhiệm vụ
   const src = groups.some(({ g }) => g.approval.source === 'column') ? 'cột “Trạng thái duyệt” của từng nhóm' : 'ô tick E1 của từng tab (sheet chưa có cột “Trạng thái duyệt” theo nhóm)';
   return `<section class="k-panel k-approval" aria-labelledby="k-ap-t"><header class="k-phead"><div><h2 id="k-ap-t">Phê duyệt KPI của BOD</h2>
@@ -704,7 +719,7 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
           cards.sort((a, b) => (b.tasks.length > 0) - (a.tasks.length > 0) || a.order - b.order);
           if (shown) groupSecs.push({ g, gs, cards, members: allMembers.length });
         }
-        if (!cardsAll && f.result !== 'all' && !pendingAll) return '';
+        if (!cardsAll && f.result !== 'all' && !pendingAll && !s.noData) return '';
 
       const stat = (n, st, label, extra = '', key = st) => {
         const on = !!tf && !tf.g && tf.st === key;
@@ -769,6 +784,8 @@ function taskRowHtml(it, notes, showDate, isCarryOver) {
           ? ''
         : sel !== 'all' || cardsAll
           ? `<p class="k-none">Nhóm này không có task khớp bộ lọc.</p>`
+        : s.noData
+          ? noDataNote(s)
         : isSpecial
           ? `<p class="k-none">Đã kết nối trực tiếp tab “${esc(sheetNote || s.name)}” nhưng chưa có dòng KPI nào được nhập. Nhập Nhóm, PIC và KPI theo ngày vào sheet, trang sẽ tự cập nhật.</p>`
         : `<p class="k-none">Chưa có thành viên nào có KPI cho dòng tiền này.</p>`) + pendingHtml;
@@ -870,7 +887,7 @@ function tableHtml(x, { tv = false } = {}) {
     const partial = !unapproved && ap.pending && !tv ? `<span class="kt-partial ap-N" title="${esc(APPROVAL_ORDER.filter((c) => c !== 'A' && ap[c]).map((c) => `${ap[c]} nhóm · ${APPROVAL_LABEL[c]}`).join('\n'))}"><i></i>${ap.pending}/${ap.total} nhóm chưa trình KPI cho BOD</span>` : '';
     const sum = s.items.length
       ? `<span class="kt-pct"><b class="${tone(p)}">${p == null ? '–' : `${p}%`}</b><small>${doneOf(c)}/${c.total} KPI xong</small></span><span class="k-bar ${tone(p)}"><i style="width:${p ?? 0}%"></i></span>${backlog && !tv ? `<span class="kt-note st-K"><i></i>${backlog} tồn đọng</span>` : ''}`
-      : `<small>${unapproved ? 'Chưa tính KPI' : 'Chưa nhập KPI'}</small>`;
+      : s.noData ? `<small class="kt-nodata">Chưa có dữ liệu</small>` : `<small>${unapproved ? 'Chưa tính KPI' : 'Chưa nhập KPI'}</small>`;
     return `<div class="kt-row" role="row"><div class="kt-c kt-stream" role="rowheader" style="grid-column:1">${name}${!tv && s.pic ? `<small>PIC ${esc(s.pic)}</small>` : ''}${partial}</div>${cells}${banner}
         <div class="kt-c kt-sum" role="cell" style="grid-column:${n + 2}">${sum}</div></div>`;
   }).join('');

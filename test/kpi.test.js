@@ -503,6 +503,9 @@ test('Nhóm hỗ trợ, Nhóm thanh lý & 9 tab đánh số (1. Dòng tiền ...
   assert.equal(isKpiTab('Bản sao của 1. Dòng tiền bán 4 dự án'), false);
   assert.equal(isLiquidationTab('8. Nhóm thanh lý'), true);
   assert.equal(isLiquidationTab('Nhóm thanh lý'), true);
+  assert.equal(isLiquidationTab('8. Thanh lý'), true); // tên tab từ 24/11/2026
+  assert.equal(isLiquidationTab('Thanh lý tài sản đợt 2'), true);
+  assert.equal(isLiquidationTab('Thanh toán'), false);
   assert.equal(isSupportTab('9. Nhóm hỗ trợ'), true);
   assert.equal(isSupportTab('9. Nho\u0301m ho\u0302\u0303 tro\u031b\u0323'), true);
   assert.equal(isSupportTab('Nhóm hỗ trợ'), true);
@@ -713,4 +716,50 @@ test('Cột "Trạng thái duyệt" theo nhóm: 3 trạng thái, chỉ tính KPI
   assert.deepEqual(st.groups.map((g) => g.items.length), [2, 0, 0, 0]);
   const r = noWaitingPoint(model, Date.UTC(2026, 10, 22, 8, 0));
   assert.deepEqual(r.unapproved.map((u) => [u.group, u.code]), [['Phụ trách đại lý', 'R'], ['Data', 'N'], ['Pháp lý', 'N']]);
+});
+
+test('PIC nhóm đổi riêng (GROUP_PIC_OVERRIDES): chỉ nhóm "Tìm app gửi viral marketing", nhóm khác vẫn theo Đội trưởng', async () => {
+  const { attachPeople, GROUP_PIC_OVERRIDES } = await kpi();
+  assert.deepEqual(GROUP_PIC_OVERRIDES, [{ stream: 'Dòng tiền bán 4 dự án', group: 'Tìm app gửi viral marketing', pic: 'Nguyễn Thanh Phong' }]);
+  const csv = [
+    'Stt,Nhóm,PIC,Người phụ trách,24/11,',
+    ',,,,KPI,Kết quả',
+    '25,Tìm app gửi viral marketing,Nguyễn Thanh Phong,Võ Đào Huy Hoàng,Tìm tools gửi mkt trên telegram,TRUE',
+    '26,Tìm app gửi viral marketing,Nguyễn Thanh Phong,Nguyễn Lê Minh Tân,Kiểm tra email,FALSE',
+    '27,N20,Anh Huỳnh Ngọc Nhật Tài,,Hồ sơ N20,FALSE',
+  ].join('\n');
+  const s = parseKpiTab(tab('1. Dòng tiền bán 4 dự án', csv), { year: 2026 });
+  const teams = [{ name: 'Dòng tiền bán 4 dự án', groups: [
+    { lead: { name: 'Võ Đào Huy Hoàng', title: 'Security Engineer' }, members: [{ name: 'Nguyễn Lê Minh Tân' }] },
+    { lead: { name: 'Nguyễn Thị Mai Thu', title: 'GĐ' }, members: [{ name: 'Anh Huỳnh Ngọc Nhật Tài' }] },
+  ] }];
+  const [st] = attachPeople([s], teams);
+  assert.deepEqual(st.groups.map((g) => [g.name, g.pic?.name]), [
+    ['Tìm app gửi viral marketing', 'Nguyễn Thanh Phong'],
+    ['N20', 'Nguyễn Thị Mai Thu'], // cột PIC ghi người khác nhưng không có trong danh sách đổi riêng: giữ Đội trưởng
+  ]);
+  // Cùng tên nhóm ở dòng tiền khác: không đổi
+  const [other] = attachPeople([{ ...s, name: 'Dòng tiền Banking', sheet: '2. Dòng tiền Banking' }], [{ name: 'Dòng tiền Banking', groups: teams[0].groups }]);
+  assert.equal(other.groups[0].pic.name, 'Võ Đào Huy Hoàng');
+});
+
+test('Dòng tiền chưa có dữ liệu trên sheet: vẫn có trong dữ liệu (noData), Quản lý hiển thị nhiệm vụ và báo cáo phê duyệt', async () => {
+  const { attachPeople } = await kpi();
+  const { visibilityList } = await import('../src/kpi/visibility.js');
+  const { approvalRows } = await import('../src/kpi/approval-report.js');
+  // Tab 4 trên SharePoint 24/11/2026: chỉ có số STT và ô tick, không có Nhóm / PIC / KPI
+  const empty = parseKpiTab(tab('4. Dòng tiền thu trước hạn quá ', ['HƯỚNG DẪN,,,,TRUE', 'Stt,Nhóm,PIC,Người phụ trách,24/11,,', ',,,,KPI,Thời gian thực hiện,Kết quả', '8,,,,,,FALSE', '9,,,,,,FALSE'].join('\n')), { year: 2026 });
+  assert.equal(empty.error, undefined);
+  assert.deepEqual(empty.groups, []);
+  const missing = { no: 8, name: 'Thanh lý', sheet: '', days: [], groups: [] }; // chưa tìm thấy tab
+  const out = attachPeople([{ ...empty, no: 4 }, missing]);
+  assert.deepEqual(out.map((s) => [s.noData, s.sheetMissing ?? false]), [[true, false], [true, true]]);
+  const vis = visibilityList(out);
+  assert.deepEqual(vis.map((s) => [s.no, s.noData, s.groups.length, s.sheet]), [[4, true, 0, '4. Dòng tiền thu trước hạn quá'], [8, true, 0, '']]);
+  const rows = approvalRows(out);
+  assert.deepEqual(rows.map((r) => [r.group, r.code, r.status]), [['—', 'X', 'Chưa có dữ liệu'], ['—', 'X', 'Chưa có dữ liệu']]);
+  assert.match(rows[0].note, /4\. Dòng tiền thu trước hạn quá.*chưa nhập Nhóm, PIC và KPI/);
+  assert.match(rows[1].note, /Chưa tìm thấy tab/);
+  const model = buildModel({ today: '2026-11-24', now: Date.UTC(2026, 10, 24, 3, 0), days: [], streams: out });
+  assert.deepEqual(model.streams.map((s) => s.noData), [true, true]);
 });

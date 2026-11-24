@@ -41,6 +41,20 @@ function tasksOf(g) {
 export function approvalRows(streams) {
   const rows = [];
   for (const s of streams || []) {
+    // Dòng tiền chưa có dữ liệu trên sheet: vẫn có 1 dòng trong báo cáo, ghi "Chưa có dữ liệu" (code X, không tô màu).
+    if (!(s.groups || []).length) {
+      rows.push({
+        stream: s.name,
+        group: '—',
+        pic: s.pic || '',
+        tasks: '',
+        code: 'X',
+        status: 'Chưa có dữ liệu',
+        directive: '',
+        note: s.sheetMissing ? 'Chưa tìm thấy tab của dòng tiền này trên file Excel SharePoint' : `Tab “${s.kpiSheet || s.sheet || s.name}” trên file Excel SharePoint chưa nhập Nhóm, PIC và KPI`,
+      });
+      continue;
+    }
     for (const g of s.groups || []) {
       const a = g.approval || { code: s.bodApproved === false ? 'N' : 'A' };
       const code = LABEL[a.code] ? a.code : 'N';
@@ -64,12 +78,13 @@ export function approvalRows(streams) {
 /** Nội dung workbook (mảng tab cho writeXlsx). */
 export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
   const head = ['Stt', 'Dòng tiền', 'Nhóm', 'Đội trưởng/Phụ trách', 'Nhiệm vụ', 'Tình trạng phê duyệt KPI', 'Chỉ đạo của BLĐ tại tờ trình', 'Ghi chú'];
-  const c = { A: 0, R: 0, N: 0 };
+  const c = { A: 0, R: 0, N: 0, X: 0 };
   for (const r of rows) c[r.code]++;
+  const nGroups = rows.length - c.X;
   const info = [
     ['BÁO CÁO TÌNH TRẠNG PHÊ DUYỆT KPI · WAR ROOM CT HOMES'],
     [`Xuất lúc ${vn(now)} · ${by} · dữ liệu đọc lúc ${vn(checkedAt) || '—'}`],
-    [`${rows.length} nhóm: ${c.A} BOD đã duyệt KPI · ${c.R} cần điều chỉnh, bổ sung và trình lại KPI · ${c.N} chưa trình KPI cho BOD`],
+    [`${nGroups} nhóm: ${c.A} BOD đã duyệt KPI · ${c.R} cần điều chỉnh, bổ sung và trình lại KPI · ${c.N} chưa trình KPI cho BOD${c.X ? ` · ${c.X} dòng tiền chưa có dữ liệu trên sheet` : ''}`],
     ...(sheetUrl ? [[`Nguồn: ${sheetUrl}`]] : []),
     [],
   ];
@@ -79,8 +94,9 @@ export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
 
   const by_ = new Map();
   for (const r of rows) {
-    const x = by_.get(r.stream) || { A: 0, R: 0, N: 0, total: 0, pending: [] };
+    const x = by_.get(r.stream) || { A: 0, R: 0, N: 0, X: 0, total: 0, pending: [] };
     x[r.code]++;
+    if (r.code === 'X') { x.pending.push('Chưa có dữ liệu trên sheet'); by_.set(r.stream, x); continue; }
     x.total++;
     if (r.code !== 'A') x.pending.push(`${r.group} (${LABEL[r.code]})`);
     by_.set(r.stream, x);
@@ -90,7 +106,7 @@ export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
     [],
     ['Dòng tiền', 'Số nhóm', 'BOD đã duyệt KPI', 'Cần điều chỉnh, bổ sung và trình lại KPI', 'Chưa trình KPI cho BOD', 'Nhóm chưa được duyệt'],
     ...[...by_].map(([name, x]) => [name, x.total, x.A, x.R, x.N, x.pending.join('\n')]),
-    ['Tổng', rows.length, c.A, c.R, c.N, ''],
+    ['Tổng', nGroups, c.A, c.R, c.N, ''],
   ];
   const sumLast = summary.length - 1;
 
@@ -105,7 +121,7 @@ export function approvalWorkbook({ rows, sheetUrl, checkedAt, by, now }) {
         if (r === top) return XLSX_STYLE.head;
         const code = codeAt.get(r);
         if (!code) return undefined;
-        return col === 5 ? STYLE[code] : XLSX_STYLE.wrap;
+        return col === 5 && STYLE[code] != null ? STYLE[code] : XLSX_STYLE.wrap;
       },
     },
     {

@@ -3630,3 +3630,32 @@ details.nw-ap-notice summary {
   align-items: flex-start;
   gap: var(--s12);
 }
+
+/* ---------- dòng tiền chưa có dữ liệu trên sheet (tab trống hoặc chưa tìm thấy tab): vẫn hiện, kèm ghi chú ---------- */
+.k-none.k-nodata {
+  align-items: flex-start;
+  gap: 8px;
+  border-color: var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--text-2);
+}
+
+.k-none.k-nodata .ic {
+  margin-top: 2px;
+  color: var(--warning);
+}
+
+.k-none.k-nodata b {
+  color: var(--warning);
+  font-weight: 500;
+}
+
+.kt-nodata {
+  color: var(--warning) !important;
+  font-weight: 500;
+}
+
+.ka-full.ka-nodata .ic,
+.ka-full.ka-nodata b {
+  color: var(--warning);
+}
